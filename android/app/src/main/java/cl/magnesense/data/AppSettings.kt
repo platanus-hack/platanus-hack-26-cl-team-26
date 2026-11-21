@@ -16,6 +16,8 @@ data class AppSettings(
     val serverUrl: String = "",
     val startOnBoot: Boolean = false,
     val voiceEnabled: Boolean = true,
+    /** Usar la linterna del celular como "Luz" (demo). Apagada por defecto: parpadea con cada pulso. */
+    val phoneTorch: Boolean = false,
     val tuning: DetectionTuning = DetectionTuning(),
     val activationMode: ActivationMode = ActivationMode.PULSES,
     /** Gesto aprendido -> id de dispositivo, [BIND_SCAN], [BIND_SONG], [BIND_QUACK] o [BIND_NONE]. */

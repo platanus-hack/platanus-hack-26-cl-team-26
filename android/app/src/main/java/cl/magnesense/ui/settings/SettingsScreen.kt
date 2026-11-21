@@ -126,6 +126,7 @@ fun SettingsScreen(store: SettingsStore, actions: DeviceActions, telemetry: Tele
             Panel {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Toggle("Hablar las opciones en voz alta", s.voiceEnabled) { v -> store.update { it.copy(voiceEnabled = v) } }
+                    Toggle("Usar la linterna del celular como luz", s.phoneTorch) { v -> store.update { it.copy(phoneTorch = v) } }
                     Toggle("Iniciar al encender el teléfono", s.startOnBoot) { v -> store.update { it.copy(startOnBoot = v) } }
                 }
             }

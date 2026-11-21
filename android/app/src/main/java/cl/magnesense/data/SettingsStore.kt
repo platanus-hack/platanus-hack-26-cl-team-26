@@ -55,6 +55,7 @@ class SettingsStore(context: Context) {
             .put("serverUrl", s.serverUrl)
             .put("startOnBoot", s.startOnBoot)
             .put("voiceEnabled", s.voiceEnabled)
+            .put("phoneTorch", s.phoneTorch)
             .put("activationMode", s.activationMode.name)
             .put("gestureBindings", JSONObject(s.gestureBindings))
             .put("setupDone", s.setupDone)
@@ -105,6 +106,7 @@ class SettingsStore(context: Context) {
                 serverUrl = o.optString("serverUrl", d.serverUrl),
                 startOnBoot = o.optBoolean("startOnBoot", d.startOnBoot),
                 voiceEnabled = o.optBoolean("voiceEnabled", d.voiceEnabled),
+                phoneTorch = o.optBoolean("phoneTorch", d.phoneTorch),
                 tuning = decodeTuning(o.optJSONObject("tuning")),
                 // v0.4: Pulsos pasa a ser el modo por defecto, tambien para quien ya tenia la app.
                 activationMode = if (!o.has("pulsesIntroduced")) d.activationMode

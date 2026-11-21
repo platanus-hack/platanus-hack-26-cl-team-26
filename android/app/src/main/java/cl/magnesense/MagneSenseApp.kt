@@ -86,6 +86,7 @@ class MagneSenseApp : Application() {
             speaker,
             sounds,
             enabled = { settings.settings.value.activationMode == ActivationMode.PULSES && !(::gestures.isInitialized && gestures.teaching) },
+            torchAllowed = { settings.settings.value.phoneTorch },
             diag = diag::add,
             history = history::add,
         )
@@ -135,6 +136,7 @@ class MagneSenseApp : Application() {
         access.setDevices(s.devices)
         access.actions.caregiver = CaregiverConfig(s.caregiverPhone.trim(), s.caregiverWebhook.trim())
         speaker.enabled = s.voiceEnabled
+        access.actions.useTorch = s.phoneTorch
         telemetry.baseUrl = s.serverUrl
         server.baseUrl = s.serverUrl
     }

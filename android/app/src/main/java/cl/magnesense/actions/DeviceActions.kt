@@ -41,13 +41,21 @@ class DeviceActions(private val context: Context) {
     @Volatile
     var caregiver = CaregiverConfig()
 
+    /** Si "Luz" tambien prende la linterna del celular (Ajustes → General). */
+    @Volatile
+    var useTorch = false
+        set(value) {
+            if (field && !value) setPhoneTorch(false)
+            field = value
+        }
+
     /** Ejecuta la accion principal del dispositivo (alternar o llamar al cuidador). */
     suspend fun run(device: Device): ActionResult =
         if (device.isCaregiver) callCaregiver(device) else setPower(device, !(isOn.value[device.id] ?: false))
 
-    /** Prende o apaga. Con URL vacia cambia el estado en pantalla y (para Luz) la linterna real del celular. */
+    /** Prende o apaga. Con URL vacia cambia el estado en pantalla y, si se activo, la linterna del celular (Luz). */
     suspend fun setPower(device: Device, on: Boolean): ActionResult {
-        if (device.id == "luz" || device.icon == "bulb" || device.icon == "💡") {
+        if (useTorch && (device.id == "luz" || device.icon == "bulb" || device.icon == "💡")) {
             setPhoneTorch(on)
         }
         val url = if (on) device.onUrl else device.offUrl

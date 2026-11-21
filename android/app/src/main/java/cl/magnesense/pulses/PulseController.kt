@@ -105,6 +105,8 @@ class PulseController(
     private val sounds: SoundPlayer,
     /** Solo actua si el modo elegido es Pulsos y no se esta ensenando un gesto. */
     private val enabled: () -> Boolean,
+    /** Si el comando de luz puede usar la linterna del celular (Ajustes → General). */
+    private val torchAllowed: () -> Boolean,
     private val diag: (String) -> Unit,
     private val history: (HistoryKind, String) -> Unit,
 ) : SensorSink {
@@ -334,6 +336,10 @@ class PulseController(
     }
 
     private fun toggleLight() {
+        if (!torchAllowed()) {
+            log("Linterna desactivada en Ajustes")
+            return
+        }
         val id = torchId
         if (id == null) {
             log("Este celular no tiene linterna")
