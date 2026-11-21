@@ -83,7 +83,7 @@ export default function Pagina({ serie }: { serie: Serie }) {
         <div className="velo" aria-hidden="true" />
         <div className="b-in">
           <h1>Donde se necesita el verde</h1>
-          <p>Calor del suelo, copa de árboles y personas, cuadra por cuadra en todo el Gran Santiago, para decidir por dónde plantar el próximo corredor verde. <em>Cada metro de sombra, donde más alivia.</em></p>
+          <p>Calor del suelo, copa de árboles y personas, cuadra por cuadra, para decidir por dónde plantar el próximo corredor verde. <em>Cada metro de sombra, donde más alivia.</em></p>
           <div className="grupo" style={{ gap: 12 }}>
             <a className="pill llena grande" href="#planificar">Planificar un corredor</a>
             <a className="pill grande" href="#ahora">Ver el calor ahora</a>
