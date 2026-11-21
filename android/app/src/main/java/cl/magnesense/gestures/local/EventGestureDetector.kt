@@ -35,7 +35,18 @@ data class DirectionModel(val u: Vec3, val peak: Double, val minCos: Double = 0.
 }
 
 /** Un evento de un gesto aprendido. [kind]: start | end | short | long | double | drift | stuck | too_strong. */
-data class GestureEvent(val detector: String, val kind: String, val t: Double, val duration: Double? = null, val signal: Double? = null)
+data class GestureEvent(
+    val detector: String,
+    val kind: String,
+    val t: Double,
+    val duration: Double? = null,
+    /** start / too_strong: senal proyectada (µT). */
+    val signal: Double? = null,
+    /** start: umbral; too_strong: tope anti-golpe (µT). */
+    val limit: Double? = null,
+    /** start: coseno entre el cambio y la direccion aprendida. */
+    val cosine: Double? = null,
+)
 
 /**
  * Gesto puntual con duracion minima, histeresis y clasificacion (port de EventDetector).
@@ -93,6 +104,8 @@ class EventGestureDetector(
         return maxOf(maxRatio * d.peak, d.peak + 10 * noise)
     }
 
+    private fun cosineOf(delta: Vec3): Double? = direction?.let { d -> abs(delta dot d.u) / maxOf(delta.norm, 1e-9) }
+
     private fun signalOf(delta: Vec3, raw: Vec3): Pair<Double, Double> {
         val d = direction ?: return delta.norm to raw.norm
         var s = delta dot d.u
@@ -134,7 +147,7 @@ class EventGestureDetector(
             if (cap > 0 && sig > cap && !vetoed) {
                 vetoed = true
                 aboveSince = null
-                ev += GestureEvent(name, "too_strong", t, signal = sig)
+                ev += GestureEvent(name, "too_strong", t, signal = sig, limit = cap)
                 sig = 0.0
             }
             if (sig > thr && rawSig > thr / 2) {
@@ -147,7 +160,7 @@ class EventGestureDetector(
                         active = true
                         activeSince = since
                         belowSince = null
-                        ev += GestureEvent(name, "start", t, signal = sig)
+                        ev += GestureEvent(name, "start", t, signal = sig, limit = thr, cosine = cosineOf(delta))
                     } else if (t - since >= riseWindow) {
                         // Cruzo el umbral sin un cambio rapido: deriva, no gesto.
                         aboveSince = null

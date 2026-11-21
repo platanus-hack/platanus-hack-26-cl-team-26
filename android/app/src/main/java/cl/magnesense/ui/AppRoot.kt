@@ -85,7 +85,7 @@ fun AppRoot(app: MagneSenseApp) {
                         onTeachStarted = { teachRequest = false },
                     )
                     Screen.CALIBRATION -> CalibrationScreen(engine.detector, onDone = { screen = Screen.CONTROL })
-                    Screen.HISTORY -> HistoryScreen(app.history)
+                    Screen.HISTORY -> HistoryScreen(app.history, app.diag)
                     Screen.SETTINGS -> SettingsScreen(app.settings, access.actions, app.telemetry, app.server)
                     Screen.DEBUG -> DebugScreen(engine.detector, app.settings, app.server)
                 }

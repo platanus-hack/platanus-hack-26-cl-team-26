@@ -17,9 +17,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+import cl.magnesense.data.DiagLog
 import cl.magnesense.data.EventLog
 import cl.magnesense.data.HistoryEntry
 import cl.magnesense.data.HistoryKind
+import cl.magnesense.ui.components.BigButton
 import cl.magnesense.ui.components.BigOutlineButton
 import cl.magnesense.ui.components.Panel
 import cl.magnesense.ui.theme.Palette
@@ -28,8 +32,9 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun HistoryScreen(log: EventLog) {
+fun HistoryScreen(log: EventLog, diag: DiagLog) {
     val entries by log.entries.collectAsState()
+    val context = LocalContext.current
     val format = SimpleDateFormat("dd/MM HH:mm:ss", Locale.forLanguageTag("es-CL"))
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -39,6 +44,27 @@ fun HistoryScreen(log: EventLog) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Historial", style = MaterialTheme.typography.headlineMedium, color = Palette.Text)
+            }
+        }
+        item {
+            Panel {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Registro técnico", style = MaterialTheme.typography.titleLarge, color = Palette.Text)
+                    Text(
+                        "Cada gesto con su fuerza, umbral y dirección, los descartes, calibraciones, ejemplos y errores. " +
+                            "Compártelo (WhatsApp, correo…) para revisar qué pasó.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Palette.Muted,
+                    )
+                    BigButton("Compartir registro técnico", {
+                        val send = Intent(Intent.ACTION_SEND)
+                            .setType("text/plain")
+                            .putExtra(Intent.EXTRA_SUBJECT, "MagneSense: registro técnico")
+                            .putExtra(Intent.EXTRA_TEXT, diag.tail().ifEmpty { "(vacío)" })
+                        context.startActivity(Intent.createChooser(send, "Compartir registro").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }, Modifier.fillMaxWidth())
+                    BigOutlineButton("Borrar registro técnico", diag::clear, Modifier.fillMaxWidth())
+                }
             }
         }
         if (entries.isEmpty()) {

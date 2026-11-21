@@ -1,6 +1,7 @@
 package cl.magnesense.gestures
 
 import android.content.Context
+import cl.magnesense.data.HistoryKind
 import cl.magnesense.detector.Vec3
 import cl.magnesense.gestures.local.GestureBank
 import cl.magnesense.gestures.local.GestureSpec
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.Locale
 
 /** Lo que muestra en vivo el asistente de inicio. */
 data class GestureLive(
@@ -41,7 +43,13 @@ data class GestureLive(
  * asi la pantalla de Gestos y el [GestureController] no cambian de forma.
  * Los ejemplos y gestos se guardan en disco y sobreviven al reinicio.
  */
-class LocalGestures(context: Context) : SensorSink {
+class LocalGestures(
+    context: Context,
+    /** Registro tecnico (todo, con numeros). */
+    private val diag: (String) -> Unit = {},
+    /** Historial para el cuidador (solo lo importante). */
+    private val history: (HistoryKind, String) -> Unit = { _, _ -> },
+) : SensorSink {
 
     private val file = File(context.filesDir, FILE_NAME)
     private val bank = GestureBank()
@@ -57,6 +65,8 @@ class LocalGestures(context: Context) : SensorSink {
     val live: StateFlow<GestureLive> = _live.asStateFlow()
 
     private var lastPublish = 0.0
+    private var wasCalibrating = true
+    private var wasMoving = false
 
     init {
         synchronized(lock) { load() }
@@ -67,9 +77,11 @@ class LocalGestures(context: Context) : SensorSink {
         val t = tNanos / NANOS
         val out = synchronized(lock) { bank.step(t, value) }
         for ((e, muted) in out) {
+            report(e, muted)
             // Grabando o recien calibrado: no disparar nada.
             if (!muted) _events.tryEmit(ServerEvent(e.detector, e.kind, t, duration = e.duration))
         }
+        watchTransitions(t)
         if (out.any { it.first.kind in COUNTED } || t - lastPublish >= PUBLISH_S) {
             lastPublish = t
             publish()
@@ -80,15 +92,66 @@ class LocalGestures(context: Context) : SensorSink {
         synchronized(lock) { bank.gyro(tNanos / NANOS, value) }
     }
 
+    private fun report(e: cl.magnesense.gestures.local.GestureEvent, muted: Boolean) {
+        val quiet = if (muted) " [silenciado: calibrando o grabando]" else ""
+        val text = when (e.kind) {
+            "start" -> "Gesto '%s' empezó: señal %.2f µT, umbral %.2f µT, coseno %.2f".format(
+                Locale.US, e.detector, e.signal ?: 0.0, e.limit ?: 0.0, e.cosine ?: 1.0,
+            )
+            "too_strong" -> "Gesto '%s' descartado por golpe: %.1f µT > tope %.1f µT".format(Locale.US, e.detector, e.signal ?: 0.0, e.limit ?: 0.0)
+            "drift" -> "Gesto '${e.detector}': cambio lento (deriva), se toma como reposo nuevo"
+            "stuck" -> "Gesto '${e.detector}': el campo quedó alto más de 6 s (¿imán quieto cerca?)"
+            "end" -> "Gesto '%s' terminó (%.2f s)".format(Locale.US, e.detector, e.duration ?: 0.0)
+            else -> "Gesto '${e.detector}': ${e.kind}"
+        }
+        diag(text + quiet)
+        when (e.kind) {
+            "too_strong" -> history(HistoryKind.IGNORED, "Descartado: golpe más fuerte que lo aprendido ('${e.detector}')")
+            "drift" -> history(HistoryKind.IGNORED, "Descartado: cambio lento ('${e.detector}')")
+        }
+    }
+
+    private fun watchTransitions(t: Double) {
+        val (calibrating, moving, noise) = synchronized(lock) {
+            Triple(bank.pipeline.calibrating, bank.pipeline.phoneMoving(t), bank.pipeline.noise)
+        }
+        if (wasCalibrating && !calibrating) {
+            diag("Calibrado: ruido en reposo σ = %.3f µT".format(Locale.US, noise))
+            history(HistoryKind.CALIBRATION, "Gestos: calibrado (ruido %.2f µT)".format(Locale.US, noise))
+        }
+        if (moving != wasMoving) diag(if (moving) "Celular moviéndose (giroscopio): detección en pausa" else "Celular quieto: nuevo reposo")
+        wasCalibrating = calibrating
+        wasMoving = moving
+    }
+
     /** Mide de nuevo el reposo: 0,5 s descartados (el toque) y 2 s quieto. */
     fun recalibrate() {
         synchronized(lock) { bank.recalibrate() }
+        diag("Recalibrar pedido")
         publish()
     }
 
-    fun startRecording(label: String): String? = synchronized(lock) { bank.startRecording(label) }.also { publish() }
+    fun startRecording(label: String): String? = synchronized(lock) { bank.startRecording(label) }.also {
+        diag(if (it == null) "Grabando ejemplo de '$label'" else "No se pudo grabar '$label': $it")
+        publish()
+    }
 
-    fun stopRecording(): Int = synchronized(lock) { bank.stopRecording().also { save() } }.also { publish() }
+    fun stopRecording(): Int {
+        val (label, n, peak) = synchronized(lock) {
+            val label = bank.recording
+            val n = bank.stopRecording().also { save() }
+            val peak = bank.examples[label]?.lastOrNull()?.maxByOrNull { it.norm }
+            Triple(label, n, peak)
+        }
+        diag(
+            if (peak == null) "Ejemplo de '$label' vacío (sin muestras)"
+            else "Ejemplo %d de '%s': pico %.2f µT, dirección (%.2f, %.2f, %.2f)".format(
+                Locale.US, n, label, peak.norm, peak.x / peak.norm, peak.y / peak.norm, peak.z / peak.norm,
+            ),
+        )
+        publish()
+        return n
+    }
 
     fun clearExamples(label: String) {
         synchronized(lock) {
@@ -107,11 +170,18 @@ class LocalGestures(context: Context) : SensorSink {
             minOnMs = request.minOnMs ?: DEFAULT_MIN_ON_MS,
         )
         val r = synchronized(lock) { bank.train(spec).also { if (it.ok) save() } }
+        diag(
+            if (r.ok) "Gesto '%s' creado: pico %.2f µT, umbral %.2f µT, consistencia %.2f, regla %s, mínimo %d ms%s".format(
+                Locale.US, r.name, r.peak ?: 0.0, r.threshold ?: 0.0, r.consistency ?: 0.0, spec.trigger, spec.minOnMs,
+                r.warning?.let { " · $it" } ?: "",
+            ) else "No se pudo crear '${spec.name}': ${r.error}",
+        )
         publish()
         return TrainResult(ok = r.ok, detector = r.name, error = r.error, consistency = r.consistency, warning = r.warning)
     }
 
     fun removeDetector(name: String) {
+        diag("Gesto '$name' eliminado")
         synchronized(lock) {
             bank.remove(name)
             save()

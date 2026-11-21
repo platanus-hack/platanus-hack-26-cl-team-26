@@ -11,7 +11,7 @@ import kotlin.math.sin
 
 /**
  * Sonidos locales de los gestos, sintetizados en la app (no hay archivos ni internet):
- * una cancion que se pone y se para, y un cuack de pato.
+ * una cancion (suena una vez; el mismo gesto la para antes) y un cuack de pato.
  */
 class SoundPlayer {
 
@@ -23,7 +23,7 @@ class SoundPlayer {
     val songPlaying: Boolean
         @Synchronized get() = songTrack?.playState == AudioTrack.PLAYSTATE_PLAYING
 
-    /** Pone la cancion en bucle, o la para si ya sonaba. Devuelve true si quedo sonando. */
+    /** Pone la cancion (una vez, termina sola), o la para si ya sonaba. Devuelve true si quedo sonando. */
     @Synchronized
     fun toggleSong(): Boolean {
         songTrack?.let {
@@ -33,11 +33,21 @@ class SoundPlayer {
         }
         val track = staticTrack(song) ?: return false
         runCatching {
-            track.setLoopPoints(0, song.size, -1)
+            track.setNotificationMarkerPosition(song.size - 1)
+            track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+                override fun onMarkerReached(t: AudioTrack) = finished(t)
+                override fun onPeriodicNotification(t: AudioTrack) = Unit
+            })
             track.play()
         }
         songTrack = track
         return true
+    }
+
+    @Synchronized
+    private fun finished(t: AudioTrack) {
+        if (songTrack === t) songTrack = null
+        t.release()
     }
 
     @Synchronized

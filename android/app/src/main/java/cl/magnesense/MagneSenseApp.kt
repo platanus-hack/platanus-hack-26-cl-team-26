@@ -4,6 +4,7 @@ import android.app.Application
 import cl.magnesense.actions.CaregiverConfig
 import cl.magnesense.actions.DeviceActions
 import cl.magnesense.data.AppSettings
+import cl.magnesense.data.DiagLog
 import cl.magnesense.data.EventLog
 import cl.magnesense.data.HistoryKind
 import cl.magnesense.data.SettingsStore
@@ -40,6 +41,9 @@ class MagneSenseApp : Application() {
         private set
     lateinit var history: EventLog
         private set
+    /** Registro tecnico para buscar errores (se comparte desde Historial). */
+    lateinit var diag: DiagLog
+        private set
     lateinit var engine: Engine
         private set
     lateinit var access: AccessController
@@ -64,10 +68,13 @@ class MagneSenseApp : Application() {
         super.onCreate()
         settings = SettingsStore(this)
         history = EventLog(this)
+        diag = DiagLog(this)
+        diag.catchCrashes()
+        diag.add("App iniciada (v${packageManager.getPackageInfo(packageName, 0).versionName})")
         speaker = Speaker(this)
         engine = Engine()
         telemetry = TelemetryClient(scope)
-        localGestures = LocalGestures(this)
+        localGestures = LocalGestures(this, diag::add, history::add)
         sounds = SoundPlayer()
         engine.rawListener = Tee(telemetry, localGestures)
         server = ServerSocket(scope)
@@ -90,7 +97,10 @@ class MagneSenseApp : Application() {
             settings = settings.settings,
             speaker = speaker,
             sounds = sounds,
-            log = { history.add(HistoryKind.ACTIVATION, it) },
+            log = {
+                history.add(HistoryKind.ACTIVATION, it)
+                diag.add(it)
+            },
         )
 
         scope.launch { settings.settings.collect(::apply) }
@@ -98,6 +108,7 @@ class MagneSenseApp : Application() {
         scope.launch {
             access.selections.collect { (device, result) ->
                 history.add(if (result.ok) HistoryKind.ACTION else HistoryKind.ACTION_FAILED, result.message)
+                diag.add("${if (result.ok) "Acción" else "ERROR en acción"} ${device.name}: ${result.message}")
                 telemetry.sendEvent(if (result.ok) "selected" else "action_failed", "${device.name}: ${result.message}")
             }
         }
