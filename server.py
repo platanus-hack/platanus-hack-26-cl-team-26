@@ -25,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+from actuators import voice
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -319,6 +320,7 @@ def sample_rate() -> float:
 
 
 async def _call_actuator(on: bool):
+    asyncio.create_task(voice.on_lamp(on))
     url = ACTUATOR_ON_URL if on else ACTUATOR_OFF_URL
     if not url:
         return
