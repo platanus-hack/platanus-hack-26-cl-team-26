@@ -1,4 +1,4 @@
-/* VerdeH3 · concepto B, página que se recorre. Paleta Bioentidad, un solo tema claro a propósito. */
+/* Viridis (antes VerdeH3) · concepto B, página que se recorre. Paleta Bioentidad, un solo tema claro a propósito. */
 :root {
   --crema: #efe9da; --crema2: #f6f1e4; --papel: #fffdf6; --banda: #e8ddbe;
   --oliva: #4f6e31; --oliva-osc: #2f4520; --tinta: #22281a; --texto2: #3f4730; --texto3: #59623f;
@@ -19,8 +19,8 @@ input[type="range"] { accent-color: var(--oliva); width: 100%; height: 28px; mar
 .num { font-variant-numeric: tabular-nums; }
 section[id], footer[id] { scroll-margin-top: 16px; }
 
-.marca { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--f-display); font-weight: 900; font-stretch: 125%; letter-spacing: 0.02em; color: var(--oliva); font-size: 24px; }
-.marca svg { width: 26px; height: 26px; }
+.marca { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--f-display); font-weight: 850; font-stretch: 125%; letter-spacing: 0.02em; color: var(--oliva); font-size: 24px; }
+.marca img { width: 34px; height: 34px; display: block; }
 
 .pill { min-height: 44px; padding: 0 20px; border-radius: 999px; border: 2px solid var(--oliva); background: transparent; color: var(--oliva); font-weight: 700; font-size: 15px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; transition: background-color 0.2s, color 0.2s, transform 0.15s var(--ease-out); }
 .pill:hover { background: rgba(79, 110, 49, 0.08); }

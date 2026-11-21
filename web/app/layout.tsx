@@ -7,7 +7,7 @@ const archivo = Archivo({ subsets: ["latin"], axes: ["wdth"], variable: "--f-arc
 const fraunces = Fraunces({ subsets: ["latin"], style: "italic", variable: "--f-fraunces", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "VerdeH3 · Sombra donde más falta",
+  title: "Viridis · Donde se necesita el verde",
   description: "Calor del suelo, copa de árboles y personas, cuadra por cuadra, para planificar corredores verdes en Santiago.",
 };
 

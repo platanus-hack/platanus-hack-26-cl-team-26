@@ -66,17 +66,13 @@ function Seccion({ id, alt, children }: { id: string; alt?: boolean; children: R
   );
 }
 
-const Hoja = () => (
-  <svg aria-hidden="true" viewBox="0 0 32 32"><path d="M5 27 C 8 14, 16 6, 28 4 C 27 16, 19 25, 5 27Z" fill="#4F6E31" /><path d="M5 27 L 20 12" stroke="#EFE9DA" strokeWidth="1.6" fill="none" /></svg>
-);
-
 export default function Pagina({ serie }: { serie: Serie }) {
   const t = useTerreno();
   return (
     <main className="b">
       <p className="banda">Gran Santiago: 34 comunas y 13.172 cuadras. Calor de la escena Landsat más reciente, del {fechaLarga(serie.lst_fecha_ultima)}.</p>
       <header className="b-pad"><div className="b-in">
-        <a className="marca" href="#inicio"><Hoja />VERDEH3</a>
+        <a className="marca" href="#inicio"><img src="/viridis.svg" alt="" width={34} height={34} />VIRIDIS</a>
         <nav aria-label="Secciones"><a href="#ahora">El calor ahora</a><a href="#planificar">Planificar</a><a href="#historico">Histórico</a><a href="#fuentes">Fuentes</a></nav>
       </div></header>
 
@@ -86,7 +82,7 @@ export default function Pagina({ serie }: { serie: Serie }) {
           sizes="100vw" alt="" aria-hidden="true" fetchPriority="high" decoding="async" />
         <div className="velo" aria-hidden="true" />
         <div className="b-in">
-          <h1>Sombra donde más falta</h1>
+          <h1>Donde se necesita el verde</h1>
           <p>Calor del suelo, copa de árboles y personas, cuadra por cuadra en todo el Gran Santiago, para decidir por dónde plantar el próximo corredor verde. <em>Cada metro de sombra, donde más alivia.</em></p>
           <div className="grupo" style={{ gap: 12 }}>
             <a className="pill llena grande" href="#planificar">Planificar un corredor</a>
