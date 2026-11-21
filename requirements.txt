@@ -14,3 +14,10 @@ requests
 scikit-learn>=1.4
 scipy
 joblib
+# servidor web (mapa + captura en terreno)
+fastapi
+uvicorn
+python-multipart
+pillow
+anthropic
+httpx

@@ -1,0 +1,28 @@
+{
+  "name": "verdeh3-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "datos": "cd .. && python web/scripts/exportar_datos.py",
+    "worker": "node -e \"require('fs').mkdirSync('public/maplibre',{recursive:true});require('fs').copyFileSync('node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs','public/maplibre/maplibre-gl-worker.mjs')\"",
+    "predev": "npm run worker",
+    "dev": "next dev",
+    "prebuild": "npm run worker",
+    "build": "next build",
+    "start": "next start",
+    "api": "cd .. && python -m terreno.servidor --puerto 8000"
+  },
+  "dependencies": {
+    "h3-js": "4.2.1",
+    "maplibre-gl": "6.16.0",
+    "next": "16.4.5",
+    "react": "19.2.9",
+    "react-dom": "19.2.9"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.6",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "typescript": "5.9.2"
+  }
+}
