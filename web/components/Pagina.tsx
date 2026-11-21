@@ -66,26 +66,6 @@ function Seccion({ id, alt, children }: { id: string; alt?: boolean; children: R
   );
 }
 
-function Rama() {
-  const hojas = [
-    ["M100 95 C 70 100, 45 85, 40 70 C 65 60, 90 70, 100 95Z", "#5E7F3E"],
-    ["M150 150 C 150 110, 170 90, 190 85 C 195 120, 180 140, 150 150Z", "#A9BE88"],
-    ["M170 185 C 135 195, 110 185, 100 165 C 130 155, 155 160, 170 185Z", "#4F6E31"],
-    ["M225 245 C 228 205, 250 185, 272 182 C 272 218, 255 238, 225 245Z", "#8FA86B"],
-    ["M245 285 C 210 300, 182 290, 172 270 C 205 258, 230 265, 245 285Z", "#A9BE88"],
-    ["M295 360 C 300 320, 325 300, 345 298 C 343 335, 325 352, 295 360Z", "#5E7F3E"],
-    ["M310 400 C 275 415, 248 405, 238 385 C 270 372, 296 380, 310 400Z", "#8FA86B"],
-    ["M350 470 C 358 432, 382 415, 404 414 C 398 450, 378 466, 350 470Z", "#A9BE88"],
-    ["M365 520 C 330 530, 305 518, 297 498 C 330 488, 352 497, 365 520Z", "#4F6E31"],
-  ];
-  return (
-    <svg className="rama" aria-hidden="true" viewBox="0 0 420 620">
-      <path className="tallo" d="M20 10 C 120 120, 220 260, 300 380 S 390 560, 410 615" fill="none" stroke="#7A6A4F" strokeWidth="3" strokeLinecap="round" />
-      {hojas.map(([d, c], i) => <path key={i} className="hoja" d={d} fill={c} style={{ "--i": i } as React.CSSProperties} />)}
-    </svg>
-  );
-}
-
 const Hoja = () => (
   <svg aria-hidden="true" viewBox="0 0 32 32"><path d="M5 27 C 8 14, 16 6, 28 4 C 27 16, 19 25, 5 27Z" fill="#4F6E31" /><path d="M5 27 L 20 12" stroke="#EFE9DA" strokeWidth="1.6" fill="none" /></svg>
 );
@@ -101,7 +81,10 @@ export default function Pagina({ serie }: { serie: Serie }) {
       </div></header>
 
       <section className="b-hero b-pad" id="inicio">
-        <Rama />
+        {/* Sentinel-2 del 6 de febrero de 2026: el oriente verde, el poniente y el sur en gris. Sin texto encima de la foto. */}
+        <img className="fondo" src="/img/santiago-s2.webp" srcSet="/img/santiago-s2-1200.webp 1200w, /img/santiago-s2.webp 2400w"
+          sizes="100vw" alt="" aria-hidden="true" fetchPriority="high" decoding="async" />
+        <div className="velo" aria-hidden="true" />
         <div className="b-in">
           <h1>Sombra donde más falta</h1>
           <p>Calor del suelo, copa de árboles y personas, cuadra por cuadra en todo el Gran Santiago, para decidir por dónde plantar el próximo corredor verde. <em>Cada metro de sombra, donde más alivia.</em></p>
@@ -129,6 +112,7 @@ export default function Pagina({ serie }: { serie: Serie }) {
         <p><b>Copa de árboles.</b> Modelo propio sobre Sentinel-2 de febrero de 2026, entrenado con la altura de copa de Meta y WRI (r = 0,92 por cuadra en comunas que el modelo no vio).</p>
         <p><b>Personas.</b> Censo 2024 del INE por manzana, más cercanía a colegios, salud, metro y paraderos de OpenStreetMap. No es ingreso.</p>
         <p><b>Aire en vivo y terreno.</b> DMC, SINCA y Sensor.Community por barrio (H3 resolución 7). Fotos y videos con GPS desde el teléfono, validados por Claude; la foto complementa al satélite, no lo reemplaza. Mapa base: CARTO y OpenStreetMap.</p>
+        <p><b>Fondo del titular.</b> Sentinel-2 L2A del 6 de febrero de 2026 (Copernicus, vía Microsoft Planetary Computer), 16 m por píxel: la vegetación en verde según su NDVI y lo construido en gris.</p>
       </div></footer>
     </main>
   );

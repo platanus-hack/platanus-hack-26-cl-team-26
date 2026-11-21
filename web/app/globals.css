@@ -51,7 +51,12 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 .b header nav a:hover { background-size: 100% 2px; }
 
 .b-hero { position: relative; overflow: hidden; border-top: 1px solid var(--salvia3); }
-.b-hero .rama { position: absolute; right: 0; top: -10px; width: min(360px, 40vw); height: auto; pointer-events: none; }
+.b-hero { min-height: min(86vh, 820px); display: flex; align-items: center; background: #d9d6c8; }
+.b-hero .fondo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 60% 50%; pointer-events: none; }
+/* Velo crema a la izquierda para que el titular se lea; a la derecha se ve el oriente verde. */
+.b-hero .velo { position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, rgba(239, 233, 218, 0.94) 0%, rgba(239, 233, 218, 0.86) 38%, rgba(239, 233, 218, 0.35) 68%, rgba(239, 233, 218, 0.05) 100%); }
+.b-hero .b-in { width: 100%; }
 .b-hero .b-in { padding-block: 72px 64px; display: flex; flex-direction: column; gap: 26px; position: relative; }
 .b-hero h1 { margin: 0; max-width: 11ch; font-family: var(--f-display); font-weight: 900; font-stretch: 125%; font-size: clamp(48px, 8vw, 112px); line-height: 0.95; color: var(--oliva); text-transform: uppercase; text-wrap: balance; }
 .b-hero p { margin: 0; max-width: 46ch; font-size: 21px; line-height: 1.5; color: var(--texto2); }
@@ -96,15 +101,13 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 .b footer p { margin: 0; }
 .b footer b { color: var(--oliva-osc); }
 
-/* Entrada de secciones y rama */
+/* Entrada de secciones y del titular */
 .js .revela { opacity: 0; transform: translateY(28px); transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out); }
 .js .revela.visto { opacity: 1; transform: none; }
 .js .revela .escalon { opacity: 0; transform: translateY(14px); transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out); transition-delay: calc(var(--i, 0) * 90ms + 120ms); }
 .js .revela.visto .escalon { opacity: 1; transform: none; }
-.rama .tallo { stroke-dasharray: 900; stroke-dashoffset: 900; animation: trazo 1.6s var(--ease-out) 0.1s forwards; }
-.rama .hoja { transform-box: fill-box; transform-origin: 0% 100%; transform: scale(0); animation: brota 0.7s var(--ease-out) forwards; animation-delay: calc(0.45s + var(--i) * 0.11s); }
-@keyframes trazo { to { stroke-dashoffset: 0; } }
-@keyframes brota { to { transform: scale(1); } }
+.b-hero .fondo { animation: acerca 24s ease-out both; transform-origin: 70% 40%; }
+@keyframes acerca { from { transform: scale(1.08); } to { transform: scale(1); } }
 .b-hero h1, .b-hero .b-in > p, .b-hero .grupo { animation: sube 0.9s var(--ease-out) both; }
 .b-hero .b-in > p { animation-delay: 0.12s; }
 .b-hero .grupo { animation-delay: 0.24s; }
@@ -113,13 +116,12 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .js .revela, .js .revela .escalon { opacity: 1; transform: none; }
-  .rama .tallo { stroke-dashoffset: 0; }
-  .rama .hoja { transform: none; }
 }
 @media (max-width: 700px) {
   .b { border-right-width: 10px; }
   .b-meses { gap: 1px; }
-  .b-hero .rama { opacity: 0.45; }
+  .b-hero .fondo { object-position: 80% 50%; }
+  .b-hero .velo { background: linear-gradient(180deg, rgba(239, 233, 218, 0.86) 0%, rgba(239, 233, 218, 0.72) 75%, rgba(239, 233, 218, 0.35) 100%); }
   .cifra b { font-size: 44px; }
 }
 
