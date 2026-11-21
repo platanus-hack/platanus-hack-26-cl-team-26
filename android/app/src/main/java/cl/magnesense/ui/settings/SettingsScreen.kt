@@ -17,11 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -47,6 +44,7 @@ import cl.magnesense.telemetry.TelemetryClient
 import cl.magnesense.ui.components.AppSlider
 import cl.magnesense.ui.components.BigButton
 import cl.magnesense.ui.components.BigOutlineButton
+import cl.magnesense.ui.components.Field
 import cl.magnesense.ui.components.DeviceIconCatalog
 import cl.magnesense.ui.components.DeviceVectorIcon
 import cl.magnesense.ui.components.Panel
@@ -263,27 +261,6 @@ private fun DeviceEditor(
             }
         }
     }
-}
-
-@Composable
-private fun Field(label: String, value: String, keyboard: KeyboardType = KeyboardType.Text, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboard),
-        textStyle = MaterialTheme.typography.bodyLarge,
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = Palette.Text,
-            unfocusedTextColor = Palette.Text,
-            focusedBorderColor = Palette.Highlight,
-            unfocusedBorderColor = Palette.Border,
-            focusedLabelColor = Palette.Highlight,
-            unfocusedLabelColor = Palette.Muted,
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    )
 }
 
 @Composable

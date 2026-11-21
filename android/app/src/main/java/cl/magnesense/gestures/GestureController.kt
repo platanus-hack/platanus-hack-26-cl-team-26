@@ -52,6 +52,14 @@ class GestureController(
     private val _fired = MutableSharedFlow<GestureFired>(extraBufferCapacity = 16)
     val fired: SharedFlow<GestureFired> = _fired.asSharedFlow()
 
+    /** Mientras se ensena un gesto, el iman local no debe armar el escaneo. */
+    @Volatile
+    var teaching = false
+        set(value) {
+            field = value
+            access.suppressMagnetActivation = value || _status.value.gesturesActive
+        }
+
     private val lastFire = HashMap<String, Long>()
     private var disconnectedSince = 0L
 
@@ -80,7 +88,7 @@ class GestureController(
         }
         if (next == previous) return
         _status.value = next
-        access.suppressMagnetActivation = next.gesturesActive
+        access.suppressMagnetActivation = next.gesturesActive || teaching
         if (previous.chosen == chosen && chosen == ActivationMode.GESTURES) {
             if (next.fallback && previous.gesturesActive) speaker.speak("Sin servidor, vuelvo al escaneo", queue = true)
             if (next.gesturesActive && previous.fallback) speaker.speak("Gestos aprendidos activos", queue = true)

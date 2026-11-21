@@ -32,12 +32,14 @@ import cl.magnesense.ui.control.ConfirmOverlay
 import cl.magnesense.ui.control.ControlScreen
 import cl.magnesense.ui.control.PauseOverlay
 import cl.magnesense.ui.debug.DebugScreen
+import cl.magnesense.ui.gestures.GesturesScreen
 import cl.magnesense.ui.history.HistoryScreen
 import cl.magnesense.ui.settings.SettingsScreen
 import cl.magnesense.ui.theme.Palette
 
 enum class Screen(val label: String) {
     CONTROL("Control"),
+    GESTURES("Gestos"),
     CALIBRATION("Calibrar"),
     HISTORY("Historial"),
     SETTINGS("Ajustes"),
@@ -59,10 +61,11 @@ fun AppRoot(app: MagneSenseApp) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (screen) {
                     Screen.CONTROL -> ControlScreen(app, onCalibrate = { screen = Screen.CALIBRATION })
+                    Screen.GESTURES -> GesturesScreen(app, onOpenSettings = { screen = Screen.SETTINGS })
                     Screen.CALIBRATION -> CalibrationScreen(engine.detector, onDone = { screen = Screen.CONTROL })
                     Screen.HISTORY -> HistoryScreen(app.history)
                     Screen.SETTINGS -> SettingsScreen(app.settings, access.actions, app.telemetry, app.server)
-                    Screen.DEBUG -> DebugScreen(engine.detector, app.settings)
+                    Screen.DEBUG -> DebugScreen(engine.detector, app.settings, app.server)
                 }
             }
         }

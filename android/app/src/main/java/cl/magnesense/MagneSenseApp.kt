@@ -48,7 +48,8 @@ class MagneSenseApp : Application() {
         private set
     lateinit var gestures: GestureController
         private set
-    private lateinit var speaker: Speaker
+    lateinit var speaker: Speaker
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -83,7 +84,7 @@ class MagneSenseApp : Application() {
         scope.launch { engine.events.collect(::onDetectorEvent) }
         scope.launch {
             access.selections.collect { (device, result) ->
-                history.add(if (result.ok) HistoryKind.ACTION else HistoryKind.ACTION_FAILED, "${device.icon} ${result.message}")
+                history.add(if (result.ok) HistoryKind.ACTION else HistoryKind.ACTION_FAILED, result.message)
                 telemetry.sendEvent(if (result.ok) "selected" else "action_failed", "${device.name}: ${result.message}")
             }
         }

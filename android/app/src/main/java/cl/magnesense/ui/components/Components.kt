@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -26,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlin.math.max
 import cl.magnesense.ui.theme.Palette
@@ -181,4 +185,26 @@ fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
             colors = SwitchDefaults.colors(checkedTrackColor = Palette.Highlight, checkedThumbColor = Palette.OnHighlight),
         )
     }
+}
+
+/** Campo de texto de una linea con los colores de la app. */
+@Composable
+fun Field(label: String, value: String, keyboard: KeyboardType = KeyboardType.Text, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboard),
+        textStyle = MaterialTheme.typography.bodyLarge,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = Palette.Text,
+            unfocusedTextColor = Palette.Text,
+            focusedBorderColor = Palette.Highlight,
+            unfocusedBorderColor = Palette.Border,
+            focusedLabelColor = Palette.Highlight,
+            unfocusedLabelColor = Palette.Muted,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }

@@ -250,14 +250,14 @@ private fun ScanProgress(scan: ScanState) {
     }
 }
 
-/** Que hace cada gesto aprendido, p. ej. "izquierda → 💡 Luz". */
+/** Que hace cada gesto aprendido, p. ej. "izquierda → Luz". */
 @Composable
 private fun GestureBindingsRow(bindings: Map<String, String>, devices: List<Device>) {
     val parts = bindings.mapNotNull { (gesture, target) ->
         when (target) {
             AppSettings.BIND_SCAN -> "$gesture → escaneo"
             AppSettings.BIND_NONE -> null
-            else -> devices.firstOrNull { it.id == target }?.let { "$gesture → ${it.icon} ${it.name}" }
+            else -> devices.firstOrNull { it.id == target }?.let { "$gesture → ${it.name}" }
         }
     }
     Text(

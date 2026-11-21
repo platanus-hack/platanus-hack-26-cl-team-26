@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import cl.magnesense.data.SettingsStore
 import cl.magnesense.detector.Detector
 import cl.magnesense.detector.Vec3
+import cl.magnesense.remote.ServerSocket
 import cl.magnesense.sensor.SensorHub
 import cl.magnesense.ui.components.Panel
 import cl.magnesense.ui.components.ScreenColumn
@@ -20,7 +21,8 @@ import java.util.Locale
 
 /** Valores en vivo para la demo y para ajustar parametros. */
 @Composable
-fun DebugScreen(detector: Detector, store: SettingsStore) {
+fun DebugScreen(detector: Detector, store: SettingsStore, server: ServerSocket) {
+    val serverEvents by server.recentEvents.collectAsState()
     val s by SensorHub.snapshot.collectAsState()
     val d by detector.status.collectAsState()
     Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -45,6 +47,15 @@ fun DebugScreen(detector: Detector, store: SettingsStore) {
                 }
             }
             TuningPanel(d, store)
+            Panel {
+                Column {
+                    SectionTitle("Gestos aprendidos (servidor)")
+                    if (serverEvents.isEmpty()) ValueRow("-", "")
+                    for (e in serverEvents.takeLast(8).reversed()) {
+                        ValueRow(e.detector, listOfNotNull(e.kind, e.state, e.duration?.let { "%.2f s".format(Locale.US, it) }).joinToString(" · "))
+                    }
+                }
+            }
             Panel {
                 Column {
                     SectionTitle("Últimos eventos")
