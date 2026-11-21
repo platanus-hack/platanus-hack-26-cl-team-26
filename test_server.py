@@ -78,6 +78,7 @@ def test_app_event_is_broadcast_to_panel():
     c = fresh()
     with c.websocket_connect("/ws") as ws:
         assert ws.receive_json()["type"] == "state"
+        assert ws.receive_json()["type"] == "rules"     # reglas gesto -> accion (fase 3)
         r = c.post("/app-event", json={"type": "selected", "text": "Luz: Encendiendo luz",
                                        "time": 1700000000000, "signal": 12.5})
         assert r.status_code == 200
@@ -93,6 +94,7 @@ def test_websocket_and_csv():
     c = fresh()
     with c.websocket_connect("/ws") as ws:
         assert ws.receive_json()["type"] == "state"
+        assert ws.receive_json()["type"] == "rules"     # reglas gesto -> accion (fase 3)
         c.post("/data", json=batch(1_700_000_000.0, 20, lambda t: 0))
         m = ws.receive_json()
         assert m["type"] == "data" and len(m["points"]) == 20
