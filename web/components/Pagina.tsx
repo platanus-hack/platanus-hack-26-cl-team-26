@@ -114,6 +114,8 @@ export default function Pagina({ serie }: { serie: Serie }) {
 }
 
 const SIN_CORREDOR: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+// Planificar sin nada elegido: todo el mapa con el velo de lo no elegido, detrás de la invitación.
+const TODO_GRIS: Foco = { comunas: [], hexes: [] };
 
 function Esqueletos({ error }: { error: string | null }) {
   return (
@@ -467,9 +469,10 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
         <div className="b-plan">
           <div className="izq escalon" style={est(3)}>
-            <MapaHex {...mapaComun} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={verCorredor ? corredor : SIN_CORREDOR} encuadre={encuadrePlan}
+            <MapaHex {...mapaComun} foco={planListo ? foco : TODO_GRIS} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={verCorredor ? corredor : SIN_CORREDOR} encuadre={encuadrePlan}
               etiqueta="Corredor propuesto sobre la urgencia de cada cuadra">
               {filtro}
+              {!planListo && <div className="gris" aria-hidden="true" />}
               {!planListo && (
                 <div className="invita" role="status">
                   <b>Primero elige dónde</b>

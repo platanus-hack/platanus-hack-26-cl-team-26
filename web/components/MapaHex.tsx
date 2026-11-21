@@ -245,7 +245,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   }, [datos, listo]);
 
   // Lo elegido a color pleno; lo demás atenuado, nunca oculto.
-  const claveFoco = foco ? `${foco.comunas.join()}|${foco.hexes.length}:${foco.hexes.slice(0, 50).join()}` : "";
+  const claveFoco = foco ? `f:${foco.comunas.join()}|${foco.hexes.length}:${foco.hexes.slice(0, 50).join()}` : "";
   useEffect(() => {
     const m = mapa.current;
     if (!listo || !m) return;
