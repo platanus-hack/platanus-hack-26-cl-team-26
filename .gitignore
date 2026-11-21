@@ -11,7 +11,5 @@ datos/cache/*.part
 datos/cache/osmnx/
 datos/cache/red_cruda_*.pkl
 
-# Rol 2: credenciales y archivos de trabajo del ciclo en vivo
-.env
-*.tmp
-data/vivo_estado.json
+# Binarios y túneles locales
+/bin/

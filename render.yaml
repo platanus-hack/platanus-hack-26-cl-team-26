@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: verdeh3-santiago
+    runtime: docker
+    plan: starter
+    region: oregon
+    envVars:
+      - key: PORT
+        value: 8501
+    healthCheckPath: /_stcore/health
