@@ -12,5 +12,6 @@ datos/cache/osmnx/
 datos/cache/red_cruda_*.pkl
 # fotos de terreno: pueden tener caras o patentes
 data/terreno/fotos/
+data/terreno/videos/
 # API key local de Anthropic para terreno/servidor.py
 .anthropic_key

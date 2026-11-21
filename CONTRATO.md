@@ -90,6 +90,9 @@ Sección nueva y aditiva: no cambia las tablas de arriba. Avisar a Rol 3 (mapa) 
 el teléfono; las capturas crudas quedan en `data/terreno/capturas.jsonl` (con `valida`: true, false o null).
 Una fila por hexágono res 9 con fotos que cuentan: solo las que Claude valida como exteriores de calle o espacio
 público. Las descartadas nunca entran; las sin validar (sin Claude) solo con `--aceptar-sin-validar`.
+Cada captura trae `lat`, `lon`, `precision_m`, `tomado_en` (hora del teléfono, UTC) y `medido_en` (hora del
+servidor, UTC); las que vienen de un video traen además `video_id` y `t_video_s`. Los recorridos en video, con su
+trazado GPS punto a punto, quedan en `data/terreno/recorridos.jsonl`.
 
 | Columna | Tipo | Qué es |
 |---|---|---|

@@ -93,6 +93,12 @@ cloudflared tunnel --url http://localhost:8000     # entrega https://<algo>.tryc
 - Teléfono: `https://<algo>.trycloudflare.com/?k=una-clave` (el GPS del navegador exige HTTPS). Aceptar la
   ubicación, esperar precisión ≤ 30 m, «Tomar foto», «Subir captura».
 - Mapa para proyectar: `http://localhost:8000/mapa` (se actualiza cada 3 s).
+- Video: «Grabar recorrido» graba dentro de la página (máx. 3 min) mientras registra el trazado GPS; cada 3 s
+  guarda un cuadro con su posición y hora. Al subirlo se analizan hasta 12 cuadros (2 por hexágono como máximo),
+  cada uno valida su propio hexágono, y el mapa dibuja el recorrido en morado con enlace al video. No se aceptan
+  videos de la galería: sin trazado GPS no se sabe dónde fue cada cuadro.
+- Cada captura guarda posición (lat, lon, precisión del GPS en m), `tomado_en` (hora del teléfono) y `medido_en`
+  (hora de llegada al servidor).
 - Claude: usa `ANTHROPIC_API_KEY`, un perfil de `ant auth login` o la key sola en `.anthropic_key` (raíz del
   repo, en `.gitignore`). Claude primero valida que sea una foto
   exterior de calle o espacio público (descarta interiores, vistas desde ventanas, pantallas, primeros planos).

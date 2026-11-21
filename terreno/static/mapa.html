@@ -38,6 +38,7 @@
     <div><span style="border-top:4px solid #0b5cad"></span>Corredor ahora</div>
     <div><span style="border-top:3px solid #e0a100"></span>Verificado en terreno</div>
     <div>Punto azul: foto válida · gris: descartada o sin validar</div>
+    <div><span style="border-top:4px solid #7b2cbf"></span>Recorrido grabado en video</div>
     <div>Relleno: urgencia (amarillo → rojo), parques en verde</div>
   </div>
 </div>
@@ -63,7 +64,7 @@ function fila(nombre, a, n, mejorSiSube = true) {
 async function actualizar() {
   let d;
   try { d = await (await fetch("/api/estado")).json(); } catch { return; }
-  const nueva = JSON.stringify([d.capturas.length, d.ahora]);
+  const nueva = JSON.stringify([d.capturas.length, (d.recorridos || []).length, d.ahora]);
   if (nueva === firma) return;
   const primera = firma === "";
   firma = nueva;
@@ -83,6 +84,14 @@ async function actualizar() {
     L.polygon(h.pol, { fill: false, color: "#e0a100", weight: 3, dashArray: h.ahora ? null : "2 4" }).addTo(capaHex);
 
   capaCap.clearLayers();
+  for (const r of d.recorridos || []) {
+    if (r.linea.length < 2) continue;
+    const hora = r.inicio ? new Date(r.inicio).toLocaleString("es-CL") : "";
+    L.polyline(r.linea, { color: "#7b2cbf", weight: 4, opacity: .85 })
+      .bindPopup(`<div class="pop"><strong>Recorrido en video</strong><br>${esc(hora)} · ${Math.round(r.duracion_s)} s` +
+        (r.archivo ? `<br><a href="/videos/${esc(r.archivo)}" target="_blank" rel="noopener">Ver video</a>` : "") + "</div>")
+      .addTo(capaCap);
+  }
   for (const c of d.capturas) {
     const fuente = c.fuente === "claude" ? "Claude" : "índice de verde";
     if (c.validacion === "descartada") {
@@ -94,7 +103,8 @@ async function actualizar() {
       .bindPopup(`<div class="pop"><img src="/fotos/${esc(c.id)}_min.jpg" alt="Foto de terreno">
         Árboles ${Math.round(c.arbol_pct)} % (${fuente}) · plantable: ${esc(c.espacio_plantable ?? "sin estimar")}<br>
         ${c.obstaculos?.length ? "Obstáculos: " + c.obstaculos.map(esc).join(", ") + "<br>" : ""}
-        <small>${esc(c.descripcion)}</small>${c.cuenta ? "" : "<br><strong>Sin validar: no cuenta</strong>"}</div>`).addTo(capaCap);
+        <small>${esc(c.descripcion)}</small>${c.cuenta ? "" : "<br><strong>Sin validar: no cuenta</strong>"}
+        <br><small>${esc(new Date(c.tomado_en || c.medido_en).toLocaleString("es-CL"))} · GPS ±${Math.round(c.precision_m ?? 0)} m${c.video_id ? ` · cuadro del video, ${Math.round(c.t_video_s ?? 0)} s` : ""}</small></div>`).addTo(capaCap);
   }
 
   const a = d.antes, n = d.ahora;

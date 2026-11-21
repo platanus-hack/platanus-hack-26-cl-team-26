@@ -2,6 +2,11 @@
 
 - data/terreno/capturas.jsonl: una captura por línea (se puede versionar y repetir en la demo).
 - data/terreno/fotos/<id>.jpg y <id>_min.jpg: foto re-codificada (sin EXIF) y miniatura. No se versionan.
+- data/terreno/recorridos.jsonl: un video por línea, con su trazado GPS (posición y hora de cada punto).
+- data/terreno/videos/<id>.<ext>: el video grabado. No se versiona.
+
+Tiempos: `tomado_en` es la hora del teléfono al tomar la foto o el cuadro; `medido_en` es la hora en que llegó
+al servidor (UTC). Posición: lat, lon y precision_m del GPS del teléfono en ese momento.
 - data/terreno_h3.parquet: una fila por hexágono res 9 con capturas que cuentan.
 
 Cuentan las capturas válidas (Claude dijo que es una foto exterior de calle o espacio público). Las
@@ -45,6 +50,9 @@ class Almacen:
         self.dir = self.data / "terreno"
         self.fotos = self.dir / "fotos"
         self.jsonl = self.dir / "capturas.jsonl"
+        self.videos = self.dir / "videos"
+        self.recorridos_jsonl = self.dir / "recorridos.jsonl"
+        self.videos.mkdir(parents=True, exist_ok=True)
         self.parquet = self.data / "terreno_h3.parquet"
         self.fotos.mkdir(parents=True, exist_ok=True)
 
@@ -54,8 +62,31 @@ class Almacen:
         with self.jsonl.open(encoding="utf-8") as f:
             return [json.loads(l) for l in f if l.strip()]
 
+    def recorridos(self) -> list[dict]:
+        if not self.recorridos_jsonl.exists():
+            return []
+        with self.recorridos_jsonl.open(encoding="utf-8") as f:
+            return [json.loads(l) for l in f if l.strip()]
+
+    def guardar_video(self, video: bytes | None, ext: str, inicio: str | None, track: list[dict],
+                      n_cuadros: int, nota: str = "") -> dict:
+        ahora = datetime.now(timezone.utc)
+        vid = f"{ahora:%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
+        archivo = None
+        if video:
+            archivo = f"{vid}.{ext}"
+            (self.videos / archivo).write_bytes(video)
+        t = [p.get("t_s", 0) for p in track]
+        rec = {"id": vid, "medido_en": ahora.isoformat(), "inicio": hora(inicio), "archivo": archivo,
+               "duracion_s": round(max(t) - min(t), 1) if t else 0, "n_cuadros": n_cuadros,
+               "nota": nota[:200], "track": track}
+        with self.recorridos_jsonl.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        return rec
+
     def guardar(self, foto: bytes, lat: float, lon: float, precision_m: float | None = None,
-                rumbo: float | None = None, nota: str = "", obs: dict | None = None) -> dict:
+                rumbo: float | None = None, nota: str = "", obs: dict | None = None,
+                tomado_en: str | None = None, extra: dict | None = None) -> dict:
         ahora = datetime.now(timezone.utc)
         cid = f"{ahora:%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
         img = ImageOps.exif_transpose(Image.open(io.BytesIO(foto))).convert("RGB")  # sin EXIF al guardar
@@ -64,9 +95,9 @@ class Almacen:
         img.thumbnail((320, 320))
         img.save(self.fotos / f"{cid}_min.jpg", "JPEG", quality=80)
         hx = h3.latlng_to_cell(lat, lon, RES)
-        cap = {"id": cid, "medido_en": ahora.isoformat(), "lat": lat, "lon": lon,
+        cap = {"id": cid, "medido_en": ahora.isoformat(), "tomado_en": hora(tomado_en), "lat": lat, "lon": lon,
                "precision_m": precision_m, "rumbo": rumbo, "nota": nota[:200],
-               "h3_index": hx, "h3_padre": h3.cell_to_parent(hx, 7), **(obs or {})}
+               "h3_index": hx, "h3_padre": h3.cell_to_parent(hx, 7), **(extra or {}), **(obs or {})}
         with self.jsonl.open("a", encoding="utf-8") as f:
             f.write(json.dumps(cap, ensure_ascii=False) + "\n")
         return cap
@@ -75,6 +106,17 @@ class Almacen:
         df = terreno_h3([c for c in self.capturas() if cuenta(c, self.aceptar_sin_validar)])
         df.to_parquet(self.parquet, index=False)
         return df
+
+
+def hora(texto: str | None) -> str | None:
+    """Hora ISO 8601 del teléfono normalizada a UTC, o None si no viene o no se entiende."""
+    if not texto:
+        return None
+    try:
+        t = datetime.fromisoformat(str(texto).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).isoformat()
 
 
 def terreno_h3(capturas: list[dict]) -> pd.DataFrame:

@@ -13,10 +13,12 @@ Credenciales de Claude: ANTHROPIC_API_KEY, un perfil de `ant auth login`, o la c
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import h3
@@ -31,6 +33,12 @@ from terreno.vision import analizar
 ESTATICO = Path(__file__).resolve().parent / "static"
 MAX_FOTO_BYTES = 15 * 1024 * 1024
 FOTO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}(_min)?\.jpg$")
+VIDEO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}\.(webm|mp4|mov)$")
+MAX_VIDEO_BYTES = 80 * 1024 * 1024
+MAX_CUADROS_RECIBIDOS = 40
+MAX_CUADROS_ANALIZADOS = 12   # cada cuadro analizado es una llamada a Claude
+CUADROS_POR_HEX = 2
+EXT_VIDEO = {"video/webm": "webm", "video/mp4": "mp4", "video/quicktime": "mov"}
 log = logging.getLogger("terreno")
 
 
@@ -38,6 +46,40 @@ def _resumen(r: dict) -> dict:
     return {"hexes": len(r["hexes"]), "km": round(r["length_km"], 2),
             "urgencia_cubierta": round(r["urgencia_cubierta"], 3), "urgencia_azar": round(r["urgencia_azar"], 3),
             "personas_cubiertas": r["personas_cubiertas"], "verificados": r.get("verificados", 0)}
+
+
+def _num(x, lo=None, hi=None):
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    if v != v or (lo is not None and v < lo) or (hi is not None and v > hi):
+        return None
+    return v
+
+
+def _punto(p: dict) -> dict | None:
+    """Punto GPS del teléfono, solo con campos conocidos y en rango."""
+    lat, lon = _num(p.get("lat"), -90, 90), _num(p.get("lon"), -180, 180)
+    if lat is None or lon is None:
+        return None
+    return {"lat": lat, "lon": lon, "precision_m": _num(p.get("precision_m"), 0), "t_s": _num(p.get("t_s"), 0),
+            "tomado_en": p.get("tomado_en") if isinstance(p.get("tomado_en"), str) else None}
+
+
+def elegir_cuadros(cuadros: list[dict], maximo: int = MAX_CUADROS_ANALIZADOS) -> list[int]:
+    """Índices de cuadros a analizar: hasta CUADROS_POR_HEX por hexágono, primero uno por hexágono (en orden)."""
+    grupos: dict[str, list[int]] = {}
+    for i, c in enumerate(cuadros):
+        grupos.setdefault(h3.latlng_to_cell(c["lat"], c["lon"], 9), []).append(i)
+    rondas = [[g[0] for g in grupos.values()],
+              [g[len(g) // 2] for g in grupos.values() if len(g) > 1]]  # el del medio de su tramo
+    elegidos: list[int] = []
+    for ronda in rondas[:CUADROS_POR_HEX]:
+        for i in ronda:
+            if len(elegidos) < maximo and i not in elegidos:
+                elegidos.append(i)
+    return sorted(elegidos)
 
 
 def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = Path("data"),
@@ -74,7 +116,7 @@ def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = P
     @app.post("/api/captura")
     def captura(foto: UploadFile = File(...), lat: float = Form(...), lon: float = Form(...),
                 precision_m: float | None = Form(None), rumbo: float | None = Form(None),
-                nota: str = Form(""), k: str | None = Query(None)):
+                nota: str = Form(""), tomado_en: str | None = Form(None), k: str | None = Query(None)):
         revisar_clave(k)
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
             raise HTTPException(422, "Coordenadas fuera de rango")
@@ -87,7 +129,7 @@ def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = P
             raise HTTPException(422, "No se pudo leer la imagen")
         with lock:
             previo = estado["ahora"]
-            cap = alm.guardar(datos_foto, lat, lon, precision_m, rumbo, nota, obs)
+            cap = alm.guardar(datos_foto, lat, lon, precision_m, rumbo, nota, obs, tomado_en)
             recalcular()
             ahora = estado["ahora"]
         return {
@@ -96,6 +138,66 @@ def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = P
             "cuenta": cuenta(cap, aceptar_sin_validar),
             "fuera_de_area": cap["h3_index"] not in hex_area,
             "en_corredor": cap["h3_index"] in ahora["hexes"],
+            "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
+            "antes": _resumen(antes), "previo": _resumen(previo), "ahora": _resumen(ahora),
+        }
+
+    @app.post("/api/video")
+    def subir_video(cuadros: list[UploadFile] = File(...), meta: str = Form(...),
+                    video: UploadFile | None = File(None), k: str | None = Query(None)):
+        """Video grabado en la página: cuadros JPEG con su posición y hora, más el trazado GPS del recorrido."""
+        revisar_clave(k)
+        try:
+            m = json.loads(meta)
+            info = [_punto(c) for c in m["cuadros"]]
+            track = [x for x in (_punto(p) for p in m.get("track", [])[:5000]) if x]
+        except (ValueError, KeyError, TypeError, AttributeError):
+            raise HTTPException(422, "meta inválido")
+        if not cuadros or len(cuadros) != len(info) or len(cuadros) > MAX_CUADROS_RECIBIDOS:
+            raise HTTPException(422, f"Entre 1 y {MAX_CUADROS_RECIBIDOS} cuadros, cada uno con su posición")
+        validos = [i for i, c in enumerate(info) if c]
+        if not validos:
+            raise HTTPException(422, "Ningún cuadro trae posición GPS")
+        vbytes, ext = None, None
+        if video is not None:
+            ext = EXT_VIDEO.get((video.content_type or "").split(";")[0])
+            if ext is None:
+                raise HTTPException(415, "Formato de video no soportado (webm, mp4 o mov)")
+            vbytes = video.file.read(MAX_VIDEO_BYTES + 1)
+            if len(vbytes) > MAX_VIDEO_BYTES:
+                raise HTTPException(413, "Video de más de 80 MB")
+        sel = [validos[i] for i in elegir_cuadros([info[i] for i in validos])]
+        imgs = [cuadros[i].file.read(MAX_FOTO_BYTES + 1) for i in sel]
+
+        def analizar_seguro(b):
+            try:
+                return analizar(b, usar_claude) if len(b) <= MAX_FOTO_BYTES else None
+            except Exception:
+                return None
+
+        with ThreadPoolExecutor(4) as ex:
+            resultados = list(ex.map(analizar_seguro, imgs))
+        with lock:
+            previo = estado["ahora"]
+            rec = alm.guardar_video(vbytes, ext, m.get("inicio"), track, len(sel), str(m.get("nota", "")))
+            caps = []
+            for i, img, obs in zip(sel, imgs, resultados):
+                if obs is None:
+                    continue
+                c = info[i]
+                caps.append(alm.guardar(img, c["lat"], c["lon"], c["precision_m"], None, "", obs, c["tomado_en"],
+                                        extra={"video_id": rec["id"], "t_video_s": c["t_s"]}))
+            recalcular()
+            ahora = estado["ahora"]
+        estados = [estado_validacion(c) for c in caps]
+        return {
+            "recorrido": {k2: rec[k2] for k2 in ("id", "inicio", "duracion_s", "archivo")},
+            "cuadros_recibidos": len(cuadros), "cuadros_analizados": len(caps),
+            "validos": estados.count("valida"), "descartados": estados.count("descartada"),
+            "sin_validar": estados.count("sin_validar"),
+            "hexagonos": sorted({c["h3_index"] for c in caps if cuenta(c, aceptar_sin_validar)}),
+            "fuera_de_area": sum(c["h3_index"] not in hex_area for c in caps),
+            "motivos_descarte": sorted({c.get("motivo_rechazo", "") for c in caps if c.get("valida") is False} - {""}),
             "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
             "antes": _resumen(antes), "previo": _resumen(previo), "ahora": _resumen(ahora),
         }
@@ -112,7 +214,17 @@ def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = P
         hexes = [{"h": h, "pol": poligonos[h], "u": round(float(u), 3), "parque": bool(p),
                   "antes": h in en_antes, "ahora": h in en_ahora, "verificado": h in verif}
                  for h, u, p in zip(df["h3_index"], U, df["es_parque"])]
-        return {"hexes": hexes, "capturas": caps, "antes": _resumen(antes), "ahora": _resumen(ahora)}
+        recorridos = [{"id": r["id"], "inicio": r.get("inicio"), "duracion_s": r.get("duracion_s"),
+                       "archivo": r.get("archivo"), "linea": [[p["lat"], p["lon"]] for p in r.get("track", [])]}
+                      for r in alm.recorridos()]
+        return {"hexes": hexes, "capturas": caps, "recorridos": recorridos,
+                "antes": _resumen(antes), "ahora": _resumen(ahora)}
+
+    @app.get("/videos/{nombre}")
+    def videos(nombre: str):
+        if not VIDEO_OK.match(nombre) or not (alm.videos / nombre).exists():
+            raise HTTPException(404)
+        return FileResponse(alm.videos / nombre)
 
     @app.get("/fotos/{nombre}")
     def fotos(nombre: str):

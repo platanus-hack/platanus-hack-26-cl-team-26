@@ -167,6 +167,60 @@ def test_servidor():
         assert r.status_code == 422
 
 
+
+def test_elegir_cuadros():
+    from terreno.servidor import elegir_cuadros
+    df = pd.read_parquet(DEMO)
+    h1, h2 = df["h3_index"].iloc[0], df["h3_index"].iloc[1]
+    p1, p2 = h3.cell_to_latlng(h1), h3.cell_to_latlng(h2)
+    cuadros = [dict(lat=p1[0], lon=p1[1])] * 5 + [dict(lat=p2[0], lon=p2[1])] * 2
+    assert elegir_cuadros(cuadros) == [0, 2, 5, 6]          # primero y del medio de cada tramo
+    assert elegir_cuadros(cuadros, maximo=2) == [0, 5]      # con tope, uno por hexágono primero
+
+
+def test_video():
+    """Un recorrido: cuadros con posición y hora, trazado GPS y video; quedan guardados y cuentan si son válidos."""
+    import json
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    df = pd.read_parquet(DEMO)
+    hexes = [h for h in solve_corridor(df)["hexes"] if not df.set_index("h3_index").loc[h, "es_parque"]][:2]
+    pts = [h3.cell_to_latlng(h) for h in hexes]
+    cuadros = [{"lat": la, "lon": lo, "precision_m": 6, "t_s": 3 * i, "tomado_en": f"2026-11-21T18:00:0{i}Z"}
+               for i, (la, lo) in enumerate([pts[0], pts[0], pts[1]])]
+    track = [{**c, "t_s": c["t_s"]} for c in cuadros] + [{"lat": "malo", "lon": 0}]
+    meta = json.dumps({"inicio": "2026-11-21T15:00:00-03:00", "cuadros": cuadros, "track": track})
+    archivos = [("cuadros", (f"c{i}.jpg", jpeg((128, 128, 128)), "image/jpeg")) for i in range(3)]
+    archivos.append(("video", ("r.webm", b"video falso", "video/webm")))
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(DEMO, Path(tmp)))
+        deshacer = con_claude(obs(True, "mucho"))
+        try:
+            r = c.post("/api/video", data={"meta": meta}, files=archivos)
+        finally:
+            deshacer()
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["cuadros_recibidos"] == 3 and d["cuadros_analizados"] == 3 and d["validos"] == 3
+        assert sorted(d["hexagonos"]) == sorted(hexes)
+        assert d["recorrido"]["inicio"] == "2026-11-21T18:00:00+00:00" and d["recorrido"]["duracion_s"] == 6
+        e = c.get("/api/estado").json()
+        assert len(e["recorridos"]) == 1 and len(e["recorridos"][0]["linea"]) == 3  # el punto malo se descarta
+        caps = e["capturas"]
+        assert {x["video_id"] for x in caps} == {d["recorrido"]["id"]}
+        assert caps[0]["tomado_en"] == "2026-11-21T18:00:00+00:00" and caps[0]["precision_m"] == 6
+        assert c.get(f"/videos/{d['recorrido']['archivo']}").status_code == 200
+        malo = c.post("/api/video", data={"meta": "{}"}, files=archivos[:1])
+        assert malo.status_code == 422
+        # foto suelta: guarda la hora del teléfono
+        hx = hexes[0]
+        la, lo = h3.cell_to_latlng(hx)
+        f = c.post("/api/captura", data={"lat": la, "lon": lo, "tomado_en": "2026-11-21T15:30:00-03:00"},
+                   files={"foto": ("c.jpg", jpeg((90, 90, 90)), "image/jpeg")}).json()
+        assert f["captura"]["tomado_en"] == "2026-11-21T18:30:00+00:00" and f["captura"]["medido_en"]
+
+
 if __name__ == "__main__":
     for nombre, f in list(globals().items()):
         if nombre.startswith("test_"):

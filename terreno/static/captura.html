@@ -20,6 +20,8 @@
     font-size:1.1rem; font-weight:600; background:var(--verde); color:#fff; cursor:pointer; }
   button.sec { background:#fff; color:var(--verde); border:2px solid var(--verde); margin-top:8px; padding:12px; }
   button:disabled { opacity:.5; }
+  button.grabando { background:#b3261e; }
+  video.prev { background:#000; }
   input[type=file] { display:none; }
   textarea { width:100%; border:1px solid var(--borde); border-radius:8px; padding:8px; font:inherit; min-height:44px; }
   img.prev { width:100%; border-radius:8px; margin:10px 0; display:none; }
@@ -47,11 +49,19 @@
     <p id="estado" class="sub" style="margin:8px 0 0"></p>
   </div>
 
+  <div class="card">
+    <button id="grabar">🎥 Grabar recorrido</button>
+    <video id="vivo" class="prev" playsinline muted></video>
+    <p id="vEstado" class="sub" style="margin:8px 0 0">Graba caminando por el corredor: cada 3 s se guarda un cuadro
+      con su posición GPS y su hora. Máximo 3 minutos.</p>
+    <button id="subirVideo" class="sec" disabled>Subir video</button>
+  </div>
+
   <div class="card res oculto" id="res"></div>
 </main>
 <script>
 const k = new URLSearchParams(location.search).get("k");
-let pos = null, rumbo = null, blob = null;
+let pos = null, rumbo = null, blob = null, fotoT = null;
 const $ = id => document.getElementById(id);
 
 if (!("geolocation" in navigator) || !isSecureContext) {
@@ -60,6 +70,7 @@ if (!("geolocation" in navigator) || !isSecureContext) {
 } else {
   navigator.geolocation.watchPosition(p => {
     pos = p.coords;
+    puntoTrack();
     const acc = Math.round(pos.accuracy);
     $("gps").className = "card gps " + (acc <= 30 ? "ok" : "mal");
     $("gpsTxt").innerHTML = `GPS ±${acc} m<br><small>${pos.latitude.toFixed(5)}, ${pos.longitude.toFixed(5)}${acc > 30 ? " · espera a que mejore" : ""}</small>`;
@@ -89,6 +100,7 @@ $("foto").addEventListener("change", async ev => {
   c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
   c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
   blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85));
+  fotoT = new Date().toISOString();
   $("prev").src = URL.createObjectURL(blob); $("prev").style.display = "block";
   $("estado").textContent = "";
   habilitar();
@@ -104,6 +116,7 @@ $("enviar").addEventListener("click", async () => {
   fd.append("precision_m", pos.accuracy);
   if (rumbo != null) fd.append("rumbo", Math.round(rumbo));
   fd.append("nota", $("nota").value);
+  if (fotoT) fd.append("tomado_en", fotoT);
   try {
     const r = await fetch("/api/captura" + (k ? "?k=" + encodeURIComponent(k) : ""), { method: "POST", body: fd });
     const d = await r.json();
@@ -144,6 +157,127 @@ function mostrar(d) {
     <div class="cambio ${d.corredor_cambio ? "" : "no"}">
       ${d.corredor_cambio ? "<strong>El corredor cambió.</strong>" : "El corredor se mantiene."}
       ${d.en_corredor ? " Este hexágono está en el corredor." : ""}<br>
+      Urgencia cubierta ${a.urgencia_cubierta} → ${n.urgencia_cubierta} ·
+      personas ${a.personas_cubiertas.toLocaleString("es-CL")} → ${n.personas_cubiertas.toLocaleString("es-CL")} ·
+      verificados ${n.verificados}
+    </div>`;
+}
+// ---------- Video: grabación en la página, con trazado GPS y un cuadro cada 3 s ----------
+const CADA_MS = 3000, MAX_CUADROS = 40, MAX_S = 180, MAX_VIDEO = 80 * 1024 * 1024;
+let rec = null, stream = null, partes = [], cuadros = [], track = [], t0 = 0, inicio = null, reloj = null, videoBlob = null;
+const seg = () => (performance.now() - t0) / 1000;
+
+function tipoVideo() {
+  if (!window.MediaRecorder) return null;
+  for (const t of ["video/mp4", "video/webm;codecs=vp9", "video/webm"]) if (MediaRecorder.isTypeSupported(t)) return t;
+  return "";
+}
+
+function puntoTrack() {
+  if (rec && pos) track.push({ lat: pos.latitude, lon: pos.longitude, precision_m: pos.accuracy,
+    t_s: +seg().toFixed(1), tomado_en: new Date().toISOString() });
+}
+
+async function cuadro() {
+  const v = $("vivo");
+  if (!pos || !v.videoWidth) return;
+  const s = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+  const meta = { lat: pos.latitude, lon: pos.longitude, precision_m: pos.accuracy,
+                 t_s: +seg().toFixed(1), tomado_en: new Date().toISOString() };
+  const b = await new Promise(r => c.toBlob(r, "image/jpeg", 0.8));
+  if (b) cuadros.push({ blob: b, ...meta });
+}
+
+function estadoVideo() {
+  $("vEstado").textContent = `● Grabando ${Math.round(seg())} s · ${cuadros.length} cuadros · ${track.length} puntos GPS` +
+    (pos && pos.accuracy > 30 ? " · GPS impreciso" : "");
+}
+
+async function iniciarVideo() {
+  const tipo = tipoVideo();
+  if (tipo === null || !navigator.mediaDevices?.getUserMedia) {
+    $("vEstado").innerHTML = '<span class="error">Este navegador no puede grabar video en la página.</span>'; return;
+  }
+  if (!pos) { $("vEstado").innerHTML = '<span class="error">Espera a tener GPS antes de grabar.</span>'; return; }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false });
+  } catch (e) { $("vEstado").innerHTML = `<span class="error">Sin cámara: ${esc(e.message)}</span>`; return; }
+  const v = $("vivo"); v.srcObject = stream; v.style.display = "block"; await v.play();
+  partes = []; cuadros = []; track = []; videoBlob = null; t0 = performance.now(); inicio = new Date().toISOString();
+  rec = new MediaRecorder(stream, { ...(tipo ? { mimeType: tipo } : {}), videoBitsPerSecond: 1_500_000 });
+  rec.ondataavailable = e => { if (e.data.size) partes.push(e.data); };
+  rec.onstop = () => {
+    videoBlob = new Blob(partes, { type: (rec.mimeType || tipo || "video/webm").split(";")[0] });
+    const mb = (videoBlob.size / 1048576).toFixed(1);
+    $("vEstado").textContent = `Listo: ${Math.round(track.at(-1)?.t_s ?? 0)} s, ${cuadros.length} cuadros, ${track.length} puntos GPS, ${mb} MB.` +
+      (videoBlob.size > MAX_VIDEO ? " El video pesa demasiado: se subirán solo los cuadros." : "");
+    $("subirVideo").disabled = !cuadros.length;
+    rec = null;
+  };
+  rec.start(1000);
+  puntoTrack(); cuadro();
+  reloj = setInterval(() => {
+    cuadro(); estadoVideo();
+    if (seg() >= MAX_S || cuadros.length >= MAX_CUADROS) detenerVideo();
+  }, CADA_MS);
+  $("grabar").textContent = "⏹ Detener"; $("grabar").classList.add("grabando"); $("subirVideo").disabled = true;
+  estadoVideo();
+}
+
+function detenerVideo() {
+  clearInterval(reloj);
+  puntoTrack();
+  if (rec && rec.state !== "inactive") rec.stop();
+  stream?.getTracks().forEach(t => t.stop());
+  $("vivo").style.display = "none";
+  $("grabar").textContent = "🎥 Grabar otro recorrido"; $("grabar").classList.remove("grabando");
+}
+
+$("grabar").addEventListener("click", () => rec ? detenerVideo() : iniciarVideo());
+
+$("subirVideo").addEventListener("click", async () => {
+  $("subirVideo").disabled = true;
+  $("vEstado").textContent = "Subiendo y analizando cuadros… (puede tardar 30 s o más)";
+  const fd = new FormData();
+  cuadros.forEach((c, i) => fd.append("cuadros", c.blob, `cuadro${i}.jpg`));
+  fd.append("meta", JSON.stringify({ inicio, nota: $("nota").value, track,
+    cuadros: cuadros.map(({ blob, ...m }) => m) }));
+  if (videoBlob && videoBlob.size <= MAX_VIDEO) {
+    const ext = videoBlob.type.includes("mp4") ? "mp4" : "webm";
+    fd.append("video", videoBlob, "recorrido." + ext);
+  }
+  try {
+    const r = await fetch("/api/video" + (k ? "?k=" + encodeURIComponent(k) : ""), { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.status);
+    mostrarVideo(d);
+    cuadros = []; track = []; videoBlob = null;
+    $("vEstado").textContent = "Recorrido subido. Puedes grabar otro.";
+  } catch (e) {
+    $("vEstado").innerHTML = `<span class="error">Error: ${esc(e.message)}</span>`;
+    $("subirVideo").disabled = false;
+  }
+});
+
+function mostrarVideo(d) {
+  const a = d.previo, n = d.ahora;
+  $("res").classList.remove("oculto");
+  $("res").innerHTML = `
+    <strong>Recorrido de ${Math.round(d.recorrido.duracion_s)} s</strong>
+    <dl>
+      <dt>Cuadros analizados</dt><dd>${d.cuadros_analizados} de ${d.cuadros_recibidos}</dd>
+      <dt>Válidos</dt><dd>${d.validos}</dd>
+      <dt>Descartados</dt><dd>${d.descartados}</dd>
+      ${d.sin_validar ? `<dt>Sin validar</dt><dd>${d.sin_validar}</dd>` : ""}
+      <dt>Hexágonos verificados</dt><dd>${d.hexagonos.length}</dd>
+      ${d.fuera_de_area ? `<dt>Fuera del área</dt><dd>${d.fuera_de_area}</dd>` : ""}
+    </dl>
+    ${d.motivos_descarte.length ? `<p class="sub" style="margin:8px 0 0">Descartes: ${d.motivos_descarte.map(esc).join(" · ")}</p>` : ""}
+    <div class="cambio ${d.corredor_cambio ? "" : "no"}">
+      ${d.corredor_cambio ? "<strong>El corredor cambió.</strong>" : "El corredor se mantiene."}<br>
       Urgencia cubierta ${a.urgencia_cubierta} → ${n.urgencia_cubierta} ·
       personas ${a.personas_cubiertas.toLocaleString("es-CL")} → ${n.personas_cubiertas.toLocaleString("es-CL")} ·
       verificados ${n.verificados}
