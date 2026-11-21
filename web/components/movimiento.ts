@@ -11,6 +11,7 @@ export function useRevela<T extends HTMLElement>() {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    (window as { __revela?: boolean }).__revela = true;  // hidratado: el respaldo del layout no hace falta
     const io = new IntersectionObserver(([e]) => {
       if (e.isIntersecting) { el.classList.add("visto"); io.disconnect(); }
     }, { threshold: 0.12 });

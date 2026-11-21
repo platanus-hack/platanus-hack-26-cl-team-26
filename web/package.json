@@ -10,7 +10,7 @@
     "prebuild": "npm run worker",
     "build": "next build",
     "start": "next start",
-    "test": "node --experimental-strip-types scripts/probar_optimizador.ts"
+    "api": "cd .. && python -m terreno.servidor --puerto 8000"
   },
   "dependencies": {
     "h3-js": "4.2.1",

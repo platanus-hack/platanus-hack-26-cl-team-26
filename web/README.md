@@ -2,39 +2,40 @@
 
 Concepto B, "página que se recorre": portada con la rama ilustrada, y las secciones El calor ahora,
 Planificar, Histórico y Fuentes, con la paleta Bioentidad (crema, oliva #4F6E31, salvia) y la capa de
-calor en ocre. Next.js 16 + MapLibre, sobre el mismo mapa base que `app.py` (Carto Positron), teñido.
+calor en ocre. Next.js 16 + MapLibre, sobre Carto Positron teñido.
 
 ## Correr
 
+La página no guarda datos propios: el mapa, las comunas y el corredor vienen del servidor de terreno
+(`terreno/servidor.py`, de `feat/integracion-terreno`), que cruza los datos por comuna. Next reenvía
+`/api`, `/fotos` y `/videos` a ese servidor (`TERRENO_URL`, por defecto `http://127.0.0.1:8000`).
+
 ```bash
+pip install -r requirements.txt               # desde la raíz del repo
+python -m terreno.servidor --puerto 8000      # o: cd web && npm run api
 cd web
 npm install
-npm run dev        # http://localhost:3000
+npm run dev                                   # http://localhost:3000
 ```
 
-Producción: `npm run build && npm start`.
+Producción: `npm run build && npm start`. Si el servidor de terreno está en otra máquina:
+`TERRENO_URL=http://host:8000 npm run build`.
 
-## Datos
+## Qué muestra
 
-Todo sale de `data/` (los mismos parquet que usa `app.py`), exportado a JSON estático en
-`web/public/data/`. Para regenerarlo, desde la raíz del repo y con el entorno de `optimizer.py`:
+- **El calor ahora**: las 34 comunas del Gran Santiago juntas, o una comuna y sus vecinas (se tocan en el
+  mapa, igual que en `terreno/static/mapa.html`). Capas de calor, copa de árboles y personas. El calor es
+  el índice 0,6 suelo + 0,4 aire donde hay sensores con confianza alta o media; si no, solo suelo.
+- **Planificar**: largo y pesos del corredor (los recalcula el servidor), corredor actual contra el de
+  sin capturas en terreno, capturas con su foto, y exportar los tramos en GeoJSON.
+- **Histórico**: barras mensuales del suelo (`public/data/historico.json`); al elegir un mes el servidor
+  promedia desde ahí hasta hoy.
+
+`historico.json` es lo único estático. Para regenerarlo, desde la raíz del repo:
 
 ```bash
 python web/scripts/exportar_datos.py
 ```
-
-- `hexes.json`: las 279 cuadras de Cerro Navia y Providencia (`santiago_h3.parquet`), con la urgencia de `solve_corridor`.
-- `vivo.json`: aire en vivo por barrio (`live_h3.parquet`) y sensores (`web_sensors.json`).
-- `historico.json`: suelo por cuadra y mes, 2023-01 a 2026-11 (`historico_h3.parquet`); se pide al llegar a esa sección.
-- `cifras.json`: `cifras_pitch.json` más el corredor de referencia (40/40/20, 3 km): 13.295 personas contra 8.334 al azar.
-
-## Corredor en el navegador
-
-`lib/optimizador.ts` es un port de `optimizer.py` (urgencia, Dijkstra desde los parques, tramos y red
-continua), así que "Recalcular corredor" funciona sin servidor. Con los pesos por defecto la página
-muestra las cifras exactas de Python. `npm test` compara el port con esa referencia (mismos hexágonos,
-km y personas). El trazado al azar usa otro generador que `random.Random(0)`, así que esa cifra puede
-variar un poco al recalcular.
 
 ## Movimiento
 

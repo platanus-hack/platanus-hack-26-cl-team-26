@@ -15,8 +15,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es-CL" className={`${archivo.variable} ${fraunces.variable}`} suppressHydrationWarning>
       <head>
-        {/* Las animaciones de entrada solo se activan si corre JS; sin JS todo queda visible */}
-        <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('js')" }} />
+        {/* Las animaciones de entrada solo se activan si corre JS; sin JS todo queda visible. Si React no
+            alcanza a hidratar (un chunk que no carga, un navegador viejo), a los 2,5 s se quita .js y todo se ve. */}
+        <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('js');setTimeout(function(){if(!window.__revela)document.documentElement.classList.remove('js')},2500)" }} />
       </head>
       <body>{children}</body>
     </html>

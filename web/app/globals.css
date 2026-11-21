@@ -65,7 +65,6 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 
 .mapa { position: relative; width: 100%; height: clamp(380px, 62vh, 620px); border-radius: 24px; overflow: hidden; background: #e9e3cf; border: 1px solid var(--salvia3); }
 .mapa .maplibregl-ctrl-attrib { font-size: 11px; background: rgba(246, 241, 228, 0.85); }
-.mapa .maplibregl-popup { display: none; }
 .mapa-carga { position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; color: var(--texto3); }
 
 .comunas { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px 36px; }
@@ -123,3 +122,30 @@ section[id], footer[id] { scroll-margin-top: 16px; }
   .b-hero .rama { opacity: 0.45; }
   .cifra b { font-size: 44px; }
 }
+
+/* Resumen del área y ranking de comunas */
+.resumen { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px 40px; align-items: start; }
+.ranking { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 2px solid var(--salvia3); }
+.ranking > b { font-size: 21px; color: var(--oliva-osc); }
+.ranking ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.ranking button { position: relative; width: 100%; min-height: 40px; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; color: var(--tinta); font-size: 15px; cursor: pointer; overflow: hidden; text-align: left; }
+.ranking button span { position: relative; z-index: 1; }
+.ranking button i { position: absolute; left: 0; top: 0; bottom: 0; background: #ead9b4; border-radius: 10px; transition: width 0.8s var(--ease-out); }
+.ranking button:hover i { background: #e2cb98; }
+.ranking button[aria-pressed="true"] { outline: 2px solid var(--oliva); }
+
+/* Área elegida (servidor de terreno), fotos y tabla del efecto de terreno */
+.area { display: flex; flex-direction: column; gap: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 6px 0 12px; border-radius: 999px; background: #e4e8d2; color: var(--oliva-osc); font-size: 14px; font-weight: 600; }
+.chip button { width: 26px; height: 26px; border: 0; border-radius: 50%; background: transparent; color: var(--oliva-osc); font-size: 17px; cursor: pointer; }
+.chip button:hover { background: rgba(79, 110, 49, 0.15); }
+.linea { display: inline-block; width: 22px; height: 0; }
+.pop { font: 13px/1.4 var(--f-cuerpo); color: var(--tinta); }
+.pop img { width: 100%; border-radius: 8px; display: block; margin-bottom: 6px; }
+.terreno { width: 100%; border-collapse: collapse; font-size: 14px; color: var(--texto2); }
+.terreno caption { text-align: left; font-weight: 700; color: var(--oliva-osc); padding-bottom: 6px; }
+.terreno th, .terreno td { padding: 4px 0; text-align: right; border-bottom: 1px solid var(--salvia3); }
+.terreno th:first-child { text-align: left; font-weight: 400; }
+.terreno thead th { font-size: 13px; color: var(--texto3); }
+.mapa .maplibregl-popup-content { border-radius: 14px; background: var(--papel); }
