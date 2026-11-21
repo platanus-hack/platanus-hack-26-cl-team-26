@@ -100,3 +100,20 @@ def test_through_the_server():
         ph.rest(0.2)
         m = ws.receive_json()
         assert m["type"] == "data" and "tracker" in m
+
+
+def test_moving_far_left_at_table_level_stays_left():
+    """El iman baja a la mesa y se va a la izquierda del celular. A la altura de la
+    mesa queda un poco bajo el sensor (z < 0): no debe "reflejarse" a la derecha."""
+    t, _ = calibrated()
+    u = np.linspace(0, 1, 200)
+    down = [np.array([-0.03 * a, 0.0, 0.03 - 0.033 * a]) for a in u]   # baja a la mesa yendo a la izq.
+    left = [np.array([-0.03 - 0.04 * a, 0.0, -0.003]) for a in u[1:]]    # hasta 7 cm a la izquierda
+    xs = []
+    for p in down + left:
+        t.push(EARTH + field(p, M_TRUE) + rng.normal(0, 0.05, 3))
+        s = t.update(0.1)
+        if s["estado"] == "rastreando" and p[0] < -0.01:
+            xs.append(s["x"])
+    assert xs and max(xs) < 0, xs[-5:]                                    # siempre a la izquierda
+    assert xs[-1] == pytest.approx(-7.0, abs=0.3)

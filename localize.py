@@ -18,8 +18,11 @@ y se calcula la posicion (3 incognitas). Pasos:
 
 "confianza" compara el campo medido con el del modelo en la posicion hallada:
 si el iman se inclina, esta muy cerca (no es un dipolo ideal o satura el
-sensor) o hay metal cerca, baja. Simetria: p y -p dan el mismo campo; se elige
-la solucion del lado de la pantalla (z > 0).
+sensor) o hay metal cerca, baja. Simetria: p y -p dan exactamente el mismo
+campo. Se elige la que esta mas cerca de la posicion anterior (el iman se mueve
+de forma continua); solo al empezar se elige el lado de la pantalla (z > 0).
+Elegir siempre z > 0 fallaba con el iman al lado del celular, a la altura de la
+mesa: queda un poco bajo el sensor y se "reflejaba" al lado contrario.
 
 Solo usa numpy.
 """
@@ -73,8 +76,6 @@ def solve_position(b: np.ndarray, m: np.ndarray, p0: np.ndarray, iters: int = 25
                 break
         else:
             lam *= 4
-    if p[2] < 0:             # simetria: elegir el lado de la pantalla
-        p = -p
     return p, float(err / max(np.linalg.norm(b), 1e-9))
 
 
@@ -162,8 +163,12 @@ class Tracker:
         # Inicial: la posicion anterior, o la distancia que da la intensidad sobre el eje
         if self.p is None:
             d = (2 * K * np.linalg.norm(self.m) / bmag) ** (1 / 3)
-            self.p = np.array([0.0, 0.0, min(max(d, MIN_DIST), MAX_DIST)])
-        p, rel = solve_position(b, self.m, self.p)
+            self.p = np.array([0.0, 0.0, min(max(d, MIN_DIST), MAX_DIST)])   # lado de la pantalla
+        prev = self.p
+        p, rel = solve_position(b, self.m, prev)
+        # p y -p explican igual el campo: quedarse con la mas cercana a la anterior
+        if np.linalg.norm(-p - prev) < np.linalg.norm(p - prev):
+            p = -p
         if np.linalg.norm(p) > MAX_DIST:
             self.last = {"estado": "lejos", "campo_uT": round(bmag, 2)}
             return self.last

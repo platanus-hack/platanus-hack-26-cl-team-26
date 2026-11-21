@@ -1005,7 +1005,7 @@ PANEL_HTML = r"""<!DOCTYPE html>
  <div id="trkmsg"></div>
  <canvas id="trk"></canvas>
  <div id="trkinfo"><span>x <b id="tx">-</b> cm</span><span>y <b id="ty">-</b> cm</span><span>z <b id="tz">-</b> cm</span>
-  <span>distancia <b id="td">-</b> cm</span><span>confianza <b id="tc">-</b></span><span>campo <b id="tb">-</b> µT</span></div>
+  <span>distancia <b id="td">-</b> cm</span><span title="Cuanto del campo medido explica el modelo. No detecta si el iman cambio de orientacion: para eso, compara con puntos conocidos.">ajuste del modelo <b id="tc">-</b></span><span>campo <b id="tb">-</b> µT</span></div>
 </section>
 <section id="p4">
  <h2>Diagnostico de ejemplos <span class="tag">que ve el sensor en cada grabacion</span></h2>
@@ -1157,7 +1157,7 @@ function drawTrk(){
  $('tc').textContent=s.confianza!=null&&s.estado==='rastreando'?Math.round(s.confianza*100)+'%':'-';$('tb').textContent=s.campo_uT!=null?s.campo_uT:'-';
  if(Date.now()<tmsgUntil){}
  else if(TMSG[s.estado])$('trkmsg').textContent=TMSG[s.estado];
- else if(s.estado==='rastreando'&&s.confianza<0.5)$('trkmsg').textContent='Confianza baja: el iman se inclino respecto a la calibracion, esta muy cerca (< 1,5 cm) o hay metal cerca.';
+ else if(s.estado==='rastreando'&&s.confianza<0.5)$('trkmsg').textContent='Ajuste bajo: la lectura no calza con el iman calibrado (muy cerca, < 1,5 cm, metal cerca o iman muy inclinado).';
  else if(s.estado==='rastreando')$('trkmsg').textContent='';
  requestAnimationFrame(drawTrk);
 }

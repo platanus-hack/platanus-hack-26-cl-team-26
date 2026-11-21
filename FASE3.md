@@ -56,13 +56,13 @@ El panel tiene una sección **Posición 3D del imán** para ver si el sensor est
 2. **Calibrar imán:** pon el imán **justo sobre el punto del sensor** (prueba 1 del informe), a la distancia indicada (3 cm por defecto), **mirando como lo vas a usar**. Se mide su fuerza y su orientación.
 3. **Seguimiento en vivo:** vista 3D (arrastrar para girar, Shift + rueda para acercar) y coordenadas.
 
-**Confianza:** qué parte del campo medido explica el modelo en la posición hallada. Si baja, puede ser que:
+**Ajuste del modelo:** qué parte del campo medido explica el modelo en la posición hallada. Con 3 mediciones y 3 incógnitas casi siempre calza, así que **no detecta si el imán cambió de orientación**: para eso hay que comparar con puntos conocidos. Si baja, puede ser que:
 - el imán se inclinó respecto a la calibración (con un solo sensor no se puede calcular a la vez la posición y la orientación),
 - está a menos de ~1,5 cm (ya no se comporta como dipolo, o satura el sensor),
 - hay metal cerca.
 
 **Limitaciones físicas:**
-- El imán arriba y abajo del celular (en espejo a través del sensor) da la misma lectura. Se elige el lado de la pantalla (z > 0).
+- El imán y su reflejo a través del sensor (izquierda↔derecha, arriba↔abajo) dan exactamente la misma lectura. Se elige la solución más cercana a la posición anterior, porque el imán se mueve de forma continua. Al empezar se elige el lado de la pantalla. Elegir siempre z > 0 hacía que el imán al lado del celular, a la altura de la mesa, apareciera al lado contrario.
 - Girar el imán sobre su propio eje, como un trompo, no se ve.
 
 **Precisión con un imán simulado:** menos de 1 mm. En la realidad la limita sobre todo que el imán se incline: ~1 mm de error por cada 5° de inclinación no prevista.
