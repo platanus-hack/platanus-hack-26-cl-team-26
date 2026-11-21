@@ -11,6 +11,7 @@ Salidas:
 
 Uso: python web_sensors.py            (cada 5 min, sin parar)
      python web_sensors.py --una-vez
+     python web_sensors.py --recuperar-12h   (últimas 12 h de la DMC, en un archivo aparte)
 """
 import json
 import math
@@ -70,8 +71,12 @@ def lectura(source, lat, lon, temp_c, humedad_pct, timestamp):
     }
 
 
-def parsear_dmc(respuesta):
-    """Última lectura con temperatura de cada estación a menos de RADIO_KM."""
+def parsear_dmc(respuesta, todas=False):
+    """Lecturas con temperatura de las estaciones a menos de RADIO_KM.
+
+    Por defecto, solo la última de cada estación. Con todas=True, todas las que trae la respuesta
+    (la DMC entrega las últimas 12 horas, minuto a minuto).
+    """
     salida = []
     for bloque in respuesta.get("datosEstaciones", []):
         est = bloque["estacion"]
@@ -81,9 +86,11 @@ def parsear_dmc(respuesta):
         datos = [d for d in bloque.get("datos", []) if numero(d.get("temperatura")) is not None]
         if not datos:
             continue
-        d = max(datos, key=lambda d: d["momento"])
-        salida.append(lectura(f"DMC_{est['codigoNacional']}", lat, lon, numero(d["temperatura"]),
-                              numero(d.get("humedadRelativa")), iso_utc(d["momento"])))
+        if not todas:
+            datos = [max(datos, key=lambda d: d["momento"])]
+        for d in sorted(datos, key=lambda d: d["momento"]):
+            salida.append(lectura(f"DMC_{est['codigoNacional']}", lat, lon, numero(d["temperatura"]),
+                                  numero(d.get("humedadRelativa")), iso_utc(d["momento"])))
     return salida
 
 
@@ -152,7 +159,7 @@ def indice_calor(temp_c, humedad_pct):
     return round((hi - 32) * 5 / 9, 1)
 
 
-def leer_dmc():
+def leer_dmc(todas=False):
     usuario, token = os.environ.get("DMC_USUARIO"), os.environ.get("DMC_TOKEN")
     if not usuario or not token:
         print("DMC: sin DMC_USUARIO/DMC_TOKEN, se salta")
@@ -163,7 +170,27 @@ def leer_dmc():
     if "datosEstaciones" not in datos:
         print("DMC:", datos.get("mensaje", "respuesta sin datos"))
         return []
-    return parsear_dmc(datos)
+    return parsear_dmc(datos, todas)
+
+
+def recuperar_12h():
+    """Guarda las últimas 12 horas de la DMC en data/grabacion/AAAA-MM-DD_dmc12h.jsonl.
+
+    Se puede correr varias veces: reescribe el archivo del día. Al juntarlo con la grabación
+    normal, quitar duplicados por (source, timestamp).
+    """
+    lecturas = leer_dmc(todas=True)
+    if not lecturas:
+        print("Sin lecturas de la DMC: no se escribe nada")
+        return
+    ahora = datetime.now(timezone.utc)
+    GRABACION.mkdir(parents=True, exist_ok=True)
+    ruta = GRABACION / f"{ahora:%Y-%m-%d}_dmc12h.jsonl"
+    with open(ruta, "w", encoding="utf-8") as f:
+        for x in lecturas:
+            f.write(json.dumps({"leido": ahora.isoformat(), **x}) + "\n")
+    desde = min(x["timestamp"] for x in lecturas)
+    print(f"{len(lecturas)} lecturas DMC desde {desde} (UTC) en {ruta.name}")
 
 
 def leer_sc():
@@ -198,6 +225,9 @@ def ciclo():
 
 
 def main():
+    if "--recuperar-12h" in sys.argv:
+        recuperar_12h()
+        return
     una_vez = "--una-vez" in sys.argv
     while True:
         validas = ciclo()

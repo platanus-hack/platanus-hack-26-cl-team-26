@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from web_sensors import control_calidad, indice_calor
+from web_sensors import control_calidad, indice_calor, parsear_dmc
 
 AHORA = datetime(2026, 11, 21, 18, 0, tzinfo=timezone.utc)
 
@@ -54,6 +54,27 @@ def test_calidad_descarta_salto_brusco():
 def test_calidad_acepta_cambio_gradual():
     previa = lect(temp=25.0, minutos_atras=15)
     assert len(control_calidad([lect(temp=26.5, minutos_atras=5)], [previa], AHORA)) == 1
+
+
+RESPUESTA_DMC = {"datosEstaciones": [
+    {"estacion": {"codigoNacional": "330020", "latitud": "-33.445", "longitud": "-70.683"},
+     "datos": [{"momento": "2026-11-21 15:01:00", "temperatura": "27.5 °C", "humedadRelativa": "21 %"},
+               {"momento": "2026-11-21 13:00:00", "temperatura": "24.1 °C", "humedadRelativa": "30 %"},
+               {"momento": "2026-11-21 14:00:00", "temperatura": None, "humedadRelativa": "25 %"}]},
+    {"estacion": {"codigoNacional": "180005", "latitud": "-18.35", "longitud": "-70.34"},
+     "datos": [{"momento": "2026-11-21 15:01:00", "temperatura": "20.2 °C", "humedadRelativa": "65 %"}]},
+]}
+
+
+def test_parsear_dmc_ultima_por_estacion_y_solo_santiago():
+    [x] = parsear_dmc(RESPUESTA_DMC)
+    assert (x["source"], x["temp_c"], x["humedad_pct"]) == ("DMC_330020", 27.5, 21.0)
+    assert x["timestamp"] == "2026-11-21T15:01:00+00:00"
+
+
+def test_parsear_dmc_todas_en_orden_y_sin_temperatura_vacia():
+    xs = parsear_dmc(RESPUESTA_DMC, todas=True)
+    assert [x["temp_c"] for x in xs] == [24.1, 27.5]
 
 
 def test_calidad_humedad_invalida_pasa_a_none():
