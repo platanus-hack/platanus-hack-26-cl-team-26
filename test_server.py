@@ -69,6 +69,21 @@ def test_hold_mode_and_stuck_magnet():
     assert s["active"] is False and s["lamp"] is False   # no queda pegado
 
 
+def test_app_event_is_broadcast_to_panel():
+    c = fresh()
+    with c.websocket_connect("/ws") as ws:
+        assert ws.receive_json()["type"] == "state"
+        r = c.post("/app-event", json={"type": "selected", "text": "Luz: Encendiendo luz",
+                                       "time": 1700000000000, "signal": 12.5})
+        assert r.status_code == 200
+        m = ws.receive_json()
+        assert m["type"] == "app_event"
+        assert m["event"] == {"type": "selected", "text": "Luz: Encendiendo luz",
+                              "time": 1700000000000, "signal": 12.5}
+    assert c.post("/app-event", content=b"no es json").status_code == 400
+    assert c.post("/app-event", json={"text": "sin tipo"}).status_code == 400
+
+
 def test_websocket_and_csv():
     c = fresh()
     with c.websocket_connect("/ws") as ws:

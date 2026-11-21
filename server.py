@@ -250,6 +250,7 @@ app = FastAPI(title="MagneSense")
 det = Detector()
 clients: set[WebSocket] = set()
 recent_times: deque[float] = deque(maxlen=2000)   # para frecuencia de muestreo
+app_events: deque[dict] = deque(maxlen=200)       # eventos recibidos de la app Android
 state = {"csv_file": None, "csv_writer": None, "csv_path": None,
          "first_saved": False, "messages": 0, "samples": 0, "last_rx": None}
 
@@ -387,6 +388,24 @@ async def lamp(request: Request):
     return {"ok": True, "lamp": det.lamp}
 
 
+@app.post("/app-event")
+async def app_event(request: Request):
+    """Eventos de la app Android (activacion, pausa, opcion elegida...). Se reenvian al panel."""
+    try:
+        body = json.loads(await request.body())
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "JSON invalido"}, status_code=400)
+    if not isinstance(body, dict) or not isinstance(body.get("type"), str):
+        return JSONResponse({"ok": False, "error": "falta type"}, status_code=400)
+    event = {"type": body["type"][:64], "text": str(body.get("text", ""))[:200], "time": body.get("time")}
+    for key in ("signal", "cosine"):
+        if isinstance(body.get(key), (int, float)):
+            event[key] = body[key]
+    app_events.append(event)
+    await broadcast({"type": "app_event", "event": event})
+    return {"ok": True}
+
+
 @app.get("/status")
 async def status():
     return _panel_state()
@@ -472,6 +491,7 @@ function connect(){
  ws.onclose=()=>{$('conn').className='dot';$('connt').textContent='sin conexion';setTimeout(connect,1000)};
  ws.onmessage=e=>{const m=JSON.parse(e.data);
   if(m.type==='info'){$('msg').textContent=m.text;return}
+  if(m.type==='app_event'){$('msg').textContent='Celular: '+(m.event.text||m.event.type);return}
   apply(m);
   if(m.type==='data'){lastRx=Date.now();
    for(const p of m.points)pts.push([p[0],p[1],m.threshold]);
