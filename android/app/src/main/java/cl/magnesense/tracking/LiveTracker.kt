@@ -9,7 +9,14 @@ import kotlinx.coroutines.flow.asStateFlow
 /** Lo que muestra la pestana 3D. */
 data class TrackerUiState(
     val result: TrackResult = TrackResult(TrackState.NO_BASE),
+    /** Posicion filtrada (sin saltos ni temblor): la que se dibuja y se muestra. */
+    val display: TrackPoint? = null,
+    /** La ultima lectura paso los filtros; false = se mantiene la posicion anterior. */
+    val reliable: Boolean = false,
+    /** Estela de posiciones filtradas. */
     val trail: List<TrackPoint> = emptyList(),
+    /** Lecturas descartadas (mal calce o saltos) desde la ultima calibracion. */
+    val rejected: Int = 0,
     val hasBase: Boolean = false,
     val calibrated: Boolean = false,
     val refCm: Double? = null,
@@ -19,12 +26,14 @@ data class TrackerUiState(
 
 /**
  * Conecta los sensores con [MagnetTracker]: suaviza el magnetometro (τ = 40 ms, como el
- * servidor), resuelve la posicion como maximo cada [SOLVE_PERIOD_S] y publica el estado.
- * Sin compensacion por giro: si el celular se mueve, se pausa (debe estar quieto).
+ * servidor), resuelve la posicion como maximo cada [SOLVE_PERIOD_S], la limpia con
+ * [PositionFilter] y publica el estado. Sin compensacion por giro: si el celular se mueve,
+ * se pausa (debe estar quieto).
  */
 class LiveTracker : SensorSink {
 
     val tracker = MagnetTracker()
+    private val filter = PositionFilter()
 
     private val _state = MutableStateFlow(TrackerUiState())
     val state: StateFlow<TrackerUiState> = _state.asStateFlow()
@@ -33,6 +42,8 @@ class LiveTracker : SensorSink {
     private var lastT = Double.NaN
     private var lastSolveT = Double.NEGATIVE_INFINITY
     private var lastMotionT = Double.NEGATIVE_INFINITY
+    private var display: TrackPoint? = null
+    private val displayTrail = ArrayDeque<TrackPoint>()
 
     override fun onMagnetometer(tNanos: Long, value: Vec3) {
         val t = tNanos / NANOS
@@ -44,8 +55,26 @@ class LiveTracker : SensorSink {
         if (t - lastSolveT < SOLVE_PERIOD_S) return
         lastSolveT = t
         val moving = t - lastMotionT < STILL_AFTER_S
-        val result = if (moving) tracker.last else tracker.update()
-        publish(result, moving)
+        if (moving) {
+            publish(tracker.last, moving = true, reliable = false)
+            return
+        }
+        val result = tracker.update()
+        val point = result.point
+        var reliable = false
+        if (result.state == TrackState.TRACKING && point != null) {
+            filter.update(point, result.confidence, t)?.let {
+                display = it
+                displayTrail.addLast(it)
+                while (displayTrail.size > TRAIL) displayTrail.removeFirst()
+                reliable = true
+            }
+        } else if (result.state == TrackState.FAR) {
+            // Al volver a acercarse no debe contar como un salto.
+            filter.reset()
+            display = null
+        }
+        publish(result, moving = false, reliable = reliable)
     }
 
     override fun onGyroscope(tNanos: Long, value: Vec3) {
@@ -53,28 +82,36 @@ class LiveTracker : SensorSink {
     }
 
     /** Paso 1 de la calibracion. Devuelve un mensaje de error, o null si salio bien. */
-    fun measureBase(): String? = runStep { tracker.setBase() }
-
-    /** Paso 2. Devuelve el resultado o lanza [TrackerException] con un mensaje para mostrar. */
-    fun calibrate(distCm: Double): MagnetCalibration = tracker.calibrate(distCm).also { publish(tracker.last, false) }
-
-    fun reset() {
-        tracker.reset()
-        publish(tracker.last, false)
-    }
-
-    private fun runStep(block: () -> Unit): String? = try {
-        block()
-        publish(tracker.last, false)
+    fun measureBase(): String? = try {
+        tracker.setBase()
+        clearPath()
         null
     } catch (e: TrackerException) {
         e.message
     }
 
-    private fun publish(result: TrackResult, moving: Boolean) {
+    /** Paso 2. Devuelve el resultado o lanza [TrackerException] con un mensaje para mostrar. */
+    fun calibrate(distCm: Double): MagnetCalibration = tracker.calibrate(distCm).also { clearPath() }
+
+    fun reset() {
+        tracker.reset()
+        clearPath()
+    }
+
+    private fun clearPath() {
+        filter.reset()
+        display = null
+        displayTrail.clear()
+        publish(tracker.last, moving = false, reliable = false)
+    }
+
+    private fun publish(result: TrackResult, moving: Boolean, reliable: Boolean) {
         _state.value = TrackerUiState(
             result = result,
-            trail = tracker.trail(),
+            display = display,
+            reliable = reliable,
+            trail = displayTrail.toList(),
+            rejected = filter.rejected,
             hasBase = tracker.hasBase,
             calibrated = tracker.isCalibrated,
             refCm = tracker.refCm,
@@ -89,5 +126,6 @@ class LiveTracker : SensorSink {
         const val SOLVE_PERIOD_S = 0.05
         const val GYRO_LIMIT = 0.3
         const val STILL_AFTER_S = 0.5
+        const val TRAIL = 60
     }
 }

@@ -135,11 +135,19 @@ private fun StatusLine(ui: TrackerUiState) {
         else -> "Calce bajo (%.2f): ¿se inclinó el imán o hay metal cerca?".format(Locale.US, r.confidence) to confidenceColor(r.confidence)
     }
     Text(text, style = MaterialTheme.typography.titleMedium, color = color)
+    if (ui.calibrated && ui.rejected > 0) {
+        Text(
+            "Saltos descartados: ${ui.rejected}. Si son muchos: no gires el imán en el dedo, " +
+                "mantenlo entre 2 y 6 cm del sensor, o recalibra.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Palette.Muted,
+        )
+    }
 }
 
 @Composable
 private fun Readouts(ui: TrackerUiState) {
-    val p = ui.result.point
+    val p = ui.display
     val values = if (ui.result.state == TrackState.TRACKING && p != null) {
         listOf(
             "x" to "%.1f".format(Locale.US, p.x),

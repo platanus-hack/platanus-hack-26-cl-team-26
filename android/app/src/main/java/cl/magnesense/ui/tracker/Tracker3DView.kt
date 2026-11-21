@@ -52,8 +52,10 @@ fun Tracker3DView(ui: TrackerUiState, modifier: Modifier = Modifier) {
         drawAxes(cam)
         drawCircle(Palette.Text, radius = 6f, center = cam.project(0.0, 0.0, 0.0).offset)
         drawTrail(cam, ui.trail)
-        val point = ui.result.point
-        if (ui.result.state == TrackState.TRACKING && point != null) drawMagnet(cam, point, ui.result.confidence)
+        val point = ui.display
+        if (ui.result.state == TrackState.TRACKING && point != null) {
+            drawMagnet(cam, point, ui.result.confidence, ui.reliable)
+        }
     }
 }
 
@@ -127,7 +129,8 @@ private fun DrawScope.drawTrail(cam: Camera, trail: List<TrackPoint>) {
     }
 }
 
-private fun DrawScope.drawMagnet(cam: Camera, p: TrackPoint, confidence: Double) {
+/** [reliable] = false: la ultima lectura se descarto y se muestra la posicion anterior, atenuada. */
+private fun DrawScope.drawMagnet(cam: Camera, p: TrackPoint, confidence: Double, reliable: Boolean) {
     val floor = TrackPoint(p.x, p.y, 0.0)
     line3d(cam, p, floor, Palette.Muted, 2f, dashed = true)
     val shadow = cam.project(floor.x, floor.y, 0.0)
@@ -138,6 +141,6 @@ private fun DrawScope.drawMagnet(cam: Camera, p: TrackPoint, confidence: Double)
     )
     val at = cam.project(p.x, p.y, p.z)
     val r = 16f * at.scale
-    drawCircle(confidenceColor(confidence), radius = r, center = at.offset)
+    drawCircle(confidenceColor(confidence).copy(alpha = if (reliable) 1f else 0.4f), radius = r, center = at.offset)
     drawCircle(Palette.Background, radius = r, center = at.offset, style = Stroke(width = 3f))
 }
