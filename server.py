@@ -33,6 +33,7 @@ from actions import ActionError, Engine
 from agent import Agent, Context
 from detectors import Bank, DirectionModel, EventDetector, RhythmDetector, StateDetector
 import analysis
+from localize import Tracker
 from trajectory import PatternDetector, TrajectoryDetector, is_negative
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -329,6 +330,7 @@ rec = {"label": "", "base": None, "delta": [], "smooth": [], "moving": [], "t": 
 clients: set[WebSocket] = set()
 recent_times: deque[float] = deque(maxlen=2000)   # para frecuencia de muestreo
 app_events: deque[dict] = deque(maxlen=200)       # eventos recibidos de la app Android
+tracker = Tracker()                               # posicion 3D del iman (localize.py)
 state = {"csv_file": None, "csv_writer": None, "csv_path": None,
          "first_saved": False, "messages": 0, "samples": 0, "last_rx": None}
 # Reglas "gesto -> accion" y acciones personalizables (ver actions.py)
@@ -433,6 +435,8 @@ async def data(request: Request):
                         s["x"], s["y"], s["z"]])
             continue
         ev2 = bank.step(s["t"], (s["x"], s["y"], s["z"]))
+        if p.smooth is not None:
+            tracker.push(p.smooth)
         moving = p.phone_moving(s["t"])
         vr = p.R @ np.array([s["x"], s["y"], s["z"]])   # compensado por el giro
         ev = det.process(s["t"], *map(float, vr), allow=not moving)
@@ -463,7 +467,8 @@ async def data(request: Request):
     state["last_rx"] = now
 
     msg = _panel_state()
-    msg.update(type="data", points=points, events=events, events2=events2)
+    tracker.update()                          # usa el ruido medido sin iman (paso 1)
+    msg.update(type="data", points=points, events=events, events2=events2, tracker=tracker.status())
     await broadcast(msg)
     return {"ok": True, "samples": len(samples)}
 
@@ -718,6 +723,38 @@ async def app_event(request: Request):
     return {"ok": True}
 
 
+# --- Posicion 3D del iman ----------------------------------------------------
+
+@app.post("/tracker/base")
+async def tracker_base():
+    """Paso 1: con el iman lejos, guarda el campo de la Tierra y del telefono."""
+    try:
+        return {"ok": True, **tracker.set_base()}
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
+@app.post("/tracker/calibrate")
+async def tracker_calibrate(request: Request):
+    """Paso 2: iman a {"dist_cm": 3} justo sobre el sensor, mirando como se va a usar."""
+    cfg = await request.json()
+    try:
+        return {"ok": True, **tracker.calibrate(float(cfg.get("dist_cm", 3)))}
+    except (TypeError, ValueError) as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
+@app.post("/tracker/reset")
+async def tracker_reset():
+    tracker.reset()
+    return {"ok": True}
+
+
+@app.get("/tracker")
+async def tracker_status():
+    return tracker.status()
+
+
 @app.get("/status")
 async def status():
     return _panel_state()
@@ -901,6 +938,12 @@ PANEL_HTML = r"""<!DOCTYPE html>
  .row.pend{border-left:4px solid #e90}
  .row code{color:#9cf;word-break:break-all}
  .muted{color:#888;font-size:13px;margin:4px 16px}
+ #p5{border-top:1px solid #333;margin-top:8px;padding-bottom:12px}
+ #p5 h2{font-size:16px;margin:10px 16px}
+ #trk{width:100%;height:420px;display:block;background:#141414;cursor:grab}
+ #trkinfo{display:flex;gap:18px;flex-wrap:wrap;padding:6px 16px;font-variant-numeric:tabular-nums}
+ #trkinfo b{color:#9cf}
+ #trkmsg{padding:2px 16px;color:#fc6;min-height:1.2em}
  #p4{border-top:1px solid #333;margin-top:8px;padding-bottom:16px}
  #p4 h2{font-size:16px;margin:10px 16px}
  .diag{margin:6px 16px;padding:8px 10px;background:#1a1a1a;border-left:4px solid #3c3}
@@ -949,6 +992,20 @@ PANEL_HTML = r"""<!DOCTYPE html>
   <label>pausa tras <input id="paus" type="number" value="10" style="width:50px"> s</label>
  </div>
  <div id="dets"></div>
+</section>
+<section id="p5">
+ <h2>Posicion 3D del iman <span class="tag">el iman debe mirar siempre hacia el mismo lado</span></h2>
+ <div class="ctl">
+  <button id="tbase">1) Medir sin iman</button>
+  <label>2) Iman a <input id="tdist" type="number" value="3" min="1" max="15" step="0.5" style="width:55px"> cm justo sobre el sensor</label>
+  <button id="tcal">Calibrar iman</button>
+  <button id="treset">Reiniciar</button>
+  <span class="muted">Arrastra para girar la vista · Shift + rueda para acercar</span>
+ </div>
+ <div id="trkmsg"></div>
+ <canvas id="trk"></canvas>
+ <div id="trkinfo"><span>x <b id="tx">-</b> cm</span><span>y <b id="ty">-</b> cm</span><span>z <b id="tz">-</b> cm</span>
+  <span>distancia <b id="td">-</b> cm</span><span>confianza <b id="tc">-</b></span><span>campo <b id="tb">-</b> µT</span></div>
 </section>
 <section id="p4">
  <h2>Diagnostico de ejemplos <span class="tag">que ve el sensor en cada grabacion</span></h2>
@@ -1027,7 +1084,7 @@ function connect(){
   if(m.type==='rules'){renderRules(m);return}
   if(m.type==='probe'){showProbe(m);return}
   apply(m);
-  if(m.type==='data'){lastRx=Date.now();
+  if(m.type==='data'){lastRx=Date.now();if(m.tracker)trkState=m.tracker;
    for(const p of m.points)pts.push([p[0],p[1],m.threshold]);
    if(m.events&&m.events.includes('calibrated'))$('msg').textContent='Calibrado. Ruido '+m.noise.toFixed(3)+' µT';
    if(m.events&&m.events.includes('rebaselined'))$('msg').textContent='Iman quieto en otra posicion: nueva linea base';
@@ -1051,6 +1108,61 @@ function draw(){
  }
  requestAnimationFrame(draw);
 }
+// --- Posicion 3D ---
+let trkState={estado:'sin_base',trail:[]},yaw=-0.6,pitch=0.9,zoom=1.7,drag=null;
+let tmsgUntil=0;
+const tcv=$('trk'),tctx=tcv.getContext('2d');
+tcv.onmousedown=e=>{drag=[e.clientX,e.clientY];tcv.style.cursor='grabbing'};
+window.addEventListener('mouseup',()=>{drag=null;tcv.style.cursor='grab'});
+window.addEventListener('mousemove',e=>{if(!drag)return;yaw+=(e.clientX-drag[0])*0.01;pitch=Math.max(0.05,Math.min(1.55,pitch+(e.clientY-drag[1])*0.01));drag=[e.clientX,e.clientY]});
+tcv.onwheel=e=>{if(!e.shiftKey&&!e.ctrlKey)return;e.preventDefault();zoom=Math.max(0.4,Math.min(4,zoom*(e.deltaY<0?1.1:0.9)))};
+async function tpost(u,b){const j=await jpost(u,b);tmsgUntil=Date.now()+5000;if(j.ok){$('trkmsg').textContent=u.endsWith('base')?'Listo. Ahora pon el iman sobre el sensor y calibra.':u.endsWith('calibrate')?('Calibrado: iman de '+j.momento_Am2+' A·m², inclinado '+j.inclinacion_grados+'°, '+j.campo_uT+' µT a esa distancia.'):'Reiniciado.'}else if(j.error)$('trkmsg').textContent='Error: '+j.error;}
+$('tbase').onclick=()=>tpost('/tracker/base');
+$('tcal').onclick=()=>tpost('/tracker/calibrate',{dist_cm:+$('tdist').value});
+$('treset').onclick=()=>tpost('/tracker/reset');
+const TMSG={sin_base:'Paso 1: aleja el iman (mas de 30 cm) y aprieta "Medir sin iman".',
+ sin_iman_calibrado:'Paso 2: pon el iman justo sobre el punto del sensor, a la distancia indicada y mirando como lo vas a usar; aprieta "Calibrar iman".',
+ lejos:'Iman lejos o fuera de alcance.'};
+function proj(p,w,h){ // p en cm, ejes del telefono (z sale de la pantalla). Devuelve [X, Y, escala]
+ const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
+ const x1=p[0]*cy-p[1]*sy,y1=p[0]*sy+p[1]*cy,z1=p[2];
+ const up=z1*cp+y1*sp,depth=-y1*cp+z1*sp;           // pitch=90°: vista desde arriba
+ const s=Math.min(w,h)/26*zoom,f=60/(60-depth);      // perspectiva suave (camara a 60 cm)
+ return [w/2+x1*s*f,h*0.6-up*s*f,f];
+}
+function line3(a,b,w,h,col,wid,dash){const p=proj(a,w,h),q=proj(b,w,h);tctx.strokeStyle=col;tctx.lineWidth=(wid||1)*devicePixelRatio;tctx.setLineDash(dash||[]);tctx.beginPath();tctx.moveTo(p[0],p[1]);tctx.lineTo(q[0],q[1]);tctx.stroke();tctx.setLineDash([]);}
+function text3(p,t,col,w,h){const q=proj(p,w,h);tctx.fillStyle=col;tctx.fillText(t,q[0]+4,q[1]-4);}
+function drawTrk(){
+ const w=tcv.width=tcv.clientWidth*devicePixelRatio,h=tcv.height=tcv.clientHeight*devicePixelRatio;
+ tctx.clearRect(0,0,w,h);tctx.font=(12*devicePixelRatio)+'px sans-serif';
+ for(let i=-8;i<=8;i+=2){line3([i,-8,0],[i,8,0],w,h,'#262626');line3([-8,i,0],[8,i,0],w,h,'#262626');}
+ const ph=[[-3.5,-12,0],[3.5,-12,0],[3.5,3,0],[-3.5,3,0],[-3.5,-12,0]];
+ for(let i=0;i<4;i++)line3(ph[i],ph[i+1],w,h,'#555',1.5,[6,4]);
+ text3([3.5,-12,0],'celular (aprox.)','#666',w,h);
+ line3([0,0,0],[3,0,0],w,h,'#e55',2);text3([3,0,0],'x','#e55',w,h);
+ line3([0,0,0],[0,3,0],w,h,'#5c5',2);text3([0,3,0],'y','#5c5',w,h);
+ line3([0,0,0],[0,0,3],w,h,'#58f',2);text3([0,0,3],'z','#58f',w,h);
+ const o=proj([0,0,0],w,h);tctx.fillStyle='#fff';tctx.beginPath();tctx.arc(o[0],o[1],4*devicePixelRatio,0,7);tctx.fill();text3([0,0,0],'sensor','#aaa',w,h);
+ const s=trkState,tr=s.trail||[];
+ for(let i=1;i<tr.length;i++)line3(tr[i-1],tr[i],w,h,'rgba(120,200,255,'+(i/tr.length*0.8)+')',2);
+ if(s.estado==='rastreando'){
+  const p=[s.x,s.y,s.z],col=s.confianza>0.8?'#3d3':s.confianza>0.5?'#fc3':'#f55';
+  line3(p,[s.x,s.y,0],w,h,'#888',1,[3,3]);
+  const g=proj([s.x,s.y,0],w,h);tctx.fillStyle='#444';tctx.beginPath();tctx.ellipse(g[0],g[1],7*devicePixelRatio,3*devicePixelRatio,0,0,7);tctx.fill();
+  const q=proj(p,w,h);tctx.fillStyle=col;tctx.beginPath();tctx.arc(q[0],q[1],9*devicePixelRatio*q[2],0,7);tctx.fill();
+  text3(p,'iman','#ddd',w,h);
+ }
+ $('tx').textContent=s.x!=null&&s.estado==='rastreando'?s.x.toFixed(1):'-';$('ty').textContent=s.y!=null&&s.estado==='rastreando'?s.y.toFixed(1):'-';
+ $('tz').textContent=s.z!=null&&s.estado==='rastreando'?s.z.toFixed(1):'-';$('td').textContent=s.dist!=null&&s.estado==='rastreando'?s.dist.toFixed(1):'-';
+ $('tc').textContent=s.confianza!=null&&s.estado==='rastreando'?Math.round(s.confianza*100)+'%':'-';$('tb').textContent=s.campo_uT!=null?s.campo_uT:'-';
+ if(Date.now()<tmsgUntil){}
+ else if(TMSG[s.estado])$('trkmsg').textContent=TMSG[s.estado];
+ else if(s.estado==='rastreando'&&s.confianza<0.5)$('trkmsg').textContent='Confianza baja: el iman se inclino respecto a la calibracion, esta muy cerca (< 1,5 cm) o hay metal cerca.';
+ else if(s.estado==='rastreando')$('trkmsg').textContent='';
+ requestAnimationFrame(drawTrk);
+}
+fetch('/tracker').then(r=>r.json()).then(s=>{trkState=s}).catch(()=>{});
+drawTrk();
 // --- Diagnostico ---
 let exKey='';
 function maybeDiag(s){const k=JSON.stringify(s.examples||{});if(k===exKey)return;exKey=k;

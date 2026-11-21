@@ -46,6 +46,29 @@ El agente recibe este análisis (en el modo de la app, en el campo `analisis`). 
 - Panel, sección **Diagnóstico de ejemplos**: el pico de cada ejemplo (verde si se vio, rojo si no), el modelo elegido y los problemas.
 - Panel, sección **Depuración del celular**: los eventos que manda la app Android por `POST /app-event`, con señal y coseno.
 
+## Posición 3D del imán (`localize.py`)
+
+El panel tiene una sección **Posición 3D del imán** para ver si el sensor está midiendo bien. Modela el imán como un dipolo y calcula su posición (x, y, z en cm) respecto al magnetómetro.
+
+**Ejes del teléfono:** x a la derecha, y hacia arriba de la pantalla, z saliendo de la pantalla.
+
+1. **Medir sin imán:** con el imán a más de 30 cm. Guarda el campo de la Tierra y del teléfono, y el ruido.
+2. **Calibrar imán:** pon el imán **justo sobre el punto del sensor** (prueba 1 del informe), a la distancia indicada (3 cm por defecto), **mirando como lo vas a usar**. Se mide su fuerza y su orientación.
+3. **Seguimiento en vivo:** vista 3D (arrastrar para girar, Shift + rueda para acercar) y coordenadas.
+
+**Confianza:** qué parte del campo medido explica el modelo en la posición hallada. Si baja, puede ser que:
+- el imán se inclinó respecto a la calibración (con un solo sensor no se puede calcular a la vez la posición y la orientación),
+- está a menos de ~1,5 cm (ya no se comporta como dipolo, o satura el sensor),
+- hay metal cerca.
+
+**Limitaciones físicas:**
+- El imán arriba y abajo del celular (en espejo a través del sensor) da la misma lectura. Se elige el lado de la pantalla (z > 0).
+- Girar el imán sobre su propio eje, como un trompo, no se ve.
+
+**Precisión con un imán simulado:** menos de 1 mm. En la realidad la limita sobre todo que el imán se incline: ~1 mm de error por cada 5° de inclinación no prevista.
+
+Endpoints: `POST /tracker/base`, `POST /tracker/calibrate {"dist_cm": 3}`, `POST /tracker/reset`, `GET /tracker`. Cada mensaje `data` de `/ws` trae `tracker`.
+
 ## Acciones
 
 Cada acción es una pieza combinable. Un detector puede tener varias reglas, por ejemplo corto → "Tengo sed", largo → pausar música y doble → apagar la TV.
