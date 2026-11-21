@@ -15,7 +15,7 @@ const VACIO: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: 
 export type Capa = { id: string; color: ExpressionSpecification };
 // Lo elegido: índices de comuna (propiedad c de cada cuadra) o cuadras sueltas (propiedad i). null = todo Santiago.
 export type Foco = { comunas: number[]; hexes: number[] } | null;
-const TENUE = 0.22;
+const TENUE = 0.5, VELO = 0.42;   // lo no elegido: capa más transparente y un velo oscuro encima
 
 function tenir(mapa: MapaML) {
   for (const l of mapa.getStyle().layers ?? []) {
@@ -122,6 +122,11 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         nuevo.addLayer({
           id: "borde", type: "line", source: "hex", minzoom: 11,
           paint: { "line-color": "#F6F1E4", "line-width": 0.35, "line-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0, 12, 1] },
+        });
+        // Velo oscuro sobre las cuadras no elegidas; apagado mientras se ve todo Santiago.
+        nuevo.addLayer({
+          id: "velo", type: "fill", source: "hex", layout: { visibility: "none" },
+          paint: { "fill-color": "#22281A", "fill-opacity": 0, "fill-antialias": false },
         });
         nuevo.addSource("elegida", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "elegida", type: "line", source: "elegida", paint: { "line-color": "#22281A", "line-width": 2.2 } });
@@ -244,10 +249,10 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   useEffect(() => {
     const m = mapa.current;
     if (!listo || !m) return;
-    const op: ExpressionSpecification | number = foco
-      ? ["case", ["any", ["in", ["get", "c"], ["literal", foco.comunas]], ["in", ["get", "i"], ["literal", foco.hexes]]], OPACIDAD, TENUE]
-      : OPACIDAD;
-    for (const c of capas) if (m.getLayer(c.id)) m.setPaintProperty(c.id, "fill-opacity", op);
+    const dentro: ExpressionSpecification = ["any", ["in", ["get", "c"], ["literal", foco?.comunas ?? []]], ["in", ["get", "i"], ["literal", foco?.hexes ?? []]]];
+    for (const c of capas) if (m.getLayer(c.id)) m.setPaintProperty(c.id, "fill-opacity", foco ? ["case", dentro, 0.95, TENUE] : OPACIDAD);
+    m.setPaintProperty("velo", "fill-opacity", foco ? ["case", dentro, 0, VELO] : 0);
+    m.setLayoutProperty("velo", "visibility", foco ? "visible" : "none");
   }, [claveFoco, capas, listo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

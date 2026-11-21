@@ -113,6 +113,8 @@ export default function Pagina({ serie }: { serie: Serie }) {
   );
 }
 
+const SIN_CORREDOR: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+
 function Esqueletos({ error }: { error: string | null }) {
   return (
     <>
@@ -220,7 +222,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
     setElegidas((ant) => (ant.includes(c) ? ant.filter((x) => x !== c) : [...ant, c]));
   }
   function sumar(cs: string[]) { setZona(null); setElegidas((ant) => [...new Set([...ant, ...cs])]); }
-  function reiniciar() { setZona(null); setElegidas([]); }
+  function reiniciar() { setZona(null); setElegidas([]); setPlanTodo(false); }
   // Lápiz: las cuadras que toca el contorno dibujado; cada trazo se suma a la zona anterior.
   function lazo(contorno: [number, number][]) {
     const res = getResolution(B.h[0]);
@@ -334,6 +336,13 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const claveCorredor = enCorredor.map((i) => H.h[i]).join();
   // Por defecto se ve el área completa (las 34 comunas si están todas); el corredor se acerca a pedido.
   const [cerca, setCerca] = useState(false);
+  // Planificar viene después del filtro: sin nada elegido el mapa invita a elegir (o a usar todo Santiago a propósito).
+  const [planTodo, setPlanTodo] = useState(false);
+  const planListo = !nada || planTodo;
+  // El corredor que se muestra tiene que ser el de lo elegido ahora, no el del área anterior del servidor.
+  const esperadas = elegidas.length ? elegidas : info.comunas;
+  const alDia = !ocupado && estado.seleccion.length === esperadas.length && esperadas.every((c) => estado.seleccion.includes(c)) && estado.parametros.zona === zonaIdx.length;
+  const verCorredor = planListo && alDia;
   useEffect(() => setCerca(false), [encuadreArea]);
   const encuadrePlan = useMemo(() => (cerca && enCorredor.length ? encuadreDe(enCorredor.map((i) => anillosH[i]), 0.025) : encuadreArea),
     [cerca, claveCorredor, encuadreArea]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -443,8 +452,8 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       </Seccion>
 
       <Seccion id="planificar">
-        <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2><p>Mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes del área elegida.</p></div>
-        <div className="b-controles escalon" style={est(2)}>
+        <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2><p>Elige dónde, mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes de lo elegido.</p></div>
+        <div className={`b-controles escalon${planListo ? "" : " espera"}`} style={est(2)}>
           {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"]] as const).map(([k, nombre]) => (
             <div className="peso" key={k}>
               <label htmlFor={`p-${k}`}><span>{nombre}</span><b>{Math.round((100 * pesos[k]) / total)} %</b></label>
@@ -458,9 +467,18 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
         <div className="b-plan">
           <div className="izq escalon" style={est(3)}>
-            <MapaHex {...mapaComun} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={corredor} encuadre={encuadrePlan}
-              etiqueta="Corredor propuesto sobre la urgencia de cada cuadra">{filtro}</MapaHex>
-            {enCorredor.length > 0 && (
+            <MapaHex {...mapaComun} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={verCorredor ? corredor : SIN_CORREDOR} encuadre={encuadrePlan}
+              etiqueta="Corredor propuesto sobre la urgencia de cada cuadra">
+              {filtro}
+              {!planListo && (
+                <div className="invita" role="status">
+                  <b>Primero elige dónde</b>
+                  <span>Toca comunas en este mapa o encierra cuadras con el lápiz. El corredor se traza solo dentro de lo que elijas.</span>
+                  <button type="button" className="mini" onClick={() => setPlanTodo(true)}>Trazar en todo Santiago</button>
+                </div>
+              )}
+            </MapaHex>
+            {verCorredor && enCorredor.length > 0 && (
               <button type="button" className="pill zoom-corredor" aria-pressed={cerca} onClick={() => setCerca(!cerca)}>
                 {cerca ? (nada ? "Ver las 34 comunas" : "Ver toda el área") : "Acercar al corredor"}
               </button>
@@ -474,6 +492,21 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
               <span><i className="cuadro" style={{ background: "#2D5E9E", borderRadius: 7 }} />Foto válida</span>
             </div>
           </div>
+          {!planListo ? (
+            <div className="cifras pasos">
+              <b>Cómo se planifica</b>
+              <ol>
+                <li><b>Elige dónde.</b> Una o varias comunas, o una zona dibujada con el lápiz.</li>
+                <li><b>Ajusta los pesos</b> de calor, falta de árboles y personas, y el presupuesto en kilómetros.</li>
+                <li><b>Revisa el corredor</b> que aparece en el mapa y expórtalo.</li>
+              </ol>
+            </div>
+          ) : !alDia ? (
+            <div className="cifras" role="status" aria-label="Trazando el corredor">
+              <span className="nota">Trazando el corredor en {zona ? "la zona dibujada" : nada ? "todo Santiago" : elegidas.length === 1 ? elegidas[0] : `${elegidas.length} comunas`}…</span>
+              <div className="sk" style={{ height: 64, width: "70%" }} /><div className="sk sk-linea" /><div className="sk" style={{ height: 64, width: "55%" }} /><div className="sk sk-linea" /><div className="sk" style={{ height: 120 }} />
+            </div>
+          ) : (
           <div className="cifras">
             {a.hexes ? (
               <>
@@ -502,6 +535,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             </div>
             <p className="nota">{estado.capturas.length} {estado.capturas.length === 1 ? "captura" : "capturas"} en terreno; {estado.capturas.filter((c) => c.cuenta).length} cuentan. El mapa se actualiza solo cuando llega una foto nueva.</p>
           </div>
+          )}
         </div>
       </Seccion>
 
