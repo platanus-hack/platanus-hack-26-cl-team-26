@@ -24,8 +24,11 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
+
+from detectors import Bank, DirectionModel, EventDetector, RhythmDetector, StateDetector
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 PORT = int(os.environ.get("PORT", "8000"))
@@ -89,6 +92,25 @@ def extract_samples(body) -> list[dict]:
     return out
 
 
+def extract_gyro(body) -> list[dict]:
+    """Lecturas del giroscopio (rad/s): [{"t", "x", "y", "z"}]. Sensor Logger: "gyroscope"."""
+    items = body.get("payload", body.get("samples", [])) if isinstance(body, dict) else body
+    out = []
+    for it in items if isinstance(items, list) else []:
+        if not isinstance(it, dict) or "gyro" not in str(it.get("name", "")).lower():
+            continue
+        vals = it.get("values", it)
+        try:
+            out.append({"t": _to_seconds(it.get("time", it.get("t"))), "x": float(vals["x"]),
+                        "y": float(vals["y"]), "z": float(vals["z"]),
+                        "uncal": "uncal" in str(it.get("name", "")).lower()})
+        except (KeyError, TypeError, ValueError):
+            continue
+    if any(g["uncal"] for g in out) and any(not g["uncal"] for g in out):
+        out = [g for g in out if not g["uncal"]]   # preferir el calibrado (sin sesgo)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Detector
 # ---------------------------------------------------------------------------
@@ -107,6 +129,7 @@ class Detector:
         self.stuck_after = 6.0       # s activo -> nuevo reposo
         self.calib_seconds = 2.0
         self.mode = "toggle"         # "toggle" o "hold"
+        self.lamp_enabled = True     # False cuando la lampara la manejan los detectores fase 2
         self.reset()
 
     def reset(self):
@@ -122,6 +145,7 @@ class Detector:
         self.active_since = None
         self.activations = 0
         self.seen_uncal = False
+        self.suspended = False
         self.start_calibration()
 
     def start_calibration(self):
@@ -146,8 +170,11 @@ class Detector:
         self.calibrating = False
         self.calib_buf = []
 
-    def process(self, t: float, x: float, y: float, z: float) -> list[str]:
-        """Procesa una lectura. Devuelve eventos: "on", "off", "lamp_on", ..."""
+    def process(self, t: float, x: float, y: float, z: float, allow: bool = True) -> list[str]:
+        """Procesa una lectura. Devuelve eventos: "on", "off", "lamp_on", ...
+
+        allow=False (telefono girando): solo suaviza; al volver toma nuevo reposo.
+        """
         events: list[str] = []
         dt = 0.0 if self.last_t is None else min(max(t - self.last_t, 0.0), 0.5)
         if self.last_t is not None and t + 1.0 < self.last_t:
@@ -169,6 +196,21 @@ class Detector:
                 events.append("calibrated")
             self.signal = 0.0
             return events
+
+        if not allow:
+            if self.active:
+                events.append("off")
+                if self.mode == "hold" and self.lamp and self.lamp_enabled:
+                    self.lamp = False
+                    events.append("lamp_off")
+            self.active = False
+            self.above_since = self.below_since = None
+            self.suspended = True
+            self.signal = 0.0
+            return events
+        if self.suspended:
+            self.baseline = list(self.smooth)
+            self.suspended = False
 
         bx, by, bz = self.baseline
         sig = math.sqrt((sx - bx) ** 2 + (sy - by) ** 2 + (sz - bz) ** 2)
@@ -214,6 +256,8 @@ class Detector:
                     events.append("rebaselined")
 
         # Lampara
+        if not self.lamp_enabled:
+            return events
         if "on" in events:
             if self.mode == "toggle":
                 self.lamp = not self.lamp
@@ -248,6 +292,9 @@ class Detector:
 
 app = FastAPI(title="MagneSense")
 det = Detector()
+bank = Bank()                       # detectores fase 2 (vacio = manda la fase 1)
+examples: dict[str, list[dict]] = {}   # etiqueta -> [{"delta": arr, "smooth": arr}]
+rec = {"label": "", "base": None, "delta": [], "smooth": []}
 clients: set[WebSocket] = set()
 recent_times: deque[float] = deque(maxlen=2000)   # para frecuencia de muestreo
 state = {"csv_file": None, "csv_writer": None, "csv_path": None,
@@ -259,7 +306,8 @@ def _open_csv():
     path = DATA_DIR / f"session_{datetime.now():%Y%m%d_%H%M%S}.csv"
     f = open(path, "w", newline="")
     w = csv.writer(f)
-    w.writerow(["t", "x", "y", "z", "uncal", "signal", "threshold", "active", "lamp"])
+    w.writerow(["t", "x", "y", "z", "uncal", "signal", "threshold", "active", "lamp",
+                "label", "moving", "gx", "gy", "gz"])
     state.update(csv_file=f, csv_writer=w, csv_path=str(path))
 
 
@@ -296,6 +344,9 @@ async def broadcast(msg: dict):
 
 def _panel_state() -> dict:
     s = det.status()
+    s["phase2"] = bank.status()
+    s["recording"] = rec["label"]
+    s["examples"] = {k: len(v) for k, v in examples.items()}
     s.update(rate=round(sample_rate(), 1), messages=state["messages"],
              samples=state["samples"], csv=state["csv_path"],
              actuator=bool(ACTUATOR_ON_URL or ACTUATOR_OFF_URL))
@@ -325,19 +376,42 @@ async def data(request: Request):
     for s in samples:
         if s["t"] is None:
             s["t"] = now
-    samples.sort(key=lambda s: s["t"])
+    gyros = extract_gyro(body)
+    for g in gyros:
+        if g["t"] is None:
+            g["t"] = now
+        g["gyro"] = True
+    merged = sorted(samples + gyros, key=lambda s: s["t"])
 
     if state["csv_writer"] is None:
         _open_csv()
     w = state["csv_writer"]
-    points, events = [], []
-    for s in samples:
-        ev = det.process(s["t"], s["x"], s["y"], s["z"])
+    p = bank.pipeline
+    points, events, events2 = [], [], []
+    det.lamp_enabled = not bank.detectors
+    for s in merged:
+        if s.get("gyro"):
+            bank.gyro(s["t"], (s["x"], s["y"], s["z"]))
+            w.writerow([f"{s['t']:.4f}", "", "", "", "", "", "", "", "", rec["label"], "",
+                        s["x"], s["y"], s["z"]])
+            continue
+        ev2 = bank.step(s["t"], (s["x"], s["y"], s["z"]))
+        moving = p.phone_moving(s["t"])
+        vr = p.R @ np.array([s["x"], s["y"], s["z"]])   # compensado por el giro
+        ev = det.process(s["t"], *map(float, vr), allow=not moving)
         events.extend(ev)
+        for e in ev2:
+            events2.append(e)
+            _apply_action(e.get("action"))
+        if rec["label"] and p.smooth is not None:
+            rec["smooth"].append(p.smooth.tolist())
+            base = rec["base"] if rec["base"] is not None else p.smooth
+            rec["delta"].append((vr - base).tolist())
         recent_times.append(s["t"])
         points.append([round(s["t"], 4), round(det.signal, 3)])
         w.writerow([f"{s['t']:.4f}", s["x"], s["y"], s["z"], int(s["uncal"]),
-                    f"{det.signal:.4f}", f"{det.threshold:.4f}", int(det.active), int(det.lamp)])
+                    f"{det.signal:.4f}", f"{det.threshold:.4f}", int(det.active), int(det.lamp),
+                    rec["label"], int(moving), "", "", ""])
         for e in ev:
             if e in ("lamp_on", "lamp_off"):
                 asyncio.create_task(_call_actuator(e == "lamp_on"))
@@ -347,14 +421,118 @@ async def data(request: Request):
     state["last_rx"] = now
 
     msg = _panel_state()
-    msg.update(type="data", points=points, events=events)
+    msg.update(type="data", points=points, events=events, events2=events2)
     await broadcast(msg)
     return {"ok": True, "samples": len(samples)}
+
+
+def _apply_action(action):
+    if action is None:
+        return
+    new = {"toggle": not det.lamp, "on": True, "off": False}.get(action, det.lamp)
+    if new != det.lamp:
+        det.lamp = new
+        asyncio.create_task(_call_actuator(new))
+
+
+# --- Fase 2: ejemplos y detectores -----------------------------------------
+
+@app.post("/record/start")
+async def record_start(request: Request):
+    """Empieza a grabar un ejemplo con etiqueta (mientras haces el gesto o estado)."""
+    cfg = await request.json()
+    label = str(cfg.get("label", "")).strip()[:40]
+    if not label:
+        return JSONResponse({"ok": False, "error": "falta la etiqueta"}, status_code=400)
+    p = bank.pipeline
+    base = p.baseline if p.baseline is not None else (det.baseline and np.array(det.baseline))
+    rec.update(label=label, base=None if base is None else np.array(base, float), delta=[], smooth=[])
+    return {"ok": True, "label": label}
+
+
+@app.post("/record/stop")
+async def record_stop():
+    label = rec["label"]
+    if not label:
+        return {"ok": False, "error": "no se estaba grabando"}
+    if len(rec["smooth"]) >= 3:
+        examples.setdefault(label, []).append({"delta": np.array(rec["delta"]),
+                                               "smooth": np.array(rec["smooth"])})
+    rec.update(label="", base=None, delta=[], smooth=[])
+    n = len(examples.get(label, []))
+    await broadcast(dict(_panel_state(), type="state"))
+    return {"ok": True, "label": label, "examples": n}
+
+
+@app.post("/examples/clear")
+async def examples_clear(request: Request):
+    cfg = await request.json()
+    if cfg.get("label"):
+        examples.pop(cfg["label"], None)
+    else:
+        examples.clear()
+    return {"ok": True, "examples": {k: len(v) for k, v in examples.items()}}
+
+
+@app.post("/train")
+async def train(request: Request):
+    """Arma un detector con los ejemplos grabados.
+
+    {"type": "event", "label": "contraccion", "action": "toggle", "trigger": "any"}
+    {"type": "state", "labels": ["abierta", "cerrada"], "trigger": "abierta"}
+    {"type": "rhythm", "name": "respiracion", "band": [0.1, 0.7], "pause_s": 10}
+    """
+    cfg = await request.json()
+    kind = cfg.get("type")
+    action = cfg.get("action", "toggle")
+    try:
+        if kind == "event":
+            label = cfg["label"]
+            exs = [e["delta"] for e in examples.get(label, [])]
+            if not exs:
+                raise ValueError(f"no hay ejemplos de '{label}'")
+            dm = DirectionModel.fit(exs)
+            d = EventDetector(cfg.get("name", label), direction=dm,
+                              min_on=float(cfg.get("min_on_ms", 150)) / 1000)
+            bank.add(d, action=action, trigger=cfg.get("trigger", "any"))
+            info = {"consistency": round(dm.consistency(exs), 3), **dm.to_dict()}
+        elif kind == "state":
+            labels = cfg.get("labels") or list(examples)
+            d = StateDetector(cfg.get("name", "estado")).fit(
+                {lab: [e["smooth"] for e in examples.get(lab, [])] for lab in labels})
+            bank.add(d, action=action, trigger=cfg.get("trigger", labels[0]))
+            info = {"separation": round(d.separation(), 2), "labels": d.labels}
+        elif kind == "rhythm":
+            band = tuple(cfg.get("band", (0.1, 0.7)))
+            d = RhythmDetector(cfg.get("name", "ritmo"), band=band,
+                               pause_s=float(cfg.get("pause_s", 10)))
+            bank.add(d, action=cfg.get("action", "on"), trigger="pause")
+            info = {"band": band}
+        else:
+            raise ValueError("type debe ser event, state o rhythm")
+    except (KeyError, ValueError) as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    await broadcast(dict(_panel_state(), type="state"))
+    return {"ok": True, "detector": d.name, "info": info}
+
+
+@app.post("/detectors/remove")
+async def detectors_remove(request: Request):
+    cfg = await request.json()
+    bank.remove(cfg.get("name"))
+    await broadcast(dict(_panel_state(), type="state"))
+    return {"ok": True}
+
+
+@app.get("/detectors")
+async def detectors_status():
+    return bank.status()
 
 
 @app.post("/calibrate")
 async def calibrate():
     det.start_calibration()
+    bank.pipeline.recalibrate()
     await broadcast({"type": "info", "text": "Calibrando: no muevas el iman por 2 s"})
     return {"ok": True}
 
@@ -427,6 +605,13 @@ PANEL_HTML = r"""<!DOCTYPE html>
  .ctl{display:flex;gap:14px;flex-wrap:wrap;padding:8px 16px;align-items:center}
  button,select,input{font-size:14px}
  #msg{padding:4px 16px;color:#fc6;min-height:1.2em}
+ #p2{border-top:1px solid #333;margin-top:8px}
+ #p2 h2{font-size:16px;margin:10px 16px}
+ .tag{font-size:12px;font-weight:normal;padding:2px 6px;border-radius:4px;background:#333;margin-left:8px}
+ .tag.mov{background:#a40}
+ .det{margin:6px 16px;padding:8px 10px;background:#1a1a1a;border-left:4px solid #444;display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-variant-numeric:tabular-nums}
+ .det.on{border-left-color:#ffd84a}
+ #rec.on{background:#c33;color:#fff}
  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#c33}
  .dot.ok{background:#3c3}
 </style></head><body>
@@ -446,6 +631,30 @@ PANEL_HTML = r"""<!DOCTYPE html>
  <button id="ltest">Probar lampara</button>
 </div>
 <div id="msg"></div>
+<section id="p2">
+ <h2>Fase 2: ejemplos y detectores <span id="gyro" class="tag">sin giroscopio</span></h2>
+ <div class="ctl">
+  <label>Etiqueta <input id="lab" value="gesto" size="14"></label>
+  <button id="rec">● Grabar ejemplo</button>
+  <span id="exs">sin ejemplos</span>
+  <button id="clr">Borrar ejemplos</button>
+ </div>
+ <div class="ctl">
+  <button id="tev">Crear detector de evento con esta etiqueta</button>
+  <label>accion <select id="evact"><option value="toggle">alternar</option><option value="hold">mientras dure</option><option value="none">ninguna</option></select></label>
+  <label>con <select id="evtrig"><option value="any">cualquier gesto (inmediato)</option><option value="short">corto</option><option value="long">largo</option><option value="double">doble</option></select></label>
+ </div>
+ <div class="ctl">
+  <button id="tst">Crear detector de estado (todas las etiquetas)</button>
+  <label>luz encendida en <input id="ston" size="10" placeholder="etiqueta"></label>
+ </div>
+ <div class="ctl">
+  <button id="trh">Crear detector de ritmo</button>
+  <select id="band"><option value="0.1,0.7">respiracion (6-42/min)</option><option value="3,12">temblor (3-12 Hz)</option><option value="0.5,3">movimiento repetido (0.5-3 Hz)</option></select>
+  <label>pausa tras <input id="paus" type="number" value="10" style="width:50px"> s</label>
+ </div>
+ <div id="dets"></div>
+</section>
 <script>
 const cv=document.getElementById('c'),ctx=cv.getContext('2d');
 let pts=[],thr=1,lastRx=0,lampOn=false;const WIN=10;
@@ -457,6 +666,34 @@ $('k').onchange=e=>post('/config',{k:+e.target.value});
 $('minon').onchange=e=>post('/config',{min_on_ms:+e.target.value});
 $('mode').onchange=e=>post('/config',{mode:e.target.value});
 $('ltest').onclick=()=>post('/lamp',{on:!lampOn});
+let recording='';
+function say(t){$('msg').textContent=t}
+async function jpost(u,b){const r=await post(u,b);const j=await r.json();if(!j.ok&&j.error)say('Error: '+j.error);return j}
+$('rec').onclick=async()=>{
+ if(recording){const j=await jpost('/record/stop');if(j.ok)say('Ejemplo guardado: '+j.label+' ('+j.examples+')');}
+ else{const j=await jpost('/record/start',{label:$('lab').value});if(j.ok)say('Grabando "'+j.label+'"... haz el gesto y aprieta de nuevo');}
+};
+$('clr').onclick=()=>jpost('/examples/clear',{}).then(()=>say('Ejemplos borrados'));
+$('tev').onclick=async()=>{const j=await jpost('/train',{type:'event',label:$('lab').value,action:$('evact').value,trigger:$('evtrig').value});
+ if(j.ok)say('Detector "'+j.detector+'" listo. Parecido entre ejemplos '+j.info.consistency+' (1 = identicos; bajo 0.8 conviene regrabar)');};
+$('tst').onclick=async()=>{const j=await jpost('/train',{type:'state',trigger:$('ston').value||undefined});
+ if(j.ok)say('Estados '+j.info.labels.join(', ')+'. Separacion '+j.info.separation+' (sobre 2 es bueno)');};
+$('trh').onclick=async()=>{const b=$('band').value.split(',').map(Number);const j=await jpost('/train',{type:'rhythm',name:b[1]<1?'respiracion':(b[0]>=3?'temblor':'repeticion'),band:b,pause_s:+$('paus').value});
+ if(j.ok)say('Detector de ritmo "'+j.detector+'" listo');};
+function rmdet(n){post('/detectors/remove',{name:n})}
+function esc(t){return String(t).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';')}
+function apply2(s){
+ recording=s.recording||'';$('rec').className=recording?'on':'';$('rec').textContent=recording?'■ Detener ('+recording+')':'● Grabar ejemplo';
+ const ex=s.examples||{};const ks=Object.keys(ex);$('exs').textContent=ks.length?ks.map(k=>k+': '+ex[k]).join(' · '):'sin ejemplos';
+ const p=s.phase2||{};const g=$('gyro');
+ g.textContent=!p.gyro?'sin giroscopio':(p.phone_moving?'telefono moviendose: deteccion en pausa':'giroscopio ok');
+ g.className='tag'+(p.phone_moving?' mov':'');
+ $('dets').innerHTML=(p.detectors||[]).map(d=>{let x='';
+  if(d.type==='event')x='senal '+d.signal.toFixed(2)+' / '+d.threshold.toFixed(2)+' µT · gestos '+d.count+(d.last?' · ultimo: '+esc(d.last):'');
+  if(d.type==='rhythm')x=(d.per_min?d.per_min+'/min ('+d.freq_hz+' Hz)':'midiendo...')+' · amplitud '+d.amp.toFixed(2)+' µT'+(d.paused?' · <b>PAUSA</b>':'')+' · pausas '+d.count;
+  if(d.type==='state')x='estado: <b>'+esc(d.state||'?')+'</b> · cambios '+d.count;
+  return '<div class="det'+(d.active?' on':'')+'"><b>'+esc(d.name)+'</b><span>'+d.type+'</span><span>'+x+'</span><button data-n="'+esc(d.name)+'" onclick="rmdet(this.dataset.n)">quitar</button></div>'}).join('');
+}
 function apply(s){
  thr=s.threshold;lampOn=s.lamp;
  $('lamp').className=s.lamp?'on':'';
@@ -465,6 +702,7 @@ function apply(s){
  $('acts').textContent=s.activations;
  $('st').textContent=s.calibrating?'calibrando':(s.active?'ACTIVO':'reposo');
  if(s.config){$('mode').value=s.config.mode;}
+ apply2(s);
 }
 function connect(){
  const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');

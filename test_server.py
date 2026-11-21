@@ -34,6 +34,8 @@ def run(client, field, seconds, start=0.0, extra_names=()):
 
 def fresh():
     server.det.reset()
+    server.bank.detectors.clear()
+    server.bank.pipeline.reset()
     server.state.update(csv_writer=None, first_saved=False)
     return TestClient(server.app)
 
