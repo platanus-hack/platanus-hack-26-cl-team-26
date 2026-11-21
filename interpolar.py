@@ -7,6 +7,7 @@ from calidad import distancia_km, indice_calor
 
 RES_BARRIO = 7
 RADIO_KM, RADIO_AMPLIO_KM = 5.0, 8.0
+RADIO_CIUDADANO_KM = 2.0
 
 
 def barrios(grilla):
@@ -16,11 +17,24 @@ def barrios(grilla):
     return pd.DataFrame({"h3_padre": padres, "lat": [c[0] for c in centros], "lon": [c[1] for c in centros]})
 
 
+def en_radio(lat, lon, s, radio_km):
+    """(máscara, distancias) de los sensores que cuentan para un punto.
+
+    Las estaciones oficiales cuentan hasta radio_km. Los sensores ciudadanos (RedMeteo, sensor.community)
+    solo hasta RADIO_CIUDADANO_KM: con ellos, estimar desde más lejos fue peor que usar el promedio de la
+    ciudad (prueba dejando uno fuera, 21-11-2026), porque cada uno depende mucho de dónde está instalado.
+    """
+    d = distancia_km(lat, lon, s.lat.values, s.lon.values)
+    m = d < radio_km
+    if "oficial" in s:
+        m &= s.oficial.values.astype(bool) | (d < RADIO_CIUDADANO_KM)
+    return m, d
+
+
 def idw(lat, lon, sensores, col, radio_km=RADIO_KM):
     """Devuelve (valor, n_sensores, dist_min_km). Sin sensores en el radio: (NaN, 0, NaN)."""
     s = sensores.dropna(subset=[col])
-    d = distancia_km(lat, lon, s.lat.values, s.lon.values)
-    m = d < radio_km
+    m, d = en_radio(lat, lon, s, radio_km)
     if not m.any():
         return np.nan, 0, np.nan
     if (d[m] < 0.05).any():  # sensor prácticamente en el centro
@@ -68,7 +82,7 @@ def por_barrio(sensores, b):
             t, n, dmin = idw(r.lat, r.lon, s, "temp_c", radio)
         hum = idw(r.lat, r.lon, s, "humedad_pct", radio)[0]
         an = idw(r.lat, r.lon, s, "anomalia_c", radio)[0]
-        usados = s[distancia_km(r.lat, r.lon, s.lat.values, s.lon.values) < radio]
+        usados = s[en_radio(r.lat, r.lon, s, radio)[0]]
         filas.append({
             "h3_padre": r.h3_padre,
             "temp_aire_c": round(t, 2) if n else np.nan,
