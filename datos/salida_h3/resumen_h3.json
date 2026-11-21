@@ -1,0 +1,102 @@
+{
+  "fuentes": {
+    "osm": "ok (41s)",
+    "ndvi": "ok (14s)",
+    "lst": "ok (15s)",
+    "poblacion": "ok (314s)"
+  },
+  "comunas": [
+    "Cerro Navia",
+    "Estación Central",
+    "Las Condes",
+    "Providencia"
+  ],
+  "res_8": {
+    "hexagonos": 265,
+    "por_comuna": {
+      "Las Condes": 170,
+      "Estación Central": 35,
+      "Providencia": 30,
+      "Cerro Navia": 30
+    },
+    "ndvi_cobertura_pct": 100.0,
+    "ndvi_por_comuna": {
+      "Cerro Navia": 0.16,
+      "Estación Central": 0.18,
+      "Las Condes": 0.31,
+      "Providencia": 0.29
+    },
+    "lst_c_cobertura_pct": 100.0,
+    "lst_c_por_comuna": {
+      "Cerro Navia": 37.15,
+      "Estación Central": 36.89,
+      "Las Condes": 32.81,
+      "Providencia": 33.68
+    },
+    "pct_area_verde_cobertura_pct": 100.0,
+    "pct_area_verde_por_comuna": {
+      "Cerro Navia": 9.59,
+      "Estación Central": 6.02,
+      "Las Condes": 46.95,
+      "Providencia": 22.31
+    },
+    "poblacion_cobertura_pct": 100.0,
+    "poblacion_por_comuna": {
+      "Cerro Navia": 180847.29,
+      "Estación Central": 172297.9,
+      "Las Condes": 370500.28,
+      "Providencia": 161028.26
+    },
+    "dist_metro_m_cobertura_pct": 100.0,
+    "dist_metro_m_por_comuna": {
+      "Cerro Navia": 2881.75,
+      "Estación Central": 923.27,
+      "Las Condes": 4866.75,
+      "Providencia": 652.76
+    }
+  },
+  "res_9": {
+    "hexagonos": 1578,
+    "por_comuna": {
+      "Las Condes": 1046,
+      "Estación Central": 193,
+      "Providencia": 183,
+      "Cerro Navia": 156
+    },
+    "ndvi_cobertura_pct": 99.9,
+    "ndvi_por_comuna": {
+      "Cerro Navia": 0.17,
+      "Estación Central": 0.18,
+      "Las Condes": 0.32,
+      "Providencia": 0.3
+    },
+    "lst_c_cobertura_pct": 100.0,
+    "lst_c_por_comuna": {
+      "Cerro Navia": 37.0,
+      "Estación Central": 36.99,
+      "Las Condes": 32.93,
+      "Providencia": 33.68
+    },
+    "pct_area_verde_cobertura_pct": 100.0,
+    "pct_area_verde_por_comuna": {
+      "Cerro Navia": 10.5,
+      "Estación Central": 5.35,
+      "Las Condes": 48.3,
+      "Providencia": 20.0
+    },
+    "poblacion_cobertura_pct": 100.0,
+    "poblacion_por_comuna": {
+      "Cerro Navia": 146512.62,
+      "Estación Central": 125416.2,
+      "Las Condes": 348967.93,
+      "Providencia": 148849.77
+    },
+    "dist_metro_m_cobertura_pct": 100.0,
+    "dist_metro_m_por_comuna": {
+      "Cerro Navia": 2762.44,
+      "Estación Central": 922.97,
+      "Las Condes": 4682.56,
+      "Providencia": 620.73
+    }
+  }
+}

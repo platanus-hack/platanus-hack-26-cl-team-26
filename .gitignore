@@ -1,0 +1,12 @@
+/cache/
+/salida*/
+__pycache__/
+*.pyc
+*.log
+.venv/
+# datos/ se versiona, salvo las descargas pesadas que el pipeline deja en datos/cache/
+datos/cache/*.osm.pbf
+datos/cache/chl_ppp_*.tif
+datos/cache/*.part
+datos/cache/osmnx/
+datos/cache/red_cruda_*.pkl
