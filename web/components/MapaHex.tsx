@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { ExpressionSpecification, GeoJSONSource, LngLatBoundsLike, Map as MapaML, Popup } from "maplibre-gl";
+import type { ExpressionSpecification, GeoJSONSource, LngLatBoundsLike, Map as MapaML, MapMouseEvent, MapTouchEvent, Popup } from "maplibre-gl";
 import { menosMovimiento, useVisible } from "./movimiento";
 
 // Mapa base: Carto Positron teñido con la paleta crema y salvia. Encima, en este orden:
@@ -53,7 +53,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   foco?: Foco;
   alPasar?: (i: number | null) => void;      // cuadra bajo el puntero
   alComuna?: (c: string) => void;            // tocar una cuadra o comuna: suma o quita su comuna
-  alLazo?: (anillo: [number, number][]) => void;  // zona dibujada con el lápiz, en [lng, lat]
+  alLazo?: (anillo: [number, number][]) => void;  // zona dibujada punto a punto, en [lng, lat]
   etiqueta: string;
   children?: React.ReactNode;                 // controles que flotan sobre el mapa
 }) {
@@ -66,9 +66,12 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   const [actualizando, setActualizando] = useState(false);
   const [rueda, setRueda] = useState<"tactil" | "apagada" | "activa">("apagada");
   const [falla, setFalla] = useState(false);
-  const [lapiz, setLapiz] = useState(false);
+  const [lapiz, setLapiz] = useState(false);        // dibujando una zona punto a punto
+  const [nPuntos, setNPuntos] = useState(0);
+  const [areaKm2, setAreaKm2] = useState(0);
+  const accion = useRef({ deshacer: () => {}, listo: () => {} });  // los botones llaman al dibujo en curso
   const pasado = useRef<number | null>(null);
-  const sinClicHasta = useRef(0);   // al soltar el lápiz el mapa dispara un clic que no debe elegir comuna
+  const sinClicHasta = useRef(0);   // al cerrar la zona el mapa dispara un clic que no debe elegir comuna
   const cb = useRef({ alPasar, alComuna, alLazo, popupCaptura, popupHex, activa, datos, lapiz });
   cb.current = { alPasar, alComuna, alLazo, popupCaptura, popupHex, activa, datos, lapiz };
   const inicial = useRef({ datos, capas, activa, encuadre });
@@ -173,8 +176,11 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         nuevo.addSource("recorridos", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "recorridos", type: "line", source: "recorridos", paint: { "line-color": "#6B3FA0", "line-width": 4, "line-opacity": 0.85 } });
         nuevo.addSource("lazo", { type: "geojson", data: VACIO });
-        nuevo.addLayer({ id: "lazo-relleno", type: "fill", source: "lazo", paint: { "fill-color": "#966222", "fill-opacity": 0.12 } });
-        nuevo.addLayer({ id: "lazo", type: "line", source: "lazo", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#22281A", "line-width": 2.4, "line-dasharray": [1.5, 1.2] } });
+        nuevo.addLayer({ id: "lazo-relleno", type: "fill", source: "lazo", filter: ["==", ["get", "tipo"], "zona"], paint: { "fill-color": "#966222", "fill-opacity": 0.14 } });
+        nuevo.addLayer({ id: "lazo", type: "line", source: "lazo", filter: ["==", ["get", "tipo"], "borde"], layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#22281A", "line-width": 2.4 } });
+        nuevo.addLayer({ id: "lazo-guia", type: "line", source: "lazo", filter: ["==", ["get", "tipo"], "guia"], layout: { "line-cap": "round" }, paint: { "line-color": "#22281A", "line-width": 1.6, "line-opacity": 0.7, "line-dasharray": [2, 2] } });
+        nuevo.addLayer({ id: "lazo-vertices", type: "circle", source: "lazo", filter: ["==", ["get", "tipo"], "punto"],
+          paint: { "circle-radius": ["case", ["get", "cierra"], 8, 6], "circle-color": ["case", ["get", "cierra"], "#F3E3BF", "#FFFDF6"], "circle-stroke-color": "#22281A", "circle-stroke-width": 2 } });
         nuevo.addSource("capturas", { type: "geojson", data: VACIO });
         nuevo.addLayer({
           id: "capturas", type: "circle", source: "capturas",
@@ -269,54 +275,105 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
     (mapa.current?.getSource("distritos") as GeoJSONSource | undefined)?.setData(distritos ?? VACIO);
   }, [distritos, listo]);
 
-  // Lápiz: con él activo el mapa no se arrastra; se dibuja una zona y al soltar se entrega su contorno.
+  // Zona punto a punto, como en Google Maps: cada clic pone un punto unido al anterior con una recta; una guía
+  // punteada sigue al puntero. Se cierra tocando el primer punto, con doble clic, Enter o «Listo». Los puntos se
+  // arrastran para ajustarlos y el mapa se puede mover mientras tanto. Retroceso deshace el último; Esc cancela.
   useEffect(() => {
     const m = mapa.current;
     if (!listo || !m) return;
     const cont = m.getCanvasContainer();
+    const src = m.getSource("lazo") as GeoJSONSource;
     if (!lapiz) {
-      m.dragPan.enable(); m.touchZoomRotate.enable(); m.doubleClickZoom.enable();
+      m.doubleClickZoom.enable();
       cont.style.cursor = "";
+      setNPuntos(0); setAreaKm2(0);
       return;
     }
-    m.dragPan.disable(); m.touchZoomRotate.disable(); m.doubleClickZoom.disable();
+    m.doubleClickZoom.disable();
     cont.style.cursor = "crosshair";
-    const lazo = m.getSource("lazo") as GeoJSONSource;
-    let pts: [number, number][] = [], ult: [number, number] | null = null, dibuja = false;
-    const pintar = (cerrar: boolean) => lazo.setData(pts.length < 2 ? VACIO : {
-      type: "FeatureCollection", features: [cerrar && pts.length > 2
-        ? { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[...pts, pts[0]]] } }
-        : { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: pts } }],
-    });
-    const punto = (e: PointerEvent): [number, number] => { const r = cont.getBoundingClientRect(); const ll = m.unproject([e.clientX - r.left, e.clientY - r.top]); return [ll.lng, ll.lat]; };
-    const abajo = (e: PointerEvent) => {
-      if (e.button !== 0) return;
-      dibuja = true; cont.setPointerCapture(e.pointerId);
-      pts = [punto(e)]; ult = [e.clientX, e.clientY];
+    const pts: [number, number][] = [];
+    let guia: [number, number] | null = null, arrastra = -1, soltoEn = 0, cerrada = false;
+    const tactil = window.matchMedia("(pointer: coarse)").matches;
+    const lejos = (a: [number, number], b: [number, number], px: number) => {
+      const p = m.project(a), q = m.project(b);
+      return Math.hypot(p.x - q.x, p.y - q.y) > px;
     };
-    const mueve = (e: PointerEvent) => {
-      if (!dibuja || !ult || Math.hypot(e.clientX - ult[0], e.clientY - ult[1]) < 4) return;
-      ult = [e.clientX, e.clientY]; pts.push(punto(e)); pintar(false);
+    // Área aproximada (proyección local equirectangular; basta para zonas de unos km).
+    const area = () => {
+      if (pts.length < 3) return 0;
+      const lat0 = (pts.reduce((a, [, la]) => a + la, 0) / pts.length) * Math.PI / 180;
+      const xy = pts.map(([lo, la]) => [lo * 111.32 * Math.cos(lat0), la * 110.57]);
+      let a = 0;
+      for (let k = 0; k < xy.length; k++) { const [x1, y1] = xy[k], [x2, y2] = xy[(k + 1) % xy.length]; a += x1 * y2 - x2 * y1; }
+      return Math.abs(a) / 2;
     };
-    const arriba = () => {
-      if (!dibuja) return;
-      dibuja = false;
+    const pintar = () => {
+      const fs: GeoJSON.Feature[] = [];
+      if (pts.length >= 3) fs.push({ type: "Feature", properties: { tipo: "zona" }, geometry: { type: "Polygon", coordinates: [[...pts, pts[0]]] } });
+      if (pts.length >= 2) fs.push({ type: "Feature", properties: { tipo: "borde" }, geometry: { type: "LineString", coordinates: pts } });
+      if (pts.length && guia && arrastra < 0) {
+        const linea = pts.length >= 2 ? [pts[pts.length - 1], guia, pts[0]] : [pts[0], guia];
+        fs.push({ type: "Feature", properties: { tipo: "guia" }, geometry: { type: "LineString", coordinates: linea } });
+      }
+      pts.forEach((pt, j) => fs.push({ type: "Feature", properties: { tipo: "punto", j, cierra: j === 0 && pts.length >= 3 }, geometry: { type: "Point", coordinates: pt } }));
+      src.setData({ type: "FeatureCollection", features: fs });
+      setNPuntos(pts.length); setAreaKm2(area());
+    };
+    const cerrar = () => {
+      if (pts.length < 3) return;
       sinClicHasta.current = performance.now() + 500;
-      if (pts.length > 2) { pintar(true); cb.current.alLazo?.(pts); }
-      setTimeout(() => lazo.setData(VACIO), 700);
+      cerrada = true; guia = null; pintar();
+      cb.current.alLazo?.([...pts]);
+      setTimeout(() => src.setData(VACIO), 700);
       setLapiz(false);
     };
-    cont.style.touchAction = "none";
-    cont.addEventListener("pointerdown", abajo);
-    cont.addEventListener("pointermove", mueve);
-    cont.addEventListener("pointerup", arriba);
-    cont.addEventListener("pointercancel", arriba);
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setLapiz(false); };
-    window.addEventListener("keydown", esc);
+    const deshacer = () => { pts.pop(); pintar(); };
+    accion.current = { deshacer, listo: cerrar };
+    const ll = (e: { lngLat: { lng: number; lat: number } }): [number, number] => [e.lngLat.lng, e.lngLat.lat];
+    const clic = (e: MapMouseEvent) => {
+      if (performance.now() - soltoEn < 250) return;           // el clic que sigue a arrastrar un punto
+      const p = ll(e);
+      if (pts.length >= 3 && !lejos(p, pts[0], tactil ? 22 : 12)) { cerrar(); return; }
+      if (pts.length && !lejos(p, pts[pts.length - 1], 6)) return;  // segundo clic de un doble clic
+      pts.push(p); pintar();
+    };
+    const mueve = (e: MapMouseEvent) => {
+      guia = ll(e);
+      if (arrastra >= 0) pts[arrastra] = guia;
+      const sobre = m.queryRenderedFeatures(e.point, { layers: ["lazo-vertices"] }).length > 0;
+      cont.style.cursor = arrastra >= 0 ? "grabbing" : sobre ? "grab" : "crosshair";
+      if (pts.length) pintar();
+    };
+    const tomar = (e: MapMouseEvent | MapTouchEvent) => {
+      const f = m.queryRenderedFeatures(e.point, { layers: ["lazo-vertices"] })[0];
+      if (!f) return;
+      e.preventDefault();                                        // no mover el mapa: se mueve el punto
+      arrastra = Number(f.properties.j);
+      m.dragPan.disable();
+    };
+    const soltar = () => {
+      if (arrastra < 0) return;
+      arrastra = -1; soltoEn = performance.now();
+      m.dragPan.enable(); pintar();
+    };
+    const doble = (e: MapMouseEvent) => { e.preventDefault(); cerrar(); };
+    const tecla = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLapiz(false);
+      else if (e.key === "Enter") cerrar();
+      else if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); deshacer(); }
+    };
+    m.on("click", clic); m.on("mousemove", mueve); m.on("dblclick", doble);
+    m.on("mousedown", tomar); m.on("touchstart", tomar); m.on("mouseup", soltar); m.on("touchend", soltar);
+    m.on("touchmove", mueve as unknown as (e: MapTouchEvent) => void);
+    window.addEventListener("keydown", tecla);
+    pintar();
     return () => {
-      cont.removeEventListener("pointerdown", abajo); cont.removeEventListener("pointermove", mueve);
-      cont.removeEventListener("pointerup", arriba); cont.removeEventListener("pointercancel", arriba);
-      window.removeEventListener("keydown", esc); cont.style.touchAction = "";
+      m.off("click", clic); m.off("mousemove", mueve); m.off("dblclick", doble);
+      m.off("mousedown", tomar); m.off("touchstart", tomar); m.off("mouseup", soltar); m.off("touchend", soltar);
+      m.off("touchmove", mueve as unknown as (e: MapTouchEvent) => void);
+      window.removeEventListener("keydown", tecla);
+      m.dragPan.enable();
+      if (!cerrada) src.setData(VACIO);  // cancelada: no queda nada; cerrada: se ve un momento y se borra sola
     };
   }, [lapiz, listo]);
 
@@ -360,13 +417,21 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
       {pintado && alLazo && (
         <div className="herramientas">
           <button type="button" className={`herr${lapiz ? " activa" : ""}`} aria-pressed={lapiz} onClick={() => setLapiz(!lapiz)}
-            title="Encierra cuadras dibujando con el lápiz">
-            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4L16 5l3 3L8 19l-4 1zM14 7l3 3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg>
-            {lapiz ? "Dibuja la zona" : "Lápiz"}
+            title="Encierra cuadras poniendo puntos unidos por rectas">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 18L9 6l10 4-4 9z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /><circle cx="5" cy="18" r="2.2" fill="currentColor" /><circle cx="9" cy="6" r="2.2" fill="currentColor" /><circle cx="19" cy="10" r="2.2" fill="currentColor" /><circle cx="15" cy="19" r="2.2" fill="currentColor" /></svg>
+            {lapiz ? "Cancelar" : "Dibujar zona"}
           </button>
+          {lapiz && (
+            <div className="herr-fila">
+              <button type="button" className="herr" disabled={!nPuntos} onClick={() => accion.current.deshacer()}>Deshacer punto</button>
+              <button type="button" className="herr listo" disabled={nPuntos < 3} onClick={() => accion.current.listo()}>Listo</button>
+            </div>
+          )}
         </div>
       )}
-      {pintado && lapiz && <div className="pista" role="status">Mantén apretado y encierra las cuadras. Esc para cancelar.</div>}
+      {pintado && lapiz && <div className="pista" role="status">{nPuntos < 3
+        ? `Toca el mapa para poner puntos (${nPuntos} de al menos 3). Los puntos se pueden arrastrar.`
+        : `${nPuntos} puntos · ≈ ${areaKm2 < 1 ? `${Math.round(areaKm2 * 100)} ha` : `${areaKm2.toLocaleString("es-CL", { maximumFractionDigits: 2 })} km²`}. Toca el primer punto, haz doble clic o «Listo» para cerrar.`}</div>}
       {pintado && !lapiz && rueda === "apagada" && <div className="pista" aria-hidden="true">Haz clic en el mapa para acercar con la rueda</div>}
       {children}
     </div>

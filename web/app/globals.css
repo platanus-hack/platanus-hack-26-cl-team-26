@@ -215,6 +215,9 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 .herramientas { position: absolute; z-index: 3; left: 12px; top: 70px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .herr { min-height: 40px; padding: 0 14px 0 12px; border-radius: 999px; border: 0; background: var(--papel); color: var(--oliva-osc); font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 1px 0 rgba(47, 69, 32, 0.12), 0 10px 24px -16px rgba(47, 69, 32, 0.6); }
 .herr.activa { background: var(--tinta); color: var(--crema2); }
+.herr:disabled { opacity: 0.45; cursor: default; }
+.herr.listo:not(:disabled) { background: var(--oliva); color: var(--crema2); }
+.herr-fila { display: flex; gap: 8px; }
 .herr:focus-visible, .volver:focus-visible, .quita:focus-visible { outline: 2px solid var(--oliva); outline-offset: 2px; }
 .resumen-mapa .chip.zona { background: var(--tinta); color: var(--crema2); }
 .resumen-mapa .chip.zona button { color: var(--crema2); }
