@@ -61,7 +61,7 @@ fun AppRoot(app: MagneSenseApp) {
                     Screen.CONTROL -> ControlScreen(engine, access, onCalibrate = { screen = Screen.CALIBRATION })
                     Screen.CALIBRATION -> CalibrationScreen(engine.detector, onDone = { screen = Screen.CONTROL })
                     Screen.HISTORY -> HistoryScreen(app.history)
-                    Screen.SETTINGS -> SettingsScreen(app.settings, access.actions)
+                    Screen.SETTINGS -> SettingsScreen(app.settings, access.actions, app.telemetry)
                     Screen.DEBUG -> DebugScreen(engine.detector)
                 }
             }

@@ -14,6 +14,7 @@ import cl.magnesense.engine.Engine
 import cl.magnesense.feedback.Haptics
 import cl.magnesense.feedback.Speaker
 import cl.magnesense.sensor.SensorHub
+import cl.magnesense.telemetry.TelemetryClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +37,8 @@ class MagneSenseApp : Application() {
         private set
     lateinit var access: AccessController
         private set
+    lateinit var telemetry: TelemetryClient
+        private set
     private lateinit var speaker: Speaker
 
     override fun onCreate() {
@@ -44,6 +47,8 @@ class MagneSenseApp : Application() {
         history = EventLog(this)
         speaker = Speaker(this)
         engine = Engine()
+        telemetry = TelemetryClient(scope)
+        engine.rawListener = telemetry
         settings.loadCalibration()?.let(engine.detector::restore)
         SensorHub.sink = engine
         access = AccessController(
@@ -59,6 +64,7 @@ class MagneSenseApp : Application() {
         scope.launch {
             access.selections.collect { (device, result) ->
                 history.add(if (result.ok) HistoryKind.ACTION else HistoryKind.ACTION_FAILED, "${device.icon} ${result.message}")
+                telemetry.sendEvent(if (result.ok) "selected" else "action_failed", "${device.name}: ${result.message}")
             }
         }
     }
@@ -70,9 +76,11 @@ class MagneSenseApp : Application() {
         access.setDevices(s.devices)
         access.actions.caregiver = CaregiverConfig(s.caregiverPhone.trim(), s.caregiverWebhook.trim())
         speaker.enabled = s.voiceEnabled
+        telemetry.baseUrl = s.serverUrl
     }
 
     private fun onDetectorEvent(e: DetectorEvent) {
+        forwardToServer(e)
         when (e.type) {
             EventType.ACTIVATED -> history.add(HistoryKind.ACTIVATION, "Imán detectado (%.1f µT)".format(Locale.US, e.signal))
             EventType.IGNORED -> history.add(HistoryKind.IGNORED, "Ignorado: campo en otra dirección")
@@ -86,6 +94,19 @@ class MagneSenseApp : Application() {
             EventType.REST_CALIBRATED, EventType.REBASELINED -> saveCalibration()
             else -> Unit
         }
+    }
+
+    private fun forwardToServer(e: DetectorEvent) {
+        val text = when (e.type) {
+            EventType.ACTIVATED -> "Activación"
+            EventType.IGNORED -> "Ignorado (otra dirección)"
+            EventType.PAUSED -> "En pausa: el celular se movió"
+            EventType.RESUMED -> "Reanudado"
+            EventType.SATURATED -> "Sensor saturado"
+            EventType.MAGNET_CALIBRATED -> "Imán calibrado"
+            else -> return
+        }
+        telemetry.sendEvent(e.type.name.lowercase(), text, e.signal, e.cosine)
     }
 
     private fun saveCalibration() {

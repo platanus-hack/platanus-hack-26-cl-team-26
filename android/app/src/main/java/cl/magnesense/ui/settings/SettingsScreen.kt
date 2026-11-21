@@ -44,6 +44,7 @@ import cl.magnesense.actions.DeviceActions
 import cl.magnesense.actions.DeviceKind
 import cl.magnesense.data.AppSettings
 import cl.magnesense.data.SettingsStore
+import cl.magnesense.telemetry.TelemetryClient
 import cl.magnesense.ui.components.BigButton
 import cl.magnesense.ui.components.BigOutlineButton
 import cl.magnesense.ui.components.Panel
@@ -55,8 +56,9 @@ import java.util.Locale
 
 /** Ajustes para el cuidador. Todo se guarda al momento. */
 @Composable
-fun SettingsScreen(store: SettingsStore, actions: DeviceActions) {
+fun SettingsScreen(store: SettingsStore, actions: DeviceActions, telemetry: TelemetryClient) {
     val s by store.settings.collectAsState()
+    val link by telemetry.status.collectAsState()
     val scope = rememberCoroutineScope()
     var testMessage by remember { mutableStateOf<String?>(null) }
 
@@ -105,6 +107,12 @@ fun SettingsScreen(store: SettingsStore, actions: DeviceActions) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Field("URL del servidor", s.serverUrl, KeyboardType.Uri) { v -> store.update { it.copy(serverUrl = v) } }
                     Hint("Ej.: http://192.168.1.20:8000 (el notebook con server.py). Vacío = no enviar datos.")
+                    if (link.enabled) {
+                        Label(
+                            if (link.connected) "✓ Conectado · ${link.samplesSent} muestras enviadas"
+                            else "! Sin conexión" + (link.lastError?.let { " ($it)" } ?: ""),
+                        )
+                    }
                 }
             }
 
