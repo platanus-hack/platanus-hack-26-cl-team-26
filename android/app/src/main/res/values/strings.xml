@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MagneSense</string>
+    <string name="notif_channel">Detección del imán</string>
+    <string name="notif_title">MagneSense está escuchando</string>
+    <string name="notif_text">Detectando el imán con la pantalla apagada</string>
+</resources>
