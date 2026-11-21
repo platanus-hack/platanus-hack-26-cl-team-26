@@ -4,6 +4,7 @@ import type { ExpressionSpecification, LngLatBoundsLike } from "maplibre-gl";
 import { cellToBoundary } from "h3-js";
 import MapaHex, { type Capa } from "./MapaHex";
 import Cifra from "./Cifra";
+import FiltroComunas from "./FiltroComunas";
 import { formato, useRevela, useVisible } from "./movimiento";
 import { historico, useTerreno, type Captura, type Estado, type InfoComunas } from "@/lib/terreno";
 
@@ -139,9 +140,8 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
   const H = estado.hex;
   const sel = estado.seleccion;
   const todas = sel.length === info.comunas.length;
-  const [modo, setModo] = useState<"todas" | "comuna">(todas ? "todas" : "comuna");
-  const ultimaPorComuna = useRef<string[]>([]);
-  useEffect(() => { if (modo === "comuna" && sel.length && !todas) ultimaPorComuna.current = sel; }, [modo, sel, todas]);
+  // Un área vacía no tiene cuadras: como mapa.html, se abre con las 34.
+  useEffect(() => { if (!sel.length && !ocupado) cambiar({ comunas: info.comunas, distritos: [], zona: null }); }, [sel.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Polígonos de los hexágonos del área: los arma h3-js y se guardan entre áreas.
   const cache = useRef(new Map<string, number[][]>());
@@ -169,21 +169,22 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
     type: "FeatureCollection",
     features: info.comunas.map((c) => ({
       type: "Feature",
-      properties: { c, est: modo === "todas" ? "todas" : sel.includes(c) ? "sel" : vecinas.has(c) ? "vec" : "otra" },
+      properties: { c, est: todas ? "todas" : sel.includes(c) ? "sel" : vecinas.has(c) ? "vec" : "otra" },
       geometry: { type: "MultiPolygon", coordinates: info.geo[c].map((poly) => poly.map((anillo) => anillo.map(([la, lo]) => [lo, la]))) },
     })),
-  }), [info, sel, vecinas, modo]);
+  }), [info, sel, vecinas, todas]);
+  // Tocar una comuna en el mapa: con todas a la vista la deja sola; una vecina se suma; otra empieza de nuevo.
   function tocarComuna(c: string) {
-    if (ocupado || sel.includes(c)) return;
-    cambiar({ comunas: modo === "todas" ? [c] : vecinas.has(c) ? [...sel, c] : [c], distritos: [], zona: null });
-    if (modo === "todas") setModo("comuna");
+    if (ocupado || (sel.includes(c) && !todas)) return;
+    cambiar({ comunas: todas ? [c] : vecinas.has(c) ? [...sel, c] : [c], distritos: [], zona: null });
   }
-  function cambiarModo(m: "todas" | "comuna") {
-    if (m === modo || ocupado) return;
-    setModo(m);
-    if (m === "todas") cambiar({ comunas: info.comunas, distritos: [], zona: null });
-    else if (ultimaPorComuna.current.length) cambiar({ comunas: ultimaPorComuna.current, distritos: [], zona: null });
-  }
+  // Suelo medio por comuna para la lista del cajón; se recuerda lo visto aunque luego se filtre.
+  const sueloComuna = useRef(new Map<string, number>());
+  useMemo(() => {
+    const por: Record<string, number[]> = {};
+    H.comuna.forEach((c, i) => { if (H.lst[i] != null) (por[c] ??= []).push(H.lst[i] as number); });
+    for (const [c, v] of Object.entries(por)) sueloComuna.current.set(c, media(v));
+  }, [H]);
 
   const capturasGeo = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
@@ -209,26 +210,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
   };
   const mapaComun = { comunas: comunasGeo, capturas: capturasGeo, recorridos: recorridosGeo, popupCaptura, alComuna: tocarComuna };
 
-  const barraArea = (
-    <div className="area">
-      <div className="grupo" role="group" aria-label="Área">
-        <button type="button" className="pill" style={{ minHeight: 40, fontSize: 14 }} aria-pressed={modo === "todas"} onClick={() => cambiarModo("todas")}>Todas las comunas</button>
-        <button type="button" className="pill" style={{ minHeight: 40, fontSize: 14 }} aria-pressed={modo === "comuna"} onClick={() => cambiarModo("comuna")}>Separar por comuna</button>
-      </div>
-      <div className="chips" aria-live="polite">
-        {modo === "todas" ? <span className="chip">{sel.length} comunas</span>
-          : sel.length ? sel.map((c) => (
-            <span key={c} className="chip">{c}<button type="button" aria-label={`Quitar ${c}`} disabled={ocupado}
-              onClick={() => cambiar({ comunas: sel.filter((x) => x !== c) })}>×</button></span>))
-            : <span className="nota">Toca una comuna en el mapa.</span>}
-        {ocupado && <span className="nota">Calculando…</span>}
-      </div>
-      <p className="nota">{modo === "todas"
-        ? "Se ven las 34 comunas juntas. Toca una cuadra para ver sus datos, o elige “Separar por comuna” y toca una comuna para verla sola."
-        : "Toca una comuna vecina (borde punteado) para sumarla, u otra para empezar ahí. El área es la misma en todo el mapa de la página."}</p>
-      {error && <p className="aviso" role="alert">{error}</p>}
-    </div>
-  );
+  const filtro = <FiltroComunas info={info} estado={estado} ocupado={ocupado} error={error} cambiar={cambiar} sueloComuna={sueloComuna.current} />;
 
   // ---- El calor ahora
   const [capa, setCapa] = useState("calor");
@@ -337,19 +319,18 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
             {CAPAS_AHORA.map((c) => <button key={c.id} type="button" className="pill" aria-pressed={capa === c.id} onClick={() => setCapa(c.id)}>{NOMBRE_CAPA[c.id]}</button>)}
           </div>
         </div>
-        <div className="escalon" style={est(1)}>{barraArea}</div>
-        <div className="escalon" style={est(2)}>
+        <div className="escalon" style={est(1)}>
           <MapaHex {...mapaComun} datos={datosAhora} capas={CAPAS_AHORA} activa={capa} encuadre={encuadreArea} alElegir={setElegida}
-            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Toca una cuadra para ver sus datos o una comuna para elegirla.`} />
+            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Toca una cuadra para ver sus datos o una comuna para elegirla.`}>{filtro}</MapaHex>
         </div>
         <div className="leyenda">
           <span><i className="barra" style={{ background: LEYENDA[capa][0] }} />{LEYENDA[capa][1]}</span>
           <span className="detalle num" aria-live="polite">{det != null
             ? `${H.distrito[det]}${H.parque[det] ? ", parque" : ""}: suelo ${formato(H.lst[det] ?? 0, 1)} °C${H.vivo[det] != null ? `, aire ${formato(H.vivo[det] as number, 1)} °C` : ""}, copa ${formato(H.copa[det] ?? 0, 1)} %, ${formato(H.pob[det])} personas, urgencia ${formato(H.u[det] ?? 0, 3)}.`
             : "Toca una cuadra para ver sus datos."}</span>
-          {det != null && modo === "todas" && (
+          {det != null && todas && (
             <button type="button" className="pill" style={{ minHeight: 36, fontSize: 14 }} disabled={ocupado}
-              onClick={() => { setModo("comuna"); cambiar({ comunas: [H.comuna[det]], distritos: [], zona: null }); }}>Ver solo {H.comuna[det]}</button>
+              onClick={() => cambiar({ comunas: [H.comuna[det]], distritos: [], zona: null })}>Ver solo {H.comuna[det]}</button>
           )}
         </div>
         <div className="resumen">
@@ -371,7 +352,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
               <ol>
                 {resumen.slice(0, 6).map(([c, v]) => (
                   <li key={c}>
-                    <button type="button" disabled={ocupado} onClick={() => { setModo("comuna"); cambiar({ comunas: [c], distritos: [], zona: null }); }}>
+                    <button type="button" disabled={ocupado} onClick={() => cambiar({ comunas: [c], distritos: [], zona: null })}>
                       <span>{c}</span><span className="num">{formato(v, 1)} °C</span>
                       <i style={{ width: `${(100 * (v - 25)) / (resumen[0][1] - 25)}%` }} />
                     </button>
@@ -386,7 +367,6 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
 
       <Seccion id="planificar">
         <div className="b-cab escalon"><h2>Planificar</h2><p>Mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes del área elegida.</p></div>
-        <div className="escalon" style={est(1)}>{barraArea}</div>
         <div className="b-controles escalon" style={est(2)}>
           {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"]] as const).map(([k, nombre]) => (
             <div className="peso" key={k}>
@@ -402,7 +382,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
         <div className="b-plan">
           <div className="izq escalon" style={est(3)}>
             <MapaHex {...mapaComun} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={corredor} encuadre={encuadrePlan}
-              etiqueta="Corredor propuesto sobre la urgencia de cada cuadra" />
+              etiqueta="Corredor propuesto sobre la urgencia de cada cuadra">{filtro}</MapaHex>
             {enCorredor.length > 0 && (
               <button type="button" className="pill zoom-corredor" aria-pressed={cerca} onClick={() => setCerca(!cerca)}>
                 {cerca ? (todas ? "Ver las 34 comunas" : "Ver toda el área") : "Acercar al corredor"}
@@ -468,7 +448,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
         </div>
         <div className="b-hist">
           <div className="izq escalon" style={est(2)}>
-            <MapaHex {...mapaComun} datos={datosHist} capas={CAPAS_HIST} activa="hist" encuadre={encuadreArea} etiqueta="Promedio del calor del suelo por cuadra en el rango elegido" />
+            <MapaHex {...mapaComun} datos={datosHist} capas={CAPAS_HIST} activa="hist" encuadre={encuadreArea} etiqueta="Promedio del calor del suelo por cuadra en el rango elegido">{filtro}</MapaHex>
             <div className="leyenda" style={{ marginTop: 10 }}><span><i className="barra" style={{ background: grad(OCRE) }} /><span className="num">Suelo medio de {formato(escalaHist[0], 1)} °C a {formato(escalaHist[1], 1)} °C</span></span></div>
           </div>
           <div className="cifras">

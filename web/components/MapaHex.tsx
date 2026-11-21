@@ -34,7 +34,7 @@ function tenir(mapa: MapaML) {
 }
 
 export default function MapaHex({ datos, capas, activa, corredor, comunas, capturas, recorridos, popupCaptura,
-  encuadre, alElegir, alComuna, etiqueta }: {
+  encuadre, alElegir, alComuna, etiqueta, children }: {
   datos: GeoJSON.FeatureCollection;
   capas: Capa[];
   activa: string;
@@ -47,6 +47,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
   alElegir?: (i: number | null) => void;
   alComuna?: (c: string) => void;
   etiqueta: string;
+  children?: React.ReactNode;                 // controles que flotan sobre el mapa
 }) {
   const [cont, visible] = useVisible<HTMLDivElement>();
   const nodo = useRef<HTMLDivElement>(null);
@@ -100,7 +101,11 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
         nuevo.addSource("comunas", { type: "geojson", data: VACIO });
         nuevo.addLayer({
           id: "comunas-relleno", type: "fill", source: "comunas",
-          paint: { "fill-color": "#4F6E31", "fill-opacity": ["match", ["get", "est"], "vec", 0.1, "otra", 0.05, 0.001] },
+          // Lo elegido a color (sus cuadras), las vecinas tenues y el resto apagado.
+          paint: {
+            "fill-color": ["match", ["get", "est"], "otra", "#EFE9DA", "#4F6E31"],
+            "fill-opacity": ["match", ["get", "est"], "vec", 0.14, "otra", 0.55, 0.001],
+          },
         });
         nuevo.addLayer({
           id: "comunas-linea", type: "line", source: "comunas", filter: ["!=", ["get", "est"], "vec"],
@@ -215,6 +220,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
     <div ref={cont} className="mapa" role="region" aria-label={etiqueta}>
       <div ref={nodo} style={{ position: "absolute", inset: 0 }} />
       {!listo && <div className="mapa-carga" aria-hidden="true">Cargando mapa…</div>}
+      {children}
     </div>
   );
 }
