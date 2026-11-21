@@ -30,6 +30,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFi
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ecologia import PERFILES, resolver_corredor_por_perfil
 from optimizer import solve_corridor
 from terreno.almacen import Almacen, cuenta, estado_validacion
 from terreno.vision import analizar
@@ -49,7 +50,10 @@ log = logging.getLogger("terreno")
 def _resumen(r: dict) -> dict:
     return {"hexes": len(r["hexes"]), "km": round(r["length_km"], 2),
             "urgencia_cubierta": round(r["urgencia_cubierta"], 3), "urgencia_azar": round(r["urgencia_azar"], 3),
-            "personas_cubiertas": r["personas_cubiertas"], "verificados": r.get("verificados", 0)}
+            "personas_cubiertas": r["personas_cubiertas"], "verificados": r.get("verificados", 0),
+            "checkpoints": len(r.get("checkpoints", [])),
+            "parques_conectados": r.get("parques_conectados", 0),
+            "resistencia_media": r.get("resistencia_media")}
 
 
 def _num(x, lo=None, hi=None):
@@ -95,6 +99,7 @@ class Seleccion(BaseModel):
     w_calor: float | None = None
     w_arbol: float | None = None
     w_personas: float | None = None
+    perfil: str | None = None            # humanos | fauna_aves | fauna_abejas | mixto
 
 
 def distritos(df: pd.DataFrame) -> dict[tuple[str, str], str]:
@@ -153,7 +158,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     copa = df["copa_modelo_pct"] if "copa_modelo_pct" in df else df["arbol_pct"]
     lock = threading.Lock()
     estado: dict = {"version": 0, "sel_id": 0, "live_mtime": None, "live": None,
-                    "p": {"comunas": [], "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2)}}
+                    "p": {"comunas": [], "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2), "perfil": "humanos"}}
 
     def leer_live() -> bool:
         """Relee data/live_h3.parquet si cambió. Devuelve si cambió."""
@@ -170,7 +175,36 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
 
     def resolver(terreno=None):
         p = estado["p"]
-        return solve_corridor(estado["sub"], p["km"], *p["w"], live=estado["live"], terreno=terreno)
+        perfil = p.get("perfil", "humanos")
+        if perfil == "humanos":
+            r = solve_corridor(estado["sub"], p["km"], *p["w"], live=estado["live"], terreno=terreno)
+            r["checkpoints"] = []
+            r["parques_conectados"] = len(r.get("tramos", [])) + 1 if r.get("tramos") else 0
+            r["resistencia_media"] = None
+            return r
+        res = resolver_corredor_por_perfil(
+            estado["sub"],
+            perfil=perfil,
+            budget_km=p["km"],
+            w_calor=p["w"][0],
+            w_arbol=p["w"][1],
+            w_personas=p["w"][2],
+            live=estado["live"],
+        )
+        return {
+            "hexes": res["hexes_corredor"],
+            "checkpoints": res["hexes_checkpoints"],
+            "length_km": res["length_km"],
+            "urgencia": res["score_mapa"],
+            "urgencia_cubierta": res["urgencia_cubierta"],
+            "urgencia_azar": res["urgencia_azar"],
+            "personas_cubiertas": res["personas_cubiertas"],
+            "personas_azar": res["personas_azar"],
+            "tramos": res["tramos"],
+            "verificados": 0,
+            "parques_conectados": res["parques_conectados"],
+            "resistencia_media": round(res["resistencia_media"], 1) if res["resistencia_media"] is not None else None,
+        }
 
     def elegir(cambio: Seleccion):
         """Fija el área (comunas → distritos → zona), presupuesto y pesos, y la línea base sin terreno («antes»)."""
@@ -194,6 +228,10 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         if min(w) < 0 or sum(w) <= 0:
             raise HTTPException(422, "Pesos >= 0 y no todos 0")
         p["w"] = tuple(w)
+        if cambio.perfil is not None:
+            if cambio.perfil not in PERFILES:
+                raise HTTPException(422, "Perfil inválido")
+            p["perfil"] = cambio.perfil
         sub = df[df["comuna"].isin(p["comunas"])]
         if p["distritos"]:
             sub = sub[sub["distrito"].isin(p["distritos"])]
@@ -340,7 +378,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     def _parametros() -> dict:
         p = estado["p"]
         return {"comunas": p["comunas"], "distritos": p["distritos"], "zona": len(p["zona"] or []),
-                "km": p["km"], "w_calor": p["w"][0], "w_arbol": p["w"][1], "w_personas": p["w"][2]}
+                "km": p["km"], "w_calor": p["w"][0], "w_arbol": p["w"][1], "w_personas": p["w"][2],
+                "perfil": p.get("perfil", "humanos")}
 
     dist_por_comuna = {c: sorted(v, key=lambda n: int(n.rsplit(" ", 1)[1])) for c, v in distritos_de.items()}
 
@@ -382,6 +421,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
                     for c in alm.capturas()]
         verif = set(terreno["h3_index"]) if terreno is not None else set()
         en_antes, en_ahora = set(antes["hexes"]), set(ahora["hexes"])
+        en_cp = set(ahora.get("checkpoints", []))
         vivo = pd.Series(float("nan"), index=sub.index)
         if live is not None and len(live):
             ok = live[live["confianza"].isin(["alta", "media"]) & live["temp_aire_c"].notna()]
@@ -395,6 +435,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             "pob": sub["poblacion"].astype(int).tolist(), "social": [_r(x, 3) for x in sub["social"]],
             "parque": sub["es_parque"].astype(bool).tolist(),
             "antes": [h in en_antes for h in hs], "ahora": [h in en_ahora for h in hs],
+            "checkpoint": [h in en_cp for h in hs],
             "verificado": [h in verif for h in hs],
         }
         if sel_id != sid:

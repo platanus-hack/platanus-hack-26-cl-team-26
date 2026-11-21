@@ -116,6 +116,13 @@
   </section>
 
   <section data-para="corredor">
+    <h2>Objetivo de la automatización</h2>
+    <div class="vistas modos" role="group" aria-label="Objetivo" id="perfiles" style="grid-template-columns:1fr 1fr;margin-bottom:10px">
+      <button data-perfil="humanos" aria-pressed="true">Humanos (Sombra)</button>
+      <button data-perfil="fauna_aves" aria-pressed="false">Aves (Eje continuo)</button>
+      <button data-perfil="fauna_abejas" aria-pressed="false">Abejas (Mini islas)</button>
+      <button data-perfil="mixto" aria-pressed="false">Mixto (Ambos)</button>
+    </div>
     <h2>Presupuesto y pesos</h2>
     <div id="controles"></div>
     <div class="reparto" id="reparto"></div>
@@ -266,7 +273,7 @@ function mostrarHex(c, latlng) {
       <tr><th>NDVI</th><td>${num(t.ndvi[i], 2)}</td></tr>
       <tr><th>Índice social</th><td>${num(H.social[i], 2)}</td></tr>
       <tr><th>Población</th><td>${ent(H.pob[i])}</td></tr>
-      <tr><th>En corredor</th><td>${H.ahora[i] ? "sí" : "no"}${H.parque[i] ? " · parque" : ""}${H.verificado[i] ? " · verificado" : ""}</td></tr></table>`;
+      <tr><th>En corredor</th><td>${H.checkpoint?.[i] ? "Mini Isla (Checkpoint)" : H.ahora[i] ? "sí" : "no"}${H.parque[i] ? " · parque" : ""}${H.verificado[i] ? " · verificado" : ""}</td></tr></table>`;
   } else {
     html += '<br><small>Fuera del área filtrada (distrito o zona).</small>';
   }
@@ -339,6 +346,7 @@ const CONTROLES = [["km", "Presupuesto (km)", 1, 20, .5], ["w_calor", "Calor (LS
                    ["w_arbol", "Falta de árboles", 0, 100, 5], ["w_personas", "Personas y social", 0, 100, 5]];
 let temporizador = null;
 function armarControles(p) {
+  document.querySelectorAll("[data-perfil]").forEach(b => b.setAttribute("aria-pressed", b.dataset.perfil === (p.perfil || "humanos")));
   const total = p.w_calor + p.w_arbol + p.w_personas || 1;
   const val = { km: p.km, w_calor: Math.round(100 * p.w_calor / total), w_arbol: Math.round(100 * p.w_arbol / total),
                 w_personas: Math.round(100 * p.w_personas / total) };
@@ -369,6 +377,10 @@ function programar() {
 }
 
 // ---------- Vistas ----------
+document.querySelectorAll("[data-perfil]").forEach(b => b.onclick = () => {
+  document.querySelectorAll("[data-perfil]").forEach(x => x.setAttribute("aria-pressed", x === b));
+  cambiar({ perfil: b.dataset.perfil });
+});
 document.querySelectorAll("[data-vista]").forEach(b => b.onclick = () => {
   vista = b.dataset.vista;
   document.querySelectorAll("[data-vista]").forEach(x => x.setAttribute("aria-pressed", x === b));
@@ -404,8 +416,13 @@ function valores() {  // temperatura y NDVI que usa la vista actual
 
 function colores() {
   const n = H.h.length;
-  if (vista === "corredor") return H.h.map((_, i) =>
-    H.ahora[i] ? [[21, 128, 61], .95] : H.parque[i] ? [[217, 119, 6], .7] : [mezcla(H.u[i] ?? 0, [241, 245, 249], [74, 222, 128]), .7]);
+  if (vista === "corredor") {
+    const perf = d?.parametros?.perfil || "humanos";
+    return H.h.map((_, i) =>
+      H.checkpoint?.[i] ? [[217, 70, 239], .96] :
+      H.ahora[i] ? (perf === "fauna_abejas" ? [[134, 239, 172], .78] : [[21, 128, 61], .95]) :
+      H.parque[i] ? [[217, 119, 6], .7] : [mezcla(H.u[i] ?? 0, [241, 245, 249], [74, 222, 128]), .7]);
+  }
   const v = valores(), capas = [];
   if ($("cCalor").checked) capas.push(norm(v.temp).map(t => mezcla(t, [255, 246, 229], [255, 95, 0])));
   if ($("cVerde").checked) {
@@ -442,12 +459,22 @@ function pintar() {
     m = metrica("Temp. media", num(prom(v.temp)) + " °C") + metrica("Temp. máxima", num(Math.max(...v.temp.filter(x => x != null))) + " °C") +
         metrica("Copa arbórea media", num(prom(H.copa)) + " %") + metrica("Población (Censo 2024)", ent(H.pob.reduce((s, x) => s + x, 0)));
   } else if (vista === "corredor") {
-    $("tituloMetricas").textContent = "Corredor óptimo (Dijkstra)";
+    const perf = d?.parametros?.perfil || "humanos";
+    const nombresPerfil = {
+      humanos: "Humanos (Alivio térmico)",
+      fauna_aves: "Animales: Aves (Eje continuo)",
+      fauna_abejas: "Animales: Abejas (Mini islas)",
+      mixto: "Mixto (Humanos + Fauna)"
+    };
+    document.querySelectorAll("[data-perfil]").forEach(b => b.setAttribute("aria-pressed", b.dataset.perfil === perf));
+    $("tituloMetricas").textContent = `Corredor · ${nombresPerfil[perf] || "Dijkstra"}`;
     const mejora = w.urgencia_azar > 0 ? (w.urgencia_cubierta / w.urgencia_azar - 1) * 100 : 0;
+    const extraFauna = (w.checkpoints ? metrica("Mini Islas (Checkpoints)", w.checkpoints, `${w.parques_conectados || 0} parques conectados`) :
+      metrica("Parques conectados", w.parques_conectados || 0, w.resistencia_media != null ? `resistencia ${w.resistencia_media}` : "red continua"));
     m = w.hexes ? metrica("Largo", num(w.km, 2) + " km", `${w.hexes} hexágonos`) +
         metrica("Urgencia cubierta", num(w.urgencia_cubierta, 3), `<span class="delta">${mejora >= 0 ? "+" : ""}${num(mejora)} % vs azar</span>`) +
         metrica("Personas beneficiadas", ent(w.personas_cubiertas), `<span class="delta">${w.personas_cubiertas >= w.personas_azar ? "+" : ""}${ent(w.personas_cubiertas - w.personas_azar)} vs azar</span>`) +
-        metrica("Verificados en terreno", w.verificados, "hexágonos del corredor")
+        extraFauna
       : '<div class="aviso" style="grid-column:1/-1">Sin corredor: el área no tiene un parque consolidado desde donde partir. Suma una comuna vecina o amplía el filtro.</div>';
   } else {
     $("tituloMetricas").textContent = "Promedio del período";
@@ -465,7 +492,8 @@ function pintar() {
   const L1 = (estilo, t) => `<div><span style="${estilo}"></span>${t}</div>`;
   const caja = c => `display:inline-block;width:22px;height:10px;border-radius:2px;vertical-align:middle;margin-right:6px;background:${c}`;
   $("leyenda").innerHTML = (vista === "corredor"
-      ? L1(caja("#15803d"), "Corredor óptimo") + L1(caja("linear-gradient(90deg,#f1f5f9,#4ade80)"), "Prioridad de plantación: baja → alta") +
+      ? L1(caja("#15803d"), "Corredor óptimo") + (w.checkpoints ? L1(caja("#d946ef"), "Mini Isla (Checkpoint aves/abejas)") : "") +
+        L1(caja("linear-gradient(90deg,#f1f5f9,#4ade80)"), "Prioridad de plantación: baja → alta") +
         L1(caja("#d97706"), "Parques existentes") + L1("border-top:2px dashed #1b241e", "Corredor sin datos de terreno")
       : '<div>Color: promedio de las capas activas (claro → intenso)</div>') +
     L1("border-top:3px solid #c026d3", "Verificado en terreno") +
