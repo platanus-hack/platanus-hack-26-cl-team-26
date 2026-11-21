@@ -28,13 +28,13 @@ data class Device(
 
     companion object {
         val DEFAULTS = listOf(
-            Device("luz", "Luz", "💡"),
-            Device("ventilador", "Ventilador", "🌀"),
-            Device("tv", "Televisión", "📺"),
-            Device("cuidador", "Llamar cuidador", "📞", DeviceKind.CAREGIVER),
+            Device("luz", "Luz", "bulb"),
+            Device("ventilador", "Ventilador", "fan"),
+            Device("tv", "Televisión", "tv"),
+            Device("cuidador", "Llamar cuidador", "phone", DeviceKind.CAREGIVER),
         )
 
-        /** Iconos para elegir en ajustes. */
-        val ICONS = listOf("💡", "🌀", "📺", "📞", "🔌", "🛏️", "🎵", "🚪", "🔔", "❄️", "🔥", "📻")
+        /** Claves de iconos vectoriales para elegir en ajustes. */
+        val ICONS = listOf("bulb", "fan", "tv", "phone", "plug", "bed", "music", "door", "bell", "ac", "heater", "radio")
     }
 }

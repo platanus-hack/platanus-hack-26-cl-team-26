@@ -178,6 +178,27 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
     @Synchronized
     fun calibration(): Calibration? = baseline?.let { Calibration(it, noise, magnet) }
 
+    /**
+     * Toma la lectura actual suavizada como nueva linea base (0 µT) al instante,
+     * conservando el ruido y el iman calibrados. Ideal para re-centrar en 1 toque.
+     */
+    @Synchronized
+    fun recenterBaseline() {
+        val current = smooth ?: return
+        baseline = current
+        if (noise <= 0.0) noise = config.noiseFloor
+        signal = 0.0
+        cosine = Double.NaN
+        if (currentState == DetectorState.UNCALIBRATED || currentState == DetectorState.PAUSED ||
+            currentState == DetectorState.CANDIDATE || currentState == DetectorState.ACTIVE ||
+            currentState == DetectorState.REFRACTORY
+        ) {
+            currentState = DetectorState.REST
+        }
+        resetDetection()
+        publish()
+    }
+
     // ------------------------------------------------------------------
     // Muestras
     // ------------------------------------------------------------------
@@ -223,8 +244,10 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
         gyroAvailable = true
         gyroMagnitude = w.norm
         val moving = gyroMagnitude > config.gyroLimit
-        if (moving) lastMotionT = t
-        if (moving) {
+        // Ignorar la vibracion haptica propia del telefono justo al activar (0.6 s).
+        val selfVibration = (t - lastActivationT in 0.0..0.6) && gyroMagnitude < config.gyroLimit * 3.0
+        if (moving && !selfVibration) lastMotionT = t
+        if (moving && !selfVibration) {
             when (currentState) {
                 DetectorState.CALIBRATING_REST -> {
                     calibStart = Double.NaN
@@ -327,7 +350,7 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
             peakMax = signal
             peakDir = delta.normalized()
         }
-        if (signal < start / 2) {
+        if (signal < max(start / 2, peakMax * 0.35)) {
             inPeak = false
             peaks += peakMax to peakDir
             events += DetectorEvent(EventType.MAGNET_PEAK, t, signal = peakMax)

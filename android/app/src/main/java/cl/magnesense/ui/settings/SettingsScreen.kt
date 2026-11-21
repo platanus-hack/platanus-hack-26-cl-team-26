@@ -44,6 +44,8 @@ import cl.magnesense.telemetry.TelemetryClient
 import cl.magnesense.ui.components.AppSlider
 import cl.magnesense.ui.components.BigButton
 import cl.magnesense.ui.components.BigOutlineButton
+import cl.magnesense.ui.components.DeviceIconCatalog
+import cl.magnesense.ui.components.DeviceVectorIcon
 import cl.magnesense.ui.components.Panel
 import cl.magnesense.ui.components.ScreenColumn
 import cl.magnesense.ui.components.SectionTitle
@@ -87,7 +89,7 @@ fun SettingsScreen(store: SettingsStore, actions: DeviceActions, telemetry: Tele
                     "Agregar dispositivo",
                     onClick = {
                         store.update { st ->
-                            st.copy(devices = st.devices + Device("d${System.currentTimeMillis()}", "Enchufe", "🔌"))
+                            st.copy(devices = st.devices + Device("d${System.currentTimeMillis()}", "Enchufe", "plug"))
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -180,8 +182,9 @@ private fun DeviceEditor(
     Panel {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val currentKey = DeviceIconCatalog.normalize(device.icon)
                 for (icon in Device.ICONS) {
-                    val selected = icon == device.icon
+                    val selected = DeviceIconCatalog.normalize(icon) == currentKey
                     Box(
                         Modifier
                             .size(52.dp)
@@ -189,7 +192,13 @@ private fun DeviceEditor(
                             .border(1.dp, Palette.Border, RoundedCornerShape(10.dp))
                             .clickable { onChange(device.copy(icon = icon)) },
                         contentAlignment = Alignment.Center,
-                    ) { Text(icon, fontSize = 26.sp) }
+                    ) {
+                        DeviceVectorIcon(
+                            icon = icon,
+                            tint = if (selected) Palette.OnHighlight else Palette.Text,
+                            size = 26.dp,
+                        )
+                    }
                 }
             }
             Field("Nombre", device.name) { onChange(device.copy(name = it)) }

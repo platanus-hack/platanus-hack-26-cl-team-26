@@ -39,6 +39,7 @@ import cl.magnesense.sensor.SensorHub
 import cl.magnesense.sensor.SensorSnapshot
 import cl.magnesense.ui.components.BigButton
 import cl.magnesense.ui.components.ConditionChip
+import cl.magnesense.ui.components.DeviceBadgeIcon
 import cl.magnesense.ui.components.Panel
 import cl.magnesense.ui.components.SignalMeter
 import cl.magnesense.ui.components.StatusPill
@@ -59,13 +60,13 @@ fun ControlScreen(engine: Engine, access: AccessController, onCalibrate: () -> U
 
     KeepScreenOn()
     Column(
-        Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        StatusHeader(d, scan, sensors)
+        StatusHeader(d, scan, sensors, onRecenter = engine.detector::recenterBaseline)
         if (d.state == DetectorState.UNCALIBRATED) {
             Panel {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Antes de usar MagneSense hay que calibrar el imán.", style = MaterialTheme.typography.bodyLarge, color = Palette.Text)
                     BigButton("Calibrar ahora", onCalibrate, Modifier.fillMaxWidth())
                 }
@@ -77,12 +78,16 @@ fun ControlScreen(engine: Engine, access: AccessController, onCalibrate: () -> U
         ScanProgress(scan)
         last?.let {
             Panel {
-                Column {
-                    Text("Última acción", style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Última acción:", style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
                     Text(
                         (if (it.ok) "✓ " else "! ") + it.message,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = if (it.ok) Palette.Text else Palette.WarningSoft,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (it.ok) Palette.Highlight else Palette.WarningSoft,
                     )
                 }
             }
@@ -91,7 +96,7 @@ fun ControlScreen(engine: Engine, access: AccessController, onCalibrate: () -> U
 }
 
 @Composable
-private fun StatusHeader(d: DetectorStatus, scan: ScanState, sensors: SensorSnapshot) {
+private fun StatusHeader(d: DetectorStatus, scan: ScanState, sensors: SensorSnapshot, onRecenter: () -> Unit) {
     val (text, color) = when {
         !sensors.running -> "Detenido" to Palette.Muted
         d.state == DetectorState.PAUSED -> "En pausa" to Palette.Warning
@@ -100,14 +105,30 @@ private fun StatusHeader(d: DetectorStatus, scan: ScanState, sensors: SensorSnap
         scan.mode == ScanMode.SCANNING -> "Escaneando" to Palette.Highlight
         else -> "Escuchando" to Palette.Ok
     }
-    StatusPill(text, color)
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatusPill(text, color)
+        Row(
+            Modifier
+                .background(Palette.Surface, RoundedCornerShape(50))
+                .border(1.dp, Palette.Border, RoundedCornerShape(50))
+                .clickable(onClick = onRecenter)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("⟳ Re-centrar 0 µT", color = Palette.Text, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ConditionChip("Celular quieto", d.gyroOk)
+        ConditionChip("Quieto", d.gyroOk)
         ConditionChip(
-            if (d.saturated) "Imán demasiado cerca" else "Sin metales cerca",
+            if (d.saturated) "Saturado" else "Campo limpio",
             !d.saturated && sensors.earthField in EARTH_FIELD_RANGE,
         )
         ConditionChip("Calibrado", d.isCalibrated)
@@ -142,25 +163,45 @@ private fun DeviceGrid(
 @Composable
 private fun DeviceTile(device: Device, on: Boolean, highlighted: Boolean, onTap: () -> Unit, modifier: Modifier) {
     val shape = RoundedCornerShape(20.dp)
+    val bgColor = when {
+        highlighted -> Palette.Highlight
+        on -> androidx.compose.ui.graphics.Color(0xFF1D283A)
+        else -> Palette.Surface
+    }
+    val borderColor = when {
+        highlighted -> Palette.Text
+        on -> Palette.Ok
+        else -> Palette.Border
+    }
+    val borderWidth = when {
+        highlighted -> 5.dp
+        on -> 3.dp
+        else -> 1.dp
+    }
     val textColor = if (highlighted) Palette.OnHighlight else Palette.Text
+    val stateColor = when {
+        highlighted -> Palette.OnHighlight
+        on -> Palette.Ok
+        else -> Palette.Muted
+    }
     Column(
         modifier
-            .height(170.dp)
-            .background(if (highlighted) Palette.Highlight else Palette.Surface, shape)
-            .border(if (highlighted) 5.dp else 1.dp, if (highlighted) Palette.Text else Palette.Border, shape)
+            .height(144.dp)
+            .background(bgColor, shape)
+            .border(borderWidth, borderColor, shape)
             .clickable(onClick = onTap)
-            .padding(12.dp),
+            .padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
     ) {
-        Text(device.icon, fontSize = 48.sp)
+        DeviceBadgeIcon(icon = device.icon, on = on, highlighted = highlighted)
         Text(device.name, style = MaterialTheme.typography.titleLarge, color = textColor, textAlign = TextAlign.Center)
         val state = when {
             device.isCaregiver -> "Pide ayuda"
-            on -> "● Encendido"
+            on -> "● ENCENDIDO"
             else -> "○ Apagado"
         }
-        Text(state, style = MaterialTheme.typography.bodyMedium, color = if (highlighted) Palette.OnHighlight else Palette.Muted)
+        Text(state, style = MaterialTheme.typography.labelLarge, color = stateColor)
     }
 }
 

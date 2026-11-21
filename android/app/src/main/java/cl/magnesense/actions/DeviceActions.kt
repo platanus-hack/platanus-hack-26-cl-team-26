@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,8 +45,11 @@ class DeviceActions(private val context: Context) {
     suspend fun run(device: Device): ActionResult =
         if (device.isCaregiver) callCaregiver(device) else setPower(device, !(isOn.value[device.id] ?: false))
 
-    /** Prende o apaga. Con URL vacia solo cambia el estado en pantalla (demostracion). */
+    /** Prende o apaga. Con URL vacia cambia el estado en pantalla y (para Luz) la linterna real del celular. */
     suspend fun setPower(device: Device, on: Boolean): ActionResult {
+        if (device.id == "luz" || device.icon == "bulb" || device.icon == "💡") {
+            setPhoneTorch(on)
+        }
         val url = if (on) device.onUrl else device.offUrl
         val verb = if (on) "Encendiendo" else "Apagando"
         val result = if (url.isBlank()) {
@@ -59,6 +64,19 @@ class DeviceActions(private val context: Context) {
         if (result.ok) _isOn.update { it + (device.id to on) }
         _lastResult.value = result
         return result
+    }
+
+    /** Activa/desactiva el flash LED trasero del celular como actuador fisico inmediato en la demo. */
+    private fun setPhoneTorch(on: Boolean) {
+        try {
+            val cm = context.getSystemService(CameraManager::class.java) ?: return
+            val id = cm.cameraIdList.firstOrNull { cid ->
+                cm.getCameraCharacteristics(cid).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            } ?: return
+            cm.setTorchMode(id, on)
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "No se pudo cambiar la linterna del celular", e)
+        }
     }
 
     /** Webhook (si hay) y luego llamada telefonica (o marcador si no hay permiso). */

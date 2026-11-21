@@ -250,6 +250,33 @@ class DetectorTest {
         assertEquals(1, fresh.count(EventType.ACTIVATED))
     }
 
+    @Test
+    fun magnetCalibrationClosesPeaksEvenWhenHandHoversNearby() {
+        sim.detector.startRestCalibration()
+        sim.run(10.5)
+        sim.detector.startMagnetCalibration()
+        repeat(5) {
+            sim.run(0.5) { magnetDir * 40.0 }
+            // La mano se retira solo unos centimetros (queda en 5 µT, sobre start/2 = 1,5 µT).
+            sim.run(0.5) { magnetDir * 5.0 }
+        }
+        assertEquals(DetectorState.REST, sim.detector.state)
+        assertNotNull(sim.detector.status.value.magnet)
+    }
+
+    @Test
+    fun recenterBaselineZeroesOutSignalImmediately() {
+        calibrate()
+        val shifted = Vec3(12.0, -8.0, 6.0)
+        sim.run(0.2) { shifted }
+        sim.detector.recenterBaseline()
+        assertEquals(0.0, sim.detector.status.value.signal, 1e-6)
+        assertEquals(DetectorState.REST, sim.detector.state)
+        sim.events.clear()
+        sim.run(1.0) { shifted + magnetDir * 30.0 }
+        assertEquals(1, sim.count(EventType.ACTIVATED))
+    }
+
     /** Simulador: magnetometro y giroscopio a 100 Hz con ruido gaussiano determinista. */
     private inner class Sim(val detector: Detector) {
         private val random = Random(42)

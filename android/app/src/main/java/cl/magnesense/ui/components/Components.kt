@@ -112,23 +112,47 @@ fun ScreenColumn(modifier: Modifier = Modifier, content: @Composable () -> Unit)
     Column(modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
 }
 
-/** Barra simple de la senal actual, para que el cuidador vea que el iman se detecta. */
+/** Barra de la senal actual con lectura en µT y umbral visible para el jurado y el cuidador. */
 @Composable
 fun SignalMeter(signal: Double, marker: Double, modifier: Modifier = Modifier) {
-    val scale = max(marker * 2, signal) * 1.1
-    Box(modifier.fillMaxWidth().height(28.dp).background(Palette.Background).border(1.dp, Palette.Border)) {
+    val scale = max(marker * 2, signal).coerceAtLeast(1.0) * 1.1
+    val above = marker > 0 && signal >= marker
+    val barColor = if (above) Palette.Highlight else Palette.Ok
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                "Señal: %.1f µT".format(java.util.Locale.US, signal),
+                color = if (above) Palette.Highlight else Palette.Text,
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace,
+            )
+            Text(
+                "Umbral: %.1f µT".format(java.util.Locale.US, marker),
+                color = Palette.Muted,
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
         Box(
             Modifier
-                .fillMaxWidth((signal / scale).toFloat().coerceIn(0f, 1f))
-                .height(28.dp)
-                .background(Palette.Ok),
-        )
-        Box(
-            Modifier
-                .fillMaxWidth((marker / scale).toFloat().coerceIn(0f, 1f))
-                .height(28.dp),
-            contentAlignment = Alignment.CenterEnd,
-        ) { Box(Modifier.size(width = 4.dp, height = 28.dp).background(Palette.Highlight)) }
+                .fillMaxWidth()
+                .height(24.dp)
+                .background(Palette.Background, RoundedCornerShape(6.dp))
+                .border(1.dp, if (above) Palette.Highlight else Palette.Border, RoundedCornerShape(6.dp)),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth((signal / scale).toFloat().coerceIn(0f, 1f))
+                    .height(24.dp)
+                    .background(barColor, RoundedCornerShape(6.dp)),
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth((marker / scale).toFloat().coerceIn(0f, 1f))
+                    .height(24.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) { Box(Modifier.size(width = 4.dp, height = 24.dp).background(Palette.Highlight)) }
+        }
     }
 }
 
