@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -21,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import kotlin.math.max
 import cl.magnesense.ui.theme.Palette
 
 /** Tarjeta con borde, base de casi todas las pantallas. */
@@ -103,4 +106,24 @@ fun BigOutlineButton(text: String, onClick: () -> Unit, modifier: Modifier = Mod
 @Composable
 fun ScreenColumn(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Column(modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
+}
+
+/** Barra simple de la senal actual, para que el cuidador vea que el iman se detecta. */
+@Composable
+fun SignalMeter(signal: Double, marker: Double, modifier: Modifier = Modifier) {
+    val scale = max(marker * 2, signal) * 1.1
+    Box(modifier.fillMaxWidth().height(28.dp).background(Palette.Background).border(1.dp, Palette.Border)) {
+        Box(
+            Modifier
+                .fillMaxWidth((signal / scale).toFloat().coerceIn(0f, 1f))
+                .height(28.dp)
+                .background(Palette.Ok),
+        )
+        Box(
+            Modifier
+                .fillMaxWidth((marker / scale).toFloat().coerceIn(0f, 1f))
+                .height(28.dp),
+            contentAlignment = Alignment.CenterEnd,
+        ) { Box(Modifier.size(width = 4.dp, height = 28.dp).background(Palette.Highlight)) }
+    }
 }

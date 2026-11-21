@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.ui.Modifier
 import cl.magnesense.sensor.SensorService
-import cl.magnesense.ui.debug.DebugScreen
+import cl.magnesense.ui.AppRoot
 import cl.magnesense.ui.theme.MagneSenseTheme
 import cl.magnesense.ui.theme.Palette
 
@@ -32,7 +32,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MagneSenseTheme {
                 Box(Modifier.fillMaxSize().background(Palette.Background).safeDrawingPadding()) {
-                    DebugScreen()
+                    AppRoot((application as MagneSenseApp).engine)
                 }
             }
         }
