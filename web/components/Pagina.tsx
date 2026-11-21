@@ -157,10 +157,13 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
       geometry: { type: "MultiPolygon", coordinates: info.geo[c].map((poly) => poly.map((anillo) => anillo.map(([la, lo]) => [lo, la]))) },
     })),
   }), [info, sel, vecinas, todas]);
-  // Tocar una comuna en el mapa: con todas a la vista la deja sola; una vecina se suma; otra empieza de nuevo.
+  // Tocar una comuna en el mapa: con todas a la vista la deja sola; una elegida se quita (la última vuelve
+  // a la vista general); una vecina se suma; otra empieza de nuevo.
   function tocarComuna(c: string) {
-    if (ocupado || (sel.includes(c) && !todas)) return;
-    cambiar({ comunas: todas ? [c] : vecinas.has(c) ? [...sel, c] : [c], distritos: [], zona: null });
+    if (ocupado) return;
+    const quedan = sel.filter((x) => x !== c);
+    const nuevo = todas ? [c] : sel.includes(c) ? (quedan.length ? quedan : info.comunas) : vecinas.has(c) ? [...sel, c] : [c];
+    cambiar({ comunas: nuevo, distritos: [], zona: null });
   }
   // Suelo medio por comuna para la lista del cajón; se recuerda lo visto aunque luego se filtre.
   const sueloComuna = useRef(new Map<string, number>());

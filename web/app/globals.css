@@ -183,3 +183,5 @@ section[id], footer[id] { scroll-margin-top: 16px; }
   .resumen-mapa { top: auto; right: 12px; left: 12px; bottom: 30px; max-width: none; }
   .resumen-mapa b { font-size: 16px; }
 }
+.resumen-mapa .quitar { display: flex; flex-wrap: wrap; gap: 4px; }
+.resumen-mapa .chip { min-height: 30px; font-size: 13px; }
