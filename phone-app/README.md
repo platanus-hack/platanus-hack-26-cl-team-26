@@ -25,6 +25,17 @@ Los timestamps se envían en nanosegundos desde 1970, igual que Sensor Logger. L
 
 El teléfono y el notebook deben estar en la misma red WiFi. Si la red bloquea conexiones entre equipos (pasa en redes de eventos), usa el hotspot del teléfono o `npx expo start --tunnel`. El túnel solo sirve para cargar la app: los datos siguen yendo directo a la IP del notebook.
 
+## Pestaña Agente
+
+Requiere el servidor de la rama `feat/agente` (`server.py` con el agente y `ANTHROPIC_API_KEY` definida).
+
+- **Chat:** se habla con el agente desde el celular, por ejemplo: *"si muevo el imán de izquierda a derecha se apaga la luz, y de derecha a izquierda se prende"*.
+- **Calibración guiada:** cuando el agente pide grabar un movimiento, aparece un aviso a pantalla completa. Primero "Prepárate", en azul, y luego "AHORA", en amarillo, con el movimiento ("Mueve el imán IZQUIERDA ➜ DERECHA"), el número de intento y la cuenta regresiva. No hay que tocar el celular: tocarlo mueve el magnetómetro.
+- **Reglas:** se ven las reglas creadas. Las acciones `http` o `comando` pendientes se pueden aprobar aquí o en el panel.
+- **Transmisión:** sigue activa al cambiar de pestaña. Hay que empezar a transmitir en Sensores.
+
+La app usa el mismo WebSocket que el panel web (`/ws`) y `POST /agent`.
+
 ## Opciones
 
 - **Frecuencia**: 50, 100 o 200 Hz. Usa 200 Hz por defecto. Android 12+ no entrega más de 200 Hz por sensor, y en iPhone el magnetómetro suele llegar a ~100 Hz. La pantalla muestra la frecuencia real obtenida.

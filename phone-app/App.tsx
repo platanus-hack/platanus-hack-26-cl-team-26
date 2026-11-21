@@ -16,6 +16,9 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
+import AgentScreen from './src/AgentScreen';
+import { ChatMsg, useAgentFeed } from './src/agentFeed';
+import ProbeOverlay from './src/ProbeOverlay';
 import { baseUrl, Clock, makeId, normalizeUrl, postBatch, Sample, SensorName } from './src/stream';
 
 // Android 12+ limita a 200 Hz por sensor; iOS suele entregar hasta ~100 Hz
@@ -69,12 +72,52 @@ const EMPTY_STATS: Stats = {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <Logger />
+      <Main />
     </SafeAreaProvider>
   );
 }
 
-function Logger() {
+// Dos pestañas. Ambas quedan montadas (solo se oculta la otra) para que la
+// transmision de sensores siga corriendo mientras se conversa con el agente.
+function Main() {
+  const [tab, setTab] = useState<'sensores' | 'agente'>('sensores');
+  const [dataUrl, setDataUrl] = useState('');
+  const feed = useAgentFeed(dataUrl);
+  const nextLocal = useRef(1_000_000);
+  const addLocal = (role: ChatMsg['role'], text: string) =>
+    feed.setMessages((m) => m.concat({ id: nextLocal.current++, role, text }));
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <StatusBar style="dark" />
+      <View style={styles.tabs}>
+        {(['sensores', 'agente'] as const).map((t) => (
+          <Pressable key={t} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabOn]}>
+            <Text style={[styles.tabText, tab === t && styles.tabTextOn]}>
+              {t === 'sensores' ? 'Sensores' : 'Agente'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={[styles.page, tab !== 'sensores' && styles.hidden]}>
+        <Logger onServer={setDataUrl} />
+      </View>
+      <View style={[styles.page, tab !== 'agente' && styles.hidden]}>
+        <AgentScreen
+          dataUrl={dataUrl}
+          connected={feed.connected}
+          messages={feed.messages}
+          rules={feed.rules}
+          actions={feed.actions}
+          addLocal={addLocal}
+        />
+      </View>
+      <ProbeOverlay probe={feed.probe} />
+    </SafeAreaView>
+  );
+}
+
+function Logger({ onServer }: { onServer: (dataUrl: string) => void }) {
   const [url, setUrl] = useState('');
   const [rate, setRate] = useState(DEFAULT_RATE);
   const [useMag, setUseMag] = useState(true);
@@ -182,6 +225,7 @@ function Logger() {
 
   // Envio por paquetes.
   const dataUrl = normalizeUrl(url);
+  useEffect(() => onServer(dataUrl), [dataUrl, onServer]);
   useEffect(() => {
     if (!running || !dataUrl) return;
     const timer = setInterval(async () => {
@@ -280,8 +324,7 @@ function Logger() {
         : 'Conectando...';
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar style="dark" />
+    <>
       {running && <KeepAwake />}
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>MagneSense Logger</Text>
@@ -375,7 +418,7 @@ function Logger() {
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </>
   );
 }
 
@@ -475,6 +518,13 @@ function Spark({ data, color }: { data: Span[]; color: string }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#f2f4f7' },
+  tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 8 },
+  tab: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: '#e2e8f0', alignItems: 'center' },
+  tabOn: { backgroundColor: '#2b6cb0' },
+  tabText: { fontWeight: '700', color: '#2d3748' },
+  tabTextOn: { color: '#fff' },
+  page: { flex: 1 },
+  hidden: { display: 'none' },
   container: { padding: 16, paddingBottom: 40, gap: 12 },
   title: { fontSize: 24, fontWeight: '700', color: '#1a202c', marginTop: 4 },
   card: { backgroundColor: '#fff', borderRadius: 12, padding: 14, gap: 6 },
