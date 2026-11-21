@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+captures/
+release/
+
+# La regla data/ de la raiz (grabaciones de server.py) no debe tapar el paquete de la app.
+!/app/src/main/java/cl/magnesense/data/
