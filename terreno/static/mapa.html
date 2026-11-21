@@ -497,10 +497,14 @@ function pintarCapturas() {
     const hora = new Date(e.tomado_en || e.medido_en).toLocaleString("es-CL");
     const lista = !e.analizada ? "<em>Sin analizar (BirdNET no estaba disponible)</em>"
       : e.detecciones.length ? e.detecciones.map(x => `🐦 <em>${esc(x.cientifico)}</em> <small>${esc(x.comun)} · ${Math.round(x.confianza * 100)} %</small>`).join("<br>")
+      : e.concluyente === false ? "<strong>No concluyente:</strong> no se oyeron aves, pero había mucho ruido"
       : "No se identificaron aves <small>(no significa que no haya)</small>";
+    const RUIDO = { bajo: "bajo", medio: "medio", alto: "alto (tráfico)" };
+    const ruido = e.ruido ? `<br><small>Ruido de la calle: ${RUIDO[e.ruido.nivel]} · ${e.ruido.db} dB relativo</small>` : "";
+    const tramo = e.video_id ? `#t=${e.desde_s},${e.hasta_s}` : "";
     L.marker([e.lat, e.lon], { icon: iconoEscucha, pane: "capturas" })
-      .bindPopup(`<div class="pop"><strong>Escucha de ${Math.round(e.duracion_s)} s</strong><br>${lista}
-        <br><audio controls preload="none" src="/audios/${esc(e.id)}.wav" style="width:220px;margin-top:6px"></audio>
+      .bindPopup(`<div class="pop"><strong>${e.video_id ? "Tramo de recorrido" : "Escucha"} de ${Math.round(e.duracion_s)} s</strong><br>${lista}${ruido}
+        <br><audio controls preload="none" src="/audios/${esc(e.archivo || e.id + ".wav")}${tramo}" style="width:220px;margin-top:6px"></audio>
         <br><small>${esc(hora)} · GPS ±${Math.round(e.precision_m ?? 0)} m</small></div>`).addTo(capaCap);
   }
   for (const r of d.recorridos || []) {

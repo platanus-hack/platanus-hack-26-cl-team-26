@@ -4,8 +4,10 @@
 - data/terreno/fotos/<id>.jpg y <id>_min.jpg: foto re-codificada (sin EXIF) y miniatura. No se versionan.
 - data/terreno/recorridos.jsonl: un video por línea, con su trazado GPS (posición y hora de cada punto).
 - data/terreno/videos/<id>.<ext>: el video grabado. No se versiona.
-- data/terreno/escuchas.jsonl: una escucha de aves por línea (15 s de audio, posición, hora y especies que
-  identificó BirdNET). data/terreno/audios/<id>.wav: el audio. No se versiona.
+- data/terreno/escuchas.jsonl: una escucha de aves por línea (posición, hora, ruido de la calle y especies que
+  identificó BirdNET). Una escucha quieta son 15 s; el audio de un recorrido en video se parte en una escucha
+  por hexágono recorrido (desde_s y hasta_s dentro del audio, video_id). data/terreno/audios/<archivo>.wav: el
+  audio. No se versiona.
 
 Tiempos: `tomado_en` es la hora del teléfono al tomar la foto o el cuadro; `medido_en` es la hora en que llegó
 al servidor (UTC). Posición: lat, lon y precision_m del GPS del teléfono en ese momento.
@@ -88,17 +90,27 @@ class Almacen:
         with self.escuchas_jsonl.open(encoding="utf-8") as f:
             return [json.loads(l) for l in f if l.strip()]
 
-    def guardar_audio(self, wav: bytes, lat: float, lon: float, precision_m: float | None,
-                      tomado_en: str | None, detecciones: list[dict] | None, duracion_s: float) -> dict:
-        """detecciones=None: BirdNET no estaba disponible y la escucha queda «sin analizar»."""
+    def guardar_wav(self, wav: bytes, nombre: str) -> str:
+        """Guarda un audio con nombre <id>.wav (p. ej. el de un recorrido) y devuelve el nombre."""
+        (self.audios / f"{nombre}.wav").write_bytes(wav)
+        return f"{nombre}.wav"
+
+    def guardar_audio(self, wav: bytes | None, lat: float, lon: float, precision_m: float | None,
+                      tomado_en: str | None, detecciones: list[dict] | None, duracion_s: float,
+                      ruido: dict | None = None, archivo: str | None = None, extra: dict | None = None) -> dict:
+        """detecciones=None: BirdNET no estaba disponible y la escucha queda «sin analizar». Con wav=None la
+        escucha apunta a un audio ya guardado (archivo), p. ej. un tramo del audio de un recorrido."""
         ahora = datetime.now(timezone.utc)
         eid = f"{ahora:%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
-        (self.audios / f"{eid}.wav").write_bytes(wav)
+        if wav is not None:
+            archivo = self.guardar_wav(wav, eid)
         hx = h3.latlng_to_cell(lat, lon, RES)
+        sin_aves_con_ruido = detecciones is not None and not detecciones and (ruido or {}).get("nivel") == "alto"
         esc = {"id": eid, "medido_en": ahora.isoformat(), "tomado_en": hora(tomado_en), "lat": lat, "lon": lon,
                "precision_m": precision_m, "duracion_s": round(duracion_s, 1), "h3_index": hx,
                "h3_padre": h3.cell_to_parent(hx, 7), "analizada": detecciones is not None,
-               "detecciones": detecciones or []}
+               "detecciones": detecciones or [], "ruido": ruido, "concluyente": not sin_aves_con_ruido,
+               "archivo": archivo, **(extra or {})}
         with self.escuchas_jsonl.open("a", encoding="utf-8") as f:
             f.write(json.dumps(esc, ensure_ascii=False) + "\n")
         return esc

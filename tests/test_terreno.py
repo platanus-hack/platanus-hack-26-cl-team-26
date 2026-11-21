@@ -349,10 +349,10 @@ def test_vivo_e_historico():
         assert c.get("/api/historico?desde=2025-01-01&hasta=2024-01-01").status_code == 422
 
 
-def wav(segundos=2.0, tasa=44100) -> bytes:
-    """WAV PCM 16 bit mono de ruido suave, como el que arma la página del teléfono."""
+def wav(segundos=2.0, tasa=44100, amplitud=0.05) -> bytes:
+    """WAV PCM 16 bit mono de ruido, como el que arma la página del teléfono (amplitud alta = calle ruidosa)."""
     import wave
-    x = (0.05 * np.random.default_rng(0).standard_normal(int(segundos * tasa)) * 32767).astype("<i2")
+    x = (np.clip(amplitud * np.random.default_rng(0).standard_normal(int(segundos * tasa)), -1, 1) * 32767).astype("<i2")
     b = io.BytesIO()
     with wave.open(b, "wb") as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(tasa); w.writeframes(x.tobytes())
@@ -457,9 +457,95 @@ def test_audio():
             aves.detectar = lambda *a, **k: None
             d2 = c.post("/api/audio?k=secreta", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")}).json()
             assert not d2["analizada"] and len(c.get("/api/estado").json()["escuchas"]) == 2
+            assert d["escucha"]["ruido"]["nivel"] in ("bajo", "medio", "alto") and d["escucha"]["concluyente"]
+            # sin aves y con tráfico fuerte: «no concluyente»
+            aves.detectar = lambda *a, **k: []
+            d3 = c.post("/api/audio?k=secreta", data=datos,
+                        files={"audio": ("a.wav", wav(amplitud=0.4), "audio/wav")}).json()
+            assert d3["escucha"]["ruido"]["nivel"] == "alto" and d3["escucha"]["concluyente"] is False
             assert next(f for f in filas(c.get("/api/estado").json()) if f["h"] == hx)["bio"] == 0.1
     finally:
         aves.detectar = original
+
+
+def test_ruido_y_tramos():
+    """El ruido mide la banda del tráfico; un canto agudo no es ruido. El audio de un paseo se parte por hexágono."""
+    import terreno.aves as aves
+    sr = 32000
+    t = np.arange(sr * 4) / sr
+    rng = np.random.default_rng(0)
+    trafico = (0.08 * rng.standard_normal(len(t)) + 0.1 * np.sin(2 * np.pi * 120 * t)).astype(np.float32)
+    canto = (0.002 * rng.standard_normal(len(t)) + 0.3 * np.sin(2 * np.pi * 4000 * t)).astype(np.float32)
+    r_t, r_c = (aves.resumir_ruido(aves.ruido_por_segundo(x, sr)) for x in (trafico, canto))
+    assert r_t["nivel"] == "alto" and r_c["nivel"] == "bajo" and len(aves.ruido_por_segundo(trafico, sr)) == 4
+    assert aves.resumir_ruido([-60, -20, -61])["db"] == -60  # la mediana ignora una bocina
+    assert not aves.concluyente([], r_t) and aves.concluyente([], r_c) and aves.concluyente([{"x": 1}], r_t)
+    assert aves.concluyente(None, None)
+    a_, b_ = "89b2c1a4a1bffff", "89b2c1a4a17ffff"
+    (la, lo), (lb, lob) = h3.cell_to_latlng(a_), h3.cell_to_latlng(b_)
+    track = [{"lat": la, "lon": lo, "t_s": 0}, {"lat": la, "lon": lo, "t_s": 4},
+             {"lat": lb, "lon": lob, "t_s": 8}, {"lat": la, "lon": lo, "t_s": 8.6}]  # vuelta corta: se descarta
+    tr = aves.tramos_por_hexagono(track, 9.0)
+    assert [x["h3_index"] for x in tr] == [a_, b_]
+    assert tr[0]["desde_s"] == 0 and tr[0]["hasta_s"] == 6.0 and tr[1]["desde_s"] == 6.0 and tr[1]["hasta_s"] == 8.3
+    assert aves.tramos_por_hexagono([], 10) == []
+
+
+def test_paseo_con_audio():
+    """Video caminando con micrófono: cada ave queda en el hexágono donde iba el teléfono cuando cantó."""
+    import json
+    from fastapi.testclient import TestClient
+    import terreno.aves as aves
+    from terreno.servidor import crear_app
+
+    df = pd.read_parquet(DEMO)
+    hexes = [h for h in solve_corridor(df)["hexes"] if not df.set_index("h3_index").loc[h, "es_parque"]][:2]
+    (la, lo), (lb, lob) = (h3.cell_to_latlng(h) for h in hexes)
+    track = [{"lat": la, "lon": lo, "precision_m": 5, "t_s": t} for t in (0, 3, 6)] + \
+            [{"lat": lb, "lon": lob, "precision_m": 5, "t_s": t} for t in (9, 12, 15)]
+    cuadros = [track[0], track[3]]
+    meta = json.dumps({"inicio": "2026-11-21T15:00:00-03:00", "cuadros": cuadros, "track": track})
+    fotos = [("cuadros", (f"c{i}.jpg", jpeg((128, 128, 128)), "image/jpeg")) for i in range(2)]
+    original = aves.detectar_crudo
+    vistos = []
+
+    def falso(x, tasa, lat, lon, fecha=None):
+        vistos.append((len(x) / tasa, lat, fecha))
+        d = lambda n, t0, c: {"cientifico": n, "comun": n, "confianza": c, "inicio_s": t0, "fin_s": t0 + 3}
+        return [d("Turdus falcklandii", 0, 0.6), d("Turdus falcklandii", 3, 0.9), d("Zenaida auriculata", 12, 0.7)]
+    aves.detectar_crudo = falso
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO))
+            deshacer = con_claude(obs(True, "medio"))
+            try:
+                r = c.post("/api/video", data={"meta": meta},
+                           files=fotos + [("audio", ("r.wav", wav(16, 32000, amplitud=0.3), "audio/wav"))])
+                sin_audio = c.post("/api/video", data={"meta": meta}, files=fotos).json()
+                malo = c.post("/api/video", data={"meta": meta},
+                              files=fotos + [("audio", ("r.wav", b"no", "audio/wav"))]).json()
+            finally:
+                deshacer()
+            assert r.status_code == 200, r.text
+            d = r.json()
+            assert abs(vistos[0][0] - 16) < 0.01 and vistos[0][1] == la and vistos[0][2].hour == 18
+            a = d["aves"]
+            assert a["analizada"] and a["tramos"] == 2 and a["ruido"]["nivel"] == "alto"
+            assert [x["cientifico"] for x in a["especies"]] == ["Turdus falcklandii", "Zenaida auriculata"]
+            esc = {e["h3_index"]: e for e in c.get("/api/estado").json()["escuchas"]}
+            ea, eb = esc[hexes[0]], esc[hexes[1]]
+            assert [x["cientifico"] for x in ea["detecciones"]] == ["Turdus falcklandii"]
+            assert ea["detecciones"][0]["confianza"] == 0.9  # la mejor de sus dos detecciones
+            assert [x["cientifico"] for x in eb["detecciones"]] == ["Zenaida auriculata"]
+            assert ea["video_id"] == eb["video_id"] == d["recorrido"]["id"] and ea["archivo"] == eb["archivo"]
+            assert ea["desde_s"] == 0 and ea["hasta_s"] == eb["desde_s"] == 7.5 and eb["hasta_s"] == 16
+            assert ea["tomado_en"] == "2026-11-21T18:00:00+00:00" and ea["ruido"]["nivel"] == "alto"
+            assert ea["concluyente"]  # hubo aves aunque había ruido
+            assert c.get(f"/audios/{ea['archivo']}").content[:4] == b"RIFF"
+            assert sin_audio["aves"] is None
+            assert malo["aves"]["error"] and malo["cuadros_analizados"] == 2  # el video se guarda igual
+    finally:
+        aves.detectar_crudo = original
 
 
 def test_aves_wav():

@@ -106,8 +106,10 @@ público. Las descartadas nunca entran; las sin validar (sin Claude) solo con `-
 Cada captura trae `lat`, `lon`, `precision_m`, `tomado_en` (hora del teléfono, UTC) y `medido_en` (hora del
 servidor, UTC); las que vienen de un video traen además `video_id` y `t_video_s`. Los recorridos en video, con su
 trazado GPS punto a punto, quedan en `data/terreno/recorridos.jsonl`. Las escuchas de aves (15 s de audio,
-posición, hora y especies de BirdNET con su confianza) quedan en `data/terreno/escuchas.jsonl`; cuentan si
-BirdNET las analizó. Las fotos de cerca de fauna o flores (`tipo_foto` "fauna_flora") son válidas, suman a la
+posición, hora, especies de BirdNET con su confianza y `ruido` {db, max_db, nivel bajo/medio/alto} de la
+banda del tráfico) quedan en `data/terreno/escuchas.jsonl`; cuentan si BirdNET las analizó. `concluyente` es
+false si no hubo aves y el ruido era alto. El audio de un video se parte en una escucha por hexágono recorrido
+(`video_id`, `desde_s`, `hasta_s`, `archivo` compartido). Las fotos de cerca de fauna o flores (`tipo_foto` "fauna_flora") son válidas, suman a la
 biodiversidad y no tocan `arbol_pct_terreno` ni `plantable`.
 
 | Columna | Tipo | Qué es |

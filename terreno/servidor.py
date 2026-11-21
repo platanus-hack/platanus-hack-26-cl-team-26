@@ -43,6 +43,7 @@ FOTO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}(_min)?\.jpg$")
 VIDEO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}\.(webm|mp4|mov)$")
 MAX_VIDEO_BYTES = 80 * 1024 * 1024
 MAX_AUDIO_BYTES = 6 * 1024 * 1024    # 15 s de WAV mono 16 bit a 48 kHz son ~1,4 MB
+MAX_AUDIO_PASEO = 24 * 1024 * 1024   # 3 min de WAV mono 16 bit a 32 kHz son ~11,5 MB
 AUDIO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}\.wav$")
 W_BIO = 0.1                          # peso inicial de la biodiversidad (los otros: 0,4 / 0,4 / 0,2)
 MAX_CUADROS_RECIBIDOS = 40
@@ -282,8 +283,11 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
 
     @app.post("/api/video")
     def subir_video(cuadros: list[UploadFile] = File(...), meta: str = Form(...),
-                    video: UploadFile | None = File(None), k: str | None = Query(None)):
-        """Video grabado en la página: cuadros JPEG con su posición y hora, más el trazado GPS del recorrido."""
+                    video: UploadFile | None = File(None), audio: UploadFile | None = File(None),
+                    k: str | None = Query(None)):
+        """Video grabado en la página: cuadros JPEG con su posición y hora, más el trazado GPS del recorrido.
+        Si trae audio (WAV del micrófono mientras se caminaba), BirdNET lo escucha entero y cada ave queda en el
+        hexágono donde iba el teléfono cuando cantó; cada tramo también mide el ruido de la calle."""
         revisar_clave(k)
         try:
             m = json.loads(meta)
@@ -313,6 +317,22 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             except Exception:
                 return None
 
+        paseo = None
+        if audio is not None:
+            wav = audio.file.read(MAX_AUDIO_PASEO + 1)
+            try:
+                if len(wav) > MAX_AUDIO_PASEO:
+                    raise ValueError("audio de más de 24 MB")
+                x, tasa = aves.leer_wav(wav)
+            except ValueError as e:
+                paseo = {"error": str(e)}
+            else:
+                t = hora(m.get("inicio"))
+                fecha = pd.Timestamp(t).to_pydatetime().replace(tzinfo=None) if t else None
+                p0 = track[0] if track else info[validos[0]]
+                paseo = {"wav": wav, "dur": len(x) / tasa, "dbs": aves.ruido_por_segundo(x, tasa),
+                         "crudas": aves.detectar_crudo(x, tasa, p0["lat"], p0["lon"], fecha),
+                         "tramos": aves.tramos_por_hexagono(track, len(x) / tasa)}
         with ThreadPoolExecutor(4) as ex:
             resultados = list(ex.map(analizar_seguro, imgs))
         with lock:
@@ -325,6 +345,19 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
                 c = info[i]
                 caps.append(alm.guardar(img, c["lat"], c["lon"], c["precision_m"], None, "", obs, c["tomado_en"],
                                         extra={"video_id": rec["id"], "t_video_s": c["t_s"]}))
+            escuchas = []
+            if paseo and "wav" in paseo:
+                archivo = alm.guardar_wav(paseo["wav"], rec["id"])
+                crudas = paseo["crudas"]
+                for tr in paseo["tramos"]:
+                    dets = None if crudas is None else aves.agrupar(
+                        [d for d in crudas if tr["desde_s"] <= (d["inicio_s"] + d["fin_s"]) / 2 < tr["hasta_s"]])
+                    dbs = paseo["dbs"][int(tr["desde_s"]):max(int(tr["desde_s"]) + 1, int(tr["hasta_s"]))]
+                    cuando = pd.Timestamp(hora(m.get("inicio"))) + pd.Timedelta(seconds=tr["desde_s"]) if hora(m.get("inicio")) else None
+                    escuchas.append(alm.guardar_audio(
+                        None, tr["lat"], tr["lon"], tr["precision_m"], cuando.isoformat() if cuando is not None else None,
+                        dets, tr["hasta_s"] - tr["desde_s"], aves.resumir_ruido(dbs), archivo,
+                        extra={"video_id": rec["id"], "desde_s": tr["desde_s"], "hasta_s": tr["hasta_s"]}))
             recalcular()
             ahora = estado["ahora"]
         estados = [estado_validacion(c) for c in caps]
@@ -337,6 +370,12 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             "fuera_de_area": sum(c["h3_index"] not in hex_area for c in caps),
             "fuera_de_seleccion": sum(c["h3_index"] not in set(estado["sub"]["h3_index"]) for c in caps),
             "motivos_descarte": sorted({c.get("motivo_rechazo", "") for c in caps if c.get("valida") is False} - {""}),
+            "aves": None if paseo is None else {
+                "error": paseo.get("error"), "analizada": bool(escuchas) and escuchas[0]["analizada"],
+                "tramos": len(escuchas),
+                "especies": aves.agrupar([d for e in escuchas for d in e["detecciones"]]),
+                "ruido": aves.resumir_ruido(paseo.get("dbs", [])),
+                "no_concluyentes": sum(not e["concluyente"] for e in escuchas)},
             "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
             "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
         }
@@ -379,9 +418,10 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             raise HTTPException(422, str(e))
         t = hora(tomado_en)
         detecciones = aves.detectar(wav, lat, lon, pd.Timestamp(t).to_pydatetime().replace(tzinfo=None) if t else None)
+        ruido = aves.resumir_ruido(aves.ruido_por_segundo(x, tasa))
         with lock:
             previo = estado["ahora"]
-            esc = alm.guardar_audio(wav, lat, lon, precision_m, tomado_en, detecciones, len(x) / tasa)
+            esc = alm.guardar_audio(wav, lat, lon, precision_m, tomado_en, detecciones, len(x) / tasa, ruido)
             recalcular()
             ahora = estado["ahora"]
         return {
