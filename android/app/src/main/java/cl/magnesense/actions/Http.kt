@@ -11,8 +11,8 @@ object Http {
     const val TIMEOUT_MS = 2_000
 
     sealed interface Result {
-        data class Ok(val code: Int) : Result
-        data class Failed(val reason: String) : Result
+        data class Ok(val code: Int, val body: String = "") : Result
+        data class Failed(val reason: String, val code: Int = 0, val body: String = "") : Result
     }
 
     suspend fun get(url: String, timeoutMs: Int = TIMEOUT_MS): Result = request(url, "GET", null, timeoutMs)
@@ -36,9 +36,11 @@ object Http {
                 }
                 if (json != null) conn.outputStream.use { it.write(json.toByteArray()) }
                 val code = conn.responseCode
-                // Consumir la respuesta permite reutilizar la conexion.
-                runCatching { (if (code < 400) conn.inputStream else conn.errorStream)?.use { it.readBytes() } }
-                if (code in 200..299) Result.Ok(code) else Result.Failed("HTTP $code")
+                // Leer la respuesta (tambien permite reutilizar la conexion).
+                val body = runCatching {
+                    (if (code < 400) conn.inputStream else conn.errorStream)?.use { it.readBytes().decodeToString() }
+                }.getOrNull().orEmpty()
+                if (code in 200..299) Result.Ok(code, body) else Result.Failed("HTTP $code", code, body)
             } catch (e: Exception) {
                 Result.Failed(e.javaClass.simpleName)
             } finally {

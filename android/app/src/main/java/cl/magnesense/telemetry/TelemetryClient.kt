@@ -38,7 +38,7 @@ class TelemetryClient(scope: CoroutineScope) : SensorSink {
     private val _status = MutableStateFlow(TelemetryStatus())
     val status: StateFlow<TelemetryStatus> = _status.asStateFlow()
 
-    private val samples = ArrayDeque<MagSample>()
+    private val samples = ArrayDeque<SensorSample>()
     private val events = ArrayDeque<String>()
     private val sessionId = UUID.randomUUID().toString()
     private var messageId = 0L
@@ -53,17 +53,20 @@ class TelemetryClient(scope: CoroutineScope) : SensorSink {
         }
     }
 
-    override fun onMagnetometer(tNanos: Long, value: Vec3) {
+    override fun onMagnetometer(tNanos: Long, value: Vec3) = enqueue(tNanos, value, gyroscope = false)
+
+    /** El servidor usa el giroscopio para no detectar mientras se mueve el telefono. */
+    override fun onGyroscope(tNanos: Long, value: Vec3) = enqueue(tNanos, value, gyroscope = true)
+
+    private fun enqueue(tNanos: Long, value: Vec3, gyroscope: Boolean) {
         if (baseUrl.isEmpty()) return
         // event.timestamp es relativo al arranque: pasarlo a tiempo Unix.
         val offset = System.currentTimeMillis() * 1_000_000L - SystemClock.elapsedRealtimeNanos()
         synchronized(samples) {
-            samples.addLast(MagSample(tNanos + offset, value))
+            samples.addLast(SensorSample(tNanos + offset, value, gyroscope))
             while (samples.size > MAX_QUEUED_SAMPLES) samples.removeFirst()
         }
     }
-
-    override fun onGyroscope(tNanos: Long, value: Vec3) = Unit
 
     fun sendEvent(type: String, text: String, signal: Double? = null, cosine: Double? = null) {
         if (baseUrl.isEmpty()) return
@@ -93,7 +96,7 @@ class TelemetryClient(scope: CoroutineScope) : SensorSink {
                 samples = batch,
             )
             if (!post("$base/data", body)) return
-            _status.value = _status.value.copy(samplesSent = _status.value.samplesSent + batch.size)
+            _status.value = _status.value.copy(samplesSent = _status.value.samplesSent + batch.count { !it.gyroscope })
         }
         while (true) {
             val json = synchronized(events) { events.removeFirstOrNull() } ?: break
@@ -120,7 +123,7 @@ class TelemetryClient(scope: CoroutineScope) : SensorSink {
     private companion object {
         const val PERIOD_MS = 100L
         const val BACKOFF_MS = 2_000L
-        const val MAX_QUEUED_SAMPLES = 2_000
+        const val MAX_QUEUED_SAMPLES = 4_000
         const val MAX_QUEUED_EVENTS = 50
         const val DEVICE_ID = "magnesense-android"
     }

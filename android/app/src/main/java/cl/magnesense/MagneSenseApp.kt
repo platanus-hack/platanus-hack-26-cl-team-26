@@ -13,6 +13,8 @@ import cl.magnesense.engine.AccessController
 import cl.magnesense.engine.Engine
 import cl.magnesense.feedback.Haptics
 import cl.magnesense.feedback.Speaker
+import cl.magnesense.remote.ServerApi
+import cl.magnesense.remote.ServerSocket
 import cl.magnesense.sensor.SensorHub
 import cl.magnesense.telemetry.TelemetryClient
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +41,10 @@ class MagneSenseApp : Application() {
         private set
     lateinit var telemetry: TelemetryClient
         private set
+    lateinit var server: ServerSocket
+        private set
+    lateinit var serverApi: ServerApi
+        private set
     private lateinit var speaker: Speaker
 
     override fun onCreate() {
@@ -49,6 +55,8 @@ class MagneSenseApp : Application() {
         engine = Engine()
         telemetry = TelemetryClient(scope)
         engine.rawListener = telemetry
+        server = ServerSocket(scope)
+        serverApi = ServerApi { settings.settings.value.serverUrl.trim().trimEnd('/') }
         settings.loadCalibration()?.let(engine.detector::restore)
         SensorHub.sink = engine
         access = AccessController(
@@ -78,6 +86,7 @@ class MagneSenseApp : Application() {
         access.actions.caregiver = CaregiverConfig(s.caregiverPhone.trim(), s.caregiverWebhook.trim())
         speaker.enabled = s.voiceEnabled
         telemetry.baseUrl = s.serverUrl
+        server.baseUrl = s.serverUrl
     }
 
     private fun onDetectorEvent(e: DetectorEvent) {

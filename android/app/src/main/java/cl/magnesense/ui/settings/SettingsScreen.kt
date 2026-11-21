@@ -40,6 +40,7 @@ import cl.magnesense.actions.DeviceActions
 import cl.magnesense.actions.DeviceKind
 import cl.magnesense.data.AppSettings
 import cl.magnesense.data.SettingsStore
+import cl.magnesense.remote.ServerSocket
 import cl.magnesense.telemetry.TelemetryClient
 import cl.magnesense.ui.components.AppSlider
 import cl.magnesense.ui.components.BigButton
@@ -56,9 +57,10 @@ import java.util.Locale
 
 /** Ajustes para el cuidador. Todo se guarda al momento. */
 @Composable
-fun SettingsScreen(store: SettingsStore, actions: DeviceActions, telemetry: TelemetryClient) {
+fun SettingsScreen(store: SettingsStore, actions: DeviceActions, telemetry: TelemetryClient, server: ServerSocket) {
     val s by store.settings.collectAsState()
     val link by telemetry.status.collectAsState()
+    val live by server.state.collectAsState()
     val scope = rememberCoroutineScope()
     var testMessage by remember { mutableStateOf<String?>(null) }
 
@@ -112,6 +114,7 @@ fun SettingsScreen(store: SettingsStore, actions: DeviceActions, telemetry: Tele
                             if (link.connected) "✓ Conectado · ${link.samplesSent} muestras enviadas"
                             else "! Sin conexión" + (link.lastError?.let { " ($it)" } ?: ""),
                         )
+                        Label(if (live.connected) "✓ Gestos aprendidos: en vivo" else "! Gestos aprendidos: sin conexión en vivo")
                     }
                 }
             }
