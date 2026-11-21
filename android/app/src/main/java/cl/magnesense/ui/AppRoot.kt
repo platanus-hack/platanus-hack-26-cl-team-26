@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -23,27 +24,46 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import cl.magnesense.detector.DetectorState
+import cl.magnesense.engine.AccessController
 import cl.magnesense.engine.Engine
+import cl.magnesense.scanning.ScanMode
 import cl.magnesense.ui.calibration.CalibrationScreen
+import cl.magnesense.ui.control.ConfirmOverlay
+import cl.magnesense.ui.control.ControlScreen
+import cl.magnesense.ui.control.PauseOverlay
 import cl.magnesense.ui.debug.DebugScreen
 import cl.magnesense.ui.theme.Palette
 
 enum class Screen(val label: String) {
+    CONTROL("Control"),
     CALIBRATION("Calibrar"),
     DEBUG("Debug"),
 }
 
 /** Estructura general: pestanas grandes arriba (las usa el cuidador) y la pantalla activa. */
 @Composable
-fun AppRoot(engine: Engine) {
-    var screen by rememberSaveable { mutableStateOf(Screen.CALIBRATION) }
-    Column(Modifier.fillMaxSize()) {
-        Tabs(screen) { screen = it }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            when (screen) {
-                Screen.CALIBRATION -> CalibrationScreen(engine.detector, onDone = { screen = Screen.DEBUG })
-                Screen.DEBUG -> DebugScreen(engine.detector)
+fun AppRoot(engine: Engine, access: AccessController) {
+    var screen by rememberSaveable { mutableStateOf(Screen.CONTROL) }
+    val detector by engine.detector.status.collectAsState()
+    val scan by access.scanning.state.collectAsState()
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Tabs(screen) { screen = it }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (screen) {
+                    Screen.CONTROL -> ControlScreen(engine, access, onCalibrate = { screen = Screen.CALIBRATION })
+                    Screen.CALIBRATION -> CalibrationScreen(engine.detector, onDone = { screen = Screen.CONTROL })
+                    Screen.DEBUG -> DebugScreen(engine.detector)
+                }
             }
+        }
+        if (screen == Screen.CONTROL && detector.state == DetectorState.PAUSED) {
+            PauseOverlay(detector.progress)
+        }
+        if (scan.mode == ScanMode.CONFIRMING) {
+            ConfirmOverlay(scan, onChoice = access.scanning::confirmByTouch)
         }
     }
 }

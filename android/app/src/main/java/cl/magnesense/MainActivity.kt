@@ -32,7 +32,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             MagneSenseTheme {
                 Box(Modifier.fillMaxSize().background(Palette.Background).safeDrawingPadding()) {
-                    AppRoot((application as MagneSenseApp).engine)
+                    val app = application as MagneSenseApp
+                    AppRoot(app.engine, app.access)
                 }
             }
         }
