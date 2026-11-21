@@ -18,3 +18,5 @@ data/terreno/fotos/
 data/terreno/videos/
 # API key local de Anthropic para terreno/servidor.py
 .anthropic_key
+# credenciales locales (DMC_USUARIO, DMC_TOKEN) que lee fuentes.py
+.env
