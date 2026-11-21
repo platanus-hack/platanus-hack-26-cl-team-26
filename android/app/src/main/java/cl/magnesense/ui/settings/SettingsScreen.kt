@@ -41,6 +41,7 @@ import cl.magnesense.data.AppSettings
 import cl.magnesense.data.SettingsStore
 import cl.magnesense.remote.ServerSocket
 import cl.magnesense.telemetry.TelemetryClient
+import cl.magnesense.ui.access.rememberPhoneModeEnabled
 import cl.magnesense.ui.components.AppSlider
 import cl.magnesense.ui.components.BigButton
 import cl.magnesense.ui.components.BigOutlineButton
@@ -128,6 +129,11 @@ fun SettingsScreen(store: SettingsStore, actions: DeviceActions, telemetry: Tele
                     Toggle("Hablar las opciones en voz alta", s.voiceEnabled) { v -> store.update { it.copy(voiceEnabled = v) } }
                     Toggle("Usar la linterna del celular como luz", s.phoneTorch) { v -> store.update { it.copy(phoneTorch = v) } }
                     Toggle("Iniciar al encender el teléfono", s.startOnBoot) { v -> store.update { it.copy(startOnBoot = v) } }
+                    val phoneMode = rememberPhoneModeEnabled().value
+                    Hint(
+                        if (phoneMode) "✓ Modo celular activo (Pulsos → perfil Celular)"
+                        else "Modo celular inactivo: actívalo desde Pulsos → perfil Celular",
+                    )
                 }
             }
         }

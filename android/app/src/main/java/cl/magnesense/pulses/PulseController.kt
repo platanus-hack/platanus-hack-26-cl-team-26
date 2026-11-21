@@ -10,6 +10,9 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.KeyEvent
+import cl.magnesense.access.PhoneAction
+import cl.magnesense.access.PhoneControl
+import cl.magnesense.access.PhoneResult
 import cl.magnesense.data.HistoryKind
 import cl.magnesense.detector.Vec3
 import cl.magnesense.feedback.SoundPlayer
@@ -28,7 +31,12 @@ enum class PulseInterp(val label: String, val description: String) {
     DIRECT("Directo", "Cada pulso alterna la luz."),
 }
 
-enum class PulseAction { LIGHT, SAY, ALARM, MEDIA, LAP }
+enum class PulseAction {
+    LIGHT, SAY, ALARM, MEDIA, LAP,
+
+    /** Modo celular: acciones sobre cualquier app, via el servicio de accesibilidad. */
+    NEXT, PREVIOUS, BACK, HOME, OPEN_APP,
+}
 
 data class PulseCommand(val code: String, val action: PulseAction, val text: String, val mediaKey: Int = 0)
 
@@ -60,6 +68,17 @@ enum class PulseProfile(val label: String, val commands: List<PulseCommand>) {
             PulseCommand(".", PulseAction.LAP, "Marcar vuelta"),
             PulseCommand("-", PulseAction.MEDIA, "Pausar o reanudar la música", KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE),
             PulseCommand("..", PulseAction.MEDIA, "Canción siguiente", KeyEvent.KEYCODE_MEDIA_NEXT),
+            PulseCommand("...", PulseAction.ALARM, "Necesito ayuda"),
+        ),
+    ),
+    PHONE(
+        "Celular",
+        listOf(
+            PulseCommand(".", PulseAction.NEXT, "Siguiente (deslizar hacia arriba)"),
+            PulseCommand("..", PulseAction.PREVIOUS, "Anterior (deslizar hacia abajo)"),
+            PulseCommand("-", PulseAction.BACK, "Atrás"),
+            PulseCommand("--", PulseAction.HOME, "Inicio"),
+            PulseCommand(".-", PulseAction.OPEN_APP, "Volver a MagneSense"),
             PulseCommand("...", PulseAction.ALARM, "Necesito ayuda"),
         ),
     ),
@@ -311,8 +330,28 @@ class PulseController(
                 if (laps.isEmpty()) say("Cronómetro iniciado") else say("Vuelta ${laps.size}: ${duration(t - laps.last())}")
                 laps += t
             }
+            PulseAction.NEXT -> phone(PhoneAction.NEXT)
+            PulseAction.PREVIOUS -> phone(PhoneAction.PREVIOUS)
+            PulseAction.BACK -> phone(PhoneAction.BACK)
+            PulseAction.HOME -> phone(PhoneAction.HOME)
+            PulseAction.OPEN_APP -> phone(PhoneAction.OPEN_APP)
         }
         history(HistoryKind.ACTION, "Pulsos: ${cmd.text}")
+    }
+
+    /** Modo celular: la accion la hace el servicio de accesibilidad, si esta activo. */
+    private fun phone(action: PhoneAction) {
+        when (PhoneControl.perform(action)) {
+            PhoneResult.NOT_ENABLED -> {
+                sounds.beep(200.0, 260)
+                say("Activa Modo celular en Ajustes")
+            }
+            PhoneResult.FAILED -> {
+                sounds.beep(200.0, 260)
+                log("No se pudo hacer: ${action.label}")
+            }
+            PhoneResult.DONE, PhoneResult.TOO_SOON -> Unit
+        }
     }
 
     private fun autoSayMorse(t: Double) {

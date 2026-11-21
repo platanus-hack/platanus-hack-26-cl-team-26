@@ -51,6 +51,20 @@
             android:exported="false"
             android:foregroundServiceType="health" />
 
+        <!-- Modo celular: controlar otras apps con pulsos del iman (deslizar, atras, inicio). -->
+        <service
+            android:name=".access.PhoneControlService"
+            android:exported="true"
+            android:label="@string/phone_control_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/phone_control_service" />
+        </service>
+
         <receiver
             android:name=".sensor.BootReceiver"
             android:exported="false">

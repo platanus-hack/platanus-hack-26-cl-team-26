@@ -4,4 +4,6 @@
     <string name="notif_channel">Detección del imán</string>
     <string name="notif_title">MagneSense está escuchando</string>
     <string name="notif_text">Detectando el imán con la pantalla apagada</string>
+    <string name="phone_control_label">MagneSense: control con imán</string>
+    <string name="phone_control_description">Permite usar el celular con el imán: deslizar videos, atrás e inicio. No lee la pantalla.</string>
 </resources>

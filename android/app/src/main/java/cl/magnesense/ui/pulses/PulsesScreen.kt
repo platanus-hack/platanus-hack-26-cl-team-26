@@ -33,6 +33,7 @@ import cl.magnesense.pulses.PulseDecoder
 import cl.magnesense.pulses.PulseInterp
 import cl.magnesense.pulses.PulseProfile
 import cl.magnesense.pulses.PulseUiState
+import cl.magnesense.ui.access.PhoneModeCard
 import cl.magnesense.ui.components.BigButton
 import cl.magnesense.ui.components.BigOutlineButton
 import cl.magnesense.ui.components.ConditionChip
@@ -93,7 +94,10 @@ fun PulsesScreen(app: MagneSenseApp) {
             }
 
             when (s.interp) {
-                PulseInterp.COMMANDS -> Commands(s, onProfile = pulses::setProfile)
+                PulseInterp.COMMANDS -> {
+                    Commands(s, onProfile = pulses::setProfile)
+                    if (s.profile == PulseProfile.PHONE) PhoneModeCard()
+                }
                 PulseInterp.MORSE -> Morse(s, onSay = pulses::sayText, onClear = pulses::clearText)
                 PulseInterp.DIRECT -> Panel {
                     Text(
