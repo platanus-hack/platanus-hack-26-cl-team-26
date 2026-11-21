@@ -32,7 +32,7 @@ class MagnetGate(
     private val minThresholdUt: Double = 8.0,
     private val noiseFactor: Double = 6.0,
     private val fullStrengthUt: Double = 40.0,
-    private val chargeSeconds: Double = 1.6,
+    private val chargeSeconds: Double = 2.6,
     private val decayPerSecond: Double = 0.7,
     private val gyroLimit: Double = 0.3,
     private val driftTau: Double = 3.0,

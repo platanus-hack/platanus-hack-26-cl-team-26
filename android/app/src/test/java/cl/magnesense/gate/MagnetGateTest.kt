@@ -38,10 +38,12 @@ class MagnetGateTest {
     }
 
     @Test
-    fun heldMagnetOpensInAboutTwoSeconds() {
+    fun heldMagnetOpensInAboutThreeSeconds() {
         run(1.0)
         run(1.0) { Vec3(30.0, 10.0, 0.0) }
         assertEquals(GatePhase.CHARGING, last.phase)
+        run(1.0) { Vec3(30.0, 10.0, 0.0) }
+        assertEquals(GatePhase.CHARGING, last.phase)   // dura ~1 s mas que antes
         run(1.0) { Vec3(30.0, 10.0, 0.0) }
         assertEquals(GatePhase.DONE, last.phase)
         // Una vez abierta queda abierta.
@@ -75,7 +77,7 @@ class MagnetGateTest {
     @Test
     fun weakMagnetAlsoOpens() {
         run(1.0)
-        run(3.5) { Vec3(0.0, 12.0, 0.0) }   // 12 µT: imán débil o lejano
+        run(4.5) { Vec3(0.0, 12.0, 0.0) }   // 12 µT: imán débil o lejano
         assertEquals(GatePhase.DONE, last.phase)
     }
 }

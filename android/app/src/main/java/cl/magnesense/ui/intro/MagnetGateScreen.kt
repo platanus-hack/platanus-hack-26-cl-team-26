@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -37,6 +38,7 @@ import cl.magnesense.gate.GatePhase
 import cl.magnesense.gate.GateState
 import cl.magnesense.gate.MagnetGate
 import cl.magnesense.feedback.Haptics
+import cl.magnesense.feedback.IntroSounds
 import cl.magnesense.scanning.FeedbackKind
 import cl.magnesense.sensor.SensorHub
 import cl.magnesense.ui.theme.Palette
@@ -57,6 +59,11 @@ fun MagnetGateScreen(app: MagneSenseApp, onEnter: () -> Unit) {
     val context = LocalContext.current
     val gate = remember { MagnetGate() }
     val haptics = remember { Haptics(context) }
+    val sounds = remember { IntroSounds() }
+    DisposableEffect(Unit) {
+        sounds.start()
+        onDispose { sounds.stop() }
+    }
     var state by remember { mutableStateOf(GateState()) }
     var time by remember { mutableFloatStateOf(0f) }
     /** Intensidad visual suavizada (las lineas no parpadean con el ruido). */
@@ -68,6 +75,7 @@ fun MagnetGateScreen(app: MagneSenseApp, onEnter: () -> Unit) {
     LaunchedEffect(Unit) {
         app.speaker.speak("Acerca el imán para entrar")
         var start = -1L
+        var lastRipple = 0
         while (true) {
             var finished = false
             withFrameNanos { now ->
@@ -81,11 +89,19 @@ fun MagnetGateScreen(app: MagneSenseApp, onEnter: () -> Unit) {
                 } else {
                     state = gate.update(t, s.mag, s.gyro)
                     glow += (state.strength.toFloat() - glow) * 0.08f
+                    val charging = state.phase == GatePhase.CHARGING
+                    sounds.level = if (charging) glow.coerceAtLeast(0.4f) else glow * 0.5f
+                    sounds.progress = state.progress.toFloat()
+                    // Un "ping" por cada onda que sale del circulo.
+                    val ripple = (t / RIPPLE_PERIOD_S * 3).toInt()
+                    if (charging && ripple != lastRipple) sounds.ping()
+                    lastRipple = ripple
                     finished = state.phase == GatePhase.DONE
                 }
             }
             if (finished) break
         }
+        if (!noSensor) sounds.finale()
         haptics.play(FeedbackKind.SELECTED)
         app.speaker.speak(if (noSensor) "Entrando" else "Bienvenido")
         if (noSensor) kotlinx.coroutines.delay(1500)
