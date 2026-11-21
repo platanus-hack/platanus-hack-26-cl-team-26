@@ -57,7 +57,12 @@ const mapa = L.map("mapa", { zoomControl: true, preferCanvas: true }).setView([-
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19, attribution: "© OpenStreetMap"
 }).addTo(mapa);
-mapa.createPane("comunas").style.zIndex = 350;   // bajo los hexágonos (overlayPane, 400)
+// Capas: hexágonos en canvas (rápido, abajo); comunas en SVG encima, para que reciban los toques (un canvas
+// encima los taparía todos); capturas y recorridos en SVG arriba de todo. La comuna elegida no tiene relleno,
+// así que los toques dentro de ella pasan a sus hexágonos.
+mapa.createPane("comunas").style.zIndex = 450;
+mapa.createPane("capturas").style.zIndex = 620;
+const svgComunas = L.svg({ pane: "comunas" }), svgCapturas = L.svg({ pane: "capturas" });
 const capaCom = L.layerGroup().addTo(mapa), capaHex = L.layerGroup().addTo(mapa), capaCap = L.layerGroup().addTo(mapa);
 let firma = "", seleccion = [], info = null, cambiando = false;
 
@@ -77,7 +82,7 @@ const capasComuna = {};
 async function cargarComunas() {
   info = await (await fetch("/api/comunas")).json();
   for (const c of info.comunas) {
-    capasComuna[c] = L.polygon(info.geo[c], { pane: "comunas" })
+    capasComuna[c] = L.polygon(info.geo[c], { pane: "comunas", renderer: svgComunas })
       .bindTooltip(c, { sticky: true, className: "nombre" })
       .on("click", () => tocarComuna(c))
       .addTo(capaCom);
@@ -95,7 +100,7 @@ function estilarComunas() {
   for (const [c, capa] of Object.entries(capasComuna)) {
     const elegida = seleccion.includes(c), vecina = vec.has(c);
     capa.setStyle(elegida
-      ? { color: "#1f6e43", weight: 3, dashArray: null, fill: true, fillOpacity: 0, interactive: false }
+      ? { color: "#1f6e43", weight: 3, dashArray: null, fill: false }
       : vecina
         ? { color: "#1f6e43", weight: 2, dashArray: "6 6", fill: true, fillColor: "#1f6e43", fillOpacity: .08 }
         : { color: "#6b7a70", weight: 1, dashArray: null, fill: true, fillColor: "#6b7a70", fillOpacity: .04 });
@@ -163,7 +168,7 @@ async function actualizar() {
   for (const r of d.recorridos || []) {
     if (r.linea.length < 2) continue;
     const hora = r.inicio ? new Date(r.inicio).toLocaleString("es-CL") : "";
-    L.polyline(r.linea, { color: "#7b2cbf", weight: 4, opacity: .85 })
+    L.polyline(r.linea, { color: "#7b2cbf", weight: 4, opacity: .85, pane: "capturas", renderer: svgCapturas })
       .bindPopup(`<div class="pop"><strong>Recorrido en video</strong><br>${esc(hora)} · ${Math.round(r.duracion_s)} s` +
         (r.archivo ? `<br><a href="/videos/${esc(r.archivo)}" target="_blank" rel="noopener">Ver video</a>` : "") + "</div>")
       .addTo(capaCap);
@@ -171,11 +176,13 @@ async function actualizar() {
   for (const c of d.capturas) {
     const fuente = c.fuente === "claude" ? "Claude" : "índice de verde";
     if (c.validacion === "descartada") {
-      L.circleMarker([c.lat, c.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#999", fillOpacity: 1 })
+      L.circleMarker([c.lat, c.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#999", fillOpacity: 1,
+                                       pane: "capturas", renderer: svgCapturas })
         .bindPopup(`<div class="pop"><strong>Descartada</strong><br>${esc(c.motivo_rechazo)}</div>`).addTo(capaCap);
       continue;
     }
-    L.circleMarker([c.lat, c.lon], { radius: 7, color: "#fff", weight: 2, fillColor: c.cuenta ? "#0b5cad" : "#999", fillOpacity: 1 })
+    L.circleMarker([c.lat, c.lon], { radius: 7, color: "#fff", weight: 2, fillColor: c.cuenta ? "#0b5cad" : "#999",
+                                     fillOpacity: 1, pane: "capturas", renderer: svgCapturas })
       .bindPopup(`<div class="pop"><img src="/fotos/${esc(c.id)}_min.jpg" alt="Foto de terreno">
         Árboles ${Math.round(c.arbol_pct)} % (${fuente}) · plantable: ${esc(c.espacio_plantable ?? "sin estimar")}<br>
         ${c.obstaculos?.length ? "Obstáculos: " + c.obstaculos.map(esc).join(", ") + "<br>" : ""}
