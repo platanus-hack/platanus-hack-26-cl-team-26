@@ -2,7 +2,10 @@
 
 - data/terreno/capturas.jsonl: una captura por línea (se puede versionar y repetir en la demo).
 - data/terreno/fotos/<id>.jpg y <id>_min.jpg: foto re-codificada (sin EXIF) y miniatura. No se versionan.
-- data/terreno_h3.parquet: una fila por hexágono res 9 con capturas.
+- data/terreno_h3.parquet: una fila por hexágono res 9 con capturas que cuentan.
+
+Cuentan las capturas válidas (Claude dijo que es una foto exterior de calle o espacio público). Las
+descartadas nunca cuentan; las «sin validar» (sin Claude) solo si aceptar_sin_validar=True.
 """
 from __future__ import annotations
 
@@ -25,9 +28,20 @@ COLUMNAS = ["h3_index", "n_capturas", "arbol_pct_terreno", "verde_pct_terreno", 
             "viabilidad_terreno", "obstaculos", "fuente", "ultima_captura"]
 
 
+def estado_validacion(c: dict) -> str:
+    v = c.get("valida")
+    return "valida" if v is True else "descartada" if v is False else "sin_validar"
+
+
+def cuenta(c: dict, aceptar_sin_validar: bool = False) -> bool:
+    e = estado_validacion(c)
+    return e == "valida" or (e == "sin_validar" and aceptar_sin_validar)
+
+
 class Almacen:
-    def __init__(self, data: Path = Path("data")):
+    def __init__(self, data: Path = Path("data"), aceptar_sin_validar: bool = False):
         self.data = Path(data)
+        self.aceptar_sin_validar = aceptar_sin_validar
         self.dir = self.data / "terreno"
         self.fotos = self.dir / "fotos"
         self.jsonl = self.dir / "capturas.jsonl"
@@ -58,7 +72,7 @@ class Almacen:
         return cap
 
     def escribir_h3(self) -> pd.DataFrame:
-        df = terreno_h3(self.capturas())
+        df = terreno_h3([c for c in self.capturas() if cuenta(c, self.aceptar_sin_validar)])
         df.to_parquet(self.parquet, index=False)
         return df
 

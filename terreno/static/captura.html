@@ -123,6 +123,14 @@ function mostrar(d) {
   const c = d.captura, a = d.previo, n = d.ahora;
   const fuente = c.fuente === "claude" ? "Claude (visión)" : "índice de verde";
   $("res").classList.remove("oculto");
+  if (d.validacion === "descartada") {
+    $("res").innerHTML = `<strong class="error">Foto descartada</strong>
+      <p style="margin:6px 0 0">${esc(c.motivo_rechazo || "No muestra una calle o espacio público exterior.")}</p>
+      <p class="sub" style="margin:6px 0 0">No cambia el corredor. Toma la foto afuera, a nivel de calle.</p>`;
+    return;
+  }
+  const aviso = d.cuenta ? "" : `<p class="error" style="margin:8px 0 0">Sin validar: sin análisis de Claude no se
+    sabe si es una calle, así que no cambia el corredor.</p>`;
   $("res").innerHTML = `
     <strong>Hexágono ${esc(c.h3_index.slice(0, 9))}…</strong>${d.fuera_de_area ? ' <span class="error">fuera del área de estudio</span>' : ""}
     <dl>
@@ -132,6 +140,7 @@ function mostrar(d) {
       <dt>Obstáculos</dt><dd>${c.obstaculos?.length ? c.obstaculos.map(esc).join(", ") : "—"}</dd>
     </dl>
     ${c.descripcion ? `<p class="sub" style="margin:8px 0 0">${esc(c.descripcion)}</p>` : ""}
+    ${aviso}
     <div class="cambio ${d.corredor_cambio ? "" : "no"}">
       ${d.corredor_cambio ? "<strong>El corredor cambió.</strong>" : "El corredor se mantiene."}
       ${d.en_corredor ? " Este hexágono está en el corredor." : ""}<br>

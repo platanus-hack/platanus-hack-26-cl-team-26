@@ -37,6 +37,7 @@
     <div><span style="border-top:3px dashed #333"></span>Corredor antes de terreno</div>
     <div><span style="border-top:4px solid #0b5cad"></span>Corredor ahora</div>
     <div><span style="border-top:3px solid #e0a100"></span>Verificado en terreno</div>
+    <div>Punto azul: foto válida · gris: descartada o sin validar</div>
     <div>Relleno: urgencia (amarillo → rojo), parques en verde</div>
   </div>
 </div>
@@ -84,11 +85,16 @@ async function actualizar() {
   capaCap.clearLayers();
   for (const c of d.capturas) {
     const fuente = c.fuente === "claude" ? "Claude" : "índice de verde";
-    L.circleMarker([c.lat, c.lon], { radius: 7, color: "#fff", weight: 2, fillColor: "#0b5cad", fillOpacity: 1 })
+    if (c.validacion === "descartada") {
+      L.circleMarker([c.lat, c.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#999", fillOpacity: 1 })
+        .bindPopup(`<div class="pop"><strong>Descartada</strong><br>${esc(c.motivo_rechazo)}</div>`).addTo(capaCap);
+      continue;
+    }
+    L.circleMarker([c.lat, c.lon], { radius: 7, color: "#fff", weight: 2, fillColor: c.cuenta ? "#0b5cad" : "#999", fillOpacity: 1 })
       .bindPopup(`<div class="pop"><img src="/fotos/${esc(c.id)}_min.jpg" alt="Foto de terreno">
         Árboles ${Math.round(c.arbol_pct)} % (${fuente}) · plantable: ${esc(c.espacio_plantable ?? "sin estimar")}<br>
         ${c.obstaculos?.length ? "Obstáculos: " + c.obstaculos.map(esc).join(", ") + "<br>" : ""}
-        <small>${esc(c.descripcion)}</small></div>`).addTo(capaCap);
+        <small>${esc(c.descripcion)}</small>${c.cuenta ? "" : "<br><strong>Sin validar: no cuenta</strong>"}</div>`).addTo(capaCap);
   }
 
   const a = d.antes, n = d.ahora;
@@ -97,7 +103,8 @@ async function actualizar() {
     fila("Personas", a.personas_cubiertas.toLocaleString("es-CL"), n.personas_cubiertas.toLocaleString("es-CL")) +
     fila("Largo (km)", a.km, n.km, false) +
     fila("Hex. verificados", a.verificados, n.verificados);
-  $sub.textContent = `${d.capturas.length} captura${d.capturas.length === 1 ? "" : "s"} en terreno`;
+  const nCuentan = d.capturas.filter(c => c.cuenta).length;
+  $sub.textContent = `${d.capturas.length} captura${d.capturas.length === 1 ? "" : "s"} en terreno · ${nCuentan} cuenta${nCuentan === 1 ? "" : "n"}`;
   if (!primera) { $panel.classList.remove("flash"); void $panel.offsetWidth; $panel.classList.add("flash"); }
 
   encuadrar(ahoraLineas.length ? ahoraLineas.flat() : d.hexes.flatMap(h => h.pol), ahoraLineas.length ? 0.6 : 0.05);

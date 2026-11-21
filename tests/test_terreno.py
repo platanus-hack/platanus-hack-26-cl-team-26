@@ -41,6 +41,34 @@ def test_analizar_sin_claude():
     finally:
         vision._cliente = original
     assert o["fuente"] == "indice_verde" and o["espacio_plantable"] is None and o["arbol_pct"] == o["verde_pct"]
+    assert o["valida"] is None  # sin Claude no se sabe si es una calle
+
+
+def obs(valida, plantable="medio", motivo=""):
+    return vision.Observacion(valida=valida, motivo_rechazo=motivo, arbol_pct=0 if not valida else 20,
+                              arbusto_pct=0, pasto_pct=0, suelo_desnudo_pct=0, construido_pct=0,
+                              pavimento_pct=0 if not valida else 60, espacio_plantable=plantable,
+                              obstaculos=[] if not valida else ["cables"], descripcion="")
+
+
+def con_claude(resultado):
+    """Reemplaza la llamada a Claude por un resultado fijo (sin red)."""
+    original = vision.analizar_claude
+    vision.analizar_claude = lambda jpeg, cliente=None: resultado
+    return lambda: setattr(vision, "analizar_claude", original)
+
+
+def test_validacion():
+    from terreno.almacen import cuenta, estado_validacion
+    deshacer = con_claude(obs(False, "ninguno", "Es un interior de oficina."))
+    try:
+        o = vision.analizar(jpeg((40, 140, 40)))
+    finally:
+        deshacer()
+    assert o["valida"] is False and o["espacio_plantable"] is None and o["obstaculos"] == []
+    assert estado_validacion(o) == "descartada" and not cuenta(o, True)
+    assert estado_validacion({"valida": None}) == "sin_validar" and not cuenta({}) and cuenta({}, True)
+    assert estado_validacion({"valida": True}) == "valida" and cuenta({"valida": True})
 
 
 def cap(hx, pl, obst=(), arbol=10.0, t="2026-11-21T18:00:00+00:00", fuente="claude"):
@@ -81,6 +109,38 @@ def test_optimizador_con_terreno():
         assert r2["verificados"] == 1
 
 
+def test_servidor_validacion():
+    """Una foto descartada por Claude o sin validar no cambia el corredor; una válida sí cuenta."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    df = pd.read_parquet(DEMO)
+    hx = next(h for h in solve_corridor(df)["hexes"] if not df.set_index("h3_index").loc[h, "es_parque"])
+    lat, lon = h3.cell_to_latlng(hx)
+    form = {"lat": str(lat), "lon": str(lon)}
+    foto = {"foto": ("c.jpg", jpeg((128, 128, 128)), "image/jpeg")}
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(DEMO, Path(tmp)))
+        for resultado, esperado in ((obs(False, "ninguno", "Interior"), "descartada"), (None, "sin_validar")):
+            deshacer = con_claude(resultado)
+            try:
+                d = c.post("/api/captura", data=form, files=foto).json()
+            finally:
+                deshacer()
+            assert d["validacion"] == esperado and not d["cuenta"] and not d["corredor_cambio"]
+            assert d["ahora"]["verificados"] == 0
+        assert not any(h["verificado"] for h in c.get("/api/estado").json()["hexes"])
+        deshacer = con_claude(obs(True, "ninguno"))  # válida y sin espacio: sale del corredor
+        try:
+            d = c.post("/api/captura", data=form, files=foto).json()
+        finally:
+            deshacer()
+        assert d["validacion"] == "valida" and d["cuenta"] and d["corredor_cambio"]
+        e = c.get("/api/estado").json()
+        assert [x["validacion"] for x in e["capturas"]] == ["descartada", "sin_validar", "valida"]
+        assert any(h["verificado"] for h in e["hexes"])
+
+
 def test_servidor():
     from fastapi.testclient import TestClient
     from terreno.servidor import crear_app
@@ -89,7 +149,7 @@ def test_servidor():
     hx = solve_corridor(df)["hexes"][0]
     lat, lon = h3.cell_to_latlng(hx)
     with tempfile.TemporaryDirectory() as tmp:
-        c = TestClient(crear_app(DEMO, Path(tmp), clave="secreta", usar_claude=False))
+        c = TestClient(crear_app(DEMO, Path(tmp), clave="secreta", usar_claude=False, aceptar_sin_validar=True))
         assert c.get("/").status_code == 200 and c.get("/mapa").status_code == 200
         form = {"lat": str(lat), "lon": str(lon), "precision_m": "8"}
         foto = {"foto": ("c.jpg", jpeg((128, 128, 128)), "image/jpeg")}

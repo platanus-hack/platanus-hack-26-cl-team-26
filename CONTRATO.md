@@ -87,7 +87,9 @@ Una fila por barrio (H3 resolución 7), no por cuadra.
 
 Sección nueva y aditiva: no cambia las tablas de arriba. Avisar a Rol 3 (mapa) y a Corredores (v4: alimenta
 `V_c` y la marca «verificado en terreno»). Lo escribe `terreno/servidor.py` cada vez que llega una foto desde
-el teléfono; las capturas crudas quedan en `data/terreno/capturas.jsonl`. Una fila por hexágono res 9 con fotos.
+el teléfono; las capturas crudas quedan en `data/terreno/capturas.jsonl` (con `valida`: true, false o null).
+Una fila por hexágono res 9 con fotos que cuentan: solo las que Claude valida como exteriores de calle o espacio
+público. Las descartadas nunca entran; las sin validar (sin Claude) solo con `--aceptar-sin-validar`.
 
 | Columna | Tipo | Qué es |
 |---|---|---|

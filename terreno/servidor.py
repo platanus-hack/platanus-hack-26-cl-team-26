@@ -5,6 +5,8 @@
 
 Teléfono: https://<túnel>/?k=<clave>   ·   Mapa para proyectar: http://localhost:8000/mapa
 Si TERRENO_CLAVE (o --clave) está definida, subir fotos exige ?k=<clave>, porque la URL del túnel es pública.
+Solo cuentan las fotos que Claude valida como exteriores de calle; sin Claude quedan «sin validar» y no cambian
+el corredor, salvo con --aceptar-sin-validar (demo sin red).
 """
 from __future__ import annotations
 
@@ -21,7 +23,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from optimizer import solve_corridor
-from terreno.almacen import Almacen
+from terreno.almacen import Almacen, cuenta, estado_validacion
 from terreno.vision import analizar
 
 ESTATICO = Path(__file__).resolve().parent / "static"
@@ -37,9 +39,10 @@ def _resumen(r: dict) -> dict:
 
 
 def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = Path("data"),
-              km: float = 3.0, clave: str | None = None, usar_claude: bool = True) -> FastAPI:
+              km: float = 3.0, clave: str | None = None, usar_claude: bool = True,
+              aceptar_sin_validar: bool = False) -> FastAPI:
     df = pd.read_parquet(datos)
-    alm = Almacen(data_dir)
+    alm = Almacen(data_dir, aceptar_sin_validar)
     antes = solve_corridor(df, km)
     hex_area = set(df["h3_index"])
     poligonos = {h: [[round(la, 6), round(lo, 6)] for la, lo in h3.cell_to_boundary(h)] for h in df["h3_index"]}
@@ -87,6 +90,8 @@ def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = P
             ahora = estado["ahora"]
         return {
             "captura": cap,
+            "validacion": estado_validacion(cap),
+            "cuenta": cuenta(cap, aceptar_sin_validar),
             "fuera_de_area": cap["h3_index"] not in hex_area,
             "en_corredor": cap["h3_index"] in ahora["hexes"],
             "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
@@ -97,7 +102,8 @@ def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = P
     def api_estado():
         with lock:
             ahora, terreno = estado["ahora"], estado["terreno"]
-            caps = alm.capturas()
+            caps = [{**c, "validacion": estado_validacion(c), "cuenta": cuenta(c, aceptar_sin_validar)}
+                    for c in alm.capturas()]
         verif = set(terreno["h3_index"]) if terreno is not None else set()
         en_antes, en_ahora = set(antes["hexes"]), set(ahora["hexes"])
         U = ahora["urgencia"]
@@ -124,10 +130,12 @@ def main():
     p.add_argument("--host", default="127.0.0.1", help="127.0.0.1 basta para cloudflared; 0.0.0.0 abre la red local")
     p.add_argument("--clave", default=os.environ.get("TERRENO_CLAVE"))
     p.add_argument("--sin-claude", action="store_true", help="solo índice de verde, sin llamar a Claude")
+    p.add_argument("--aceptar-sin-validar", action="store_true",
+                   help="las fotos sin validar (sin Claude) también cambian el corredor; solo para demos sin red")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO)
     import uvicorn
-    uvicorn.run(crear_app(a.datos, a.data, a.km, a.clave, not a.sin_claude), host=a.host, port=a.puerto)
+    uvicorn.run(crear_app(a.datos, a.data, a.km, a.clave, not a.sin_claude, a.aceptar_sin_validar), host=a.host, port=a.puerto)
 
 
 if __name__ == "__main__":
