@@ -12,8 +12,8 @@ import kotlin.random.Random
 
 /**
  * Sonido de ciencia ficcion para la intro, sintetizado en vivo (sin archivos):
- * - un zumbido grave que crece y sube de tono con la carga ([level], [progress]);
- * - un "ping" con cada onda ([ping]);
+ * - un zumbido que crece sin parar con la carga ([level], [progress]): mas fuerte, mas agudo
+ *   y con mas armonicos a medida que se llena el anillo;
  * - un "power-up" al completar ([finale]): barrido ascendente, rafaga y un acorde brillante.
  *
  * Un solo AudioTrack en modo stream, alimentado por un hilo; los parametros se suavizan
@@ -33,9 +33,6 @@ class IntroSounds {
     private var stopRequested = false
 
     @Volatile
-    private var pingRequested = false
-
-    @Volatile
     private var finaleRequested = false
 
     private var thread: Thread? = null
@@ -46,10 +43,6 @@ class IntroSounds {
             isDaemon = true
             start()
         }
-    }
-
-    fun ping() {
-        pingRequested = true
     }
 
     fun finale() {
@@ -87,10 +80,6 @@ class IntroSounds {
         val synth = Synth()
         try {
             while (!synth.finished(stopRequested)) {
-                if (pingRequested) {
-                    pingRequested = false
-                    synth.startPing()
-                }
                 if (finaleRequested) {
                     finaleRequested = false
                     synth.startFinale()
@@ -114,16 +103,11 @@ class IntroSounds {
         private var phDetune = 0.0
         private var phShimmer = 0.0
         private var phLfo = 0.0
-        private var pingPos = -1
-        private var phPing = 0.0
+        private var phHigh = 0.0
         private var finalePos = -1
         private var phSweep = 0.0
         private val phChord = DoubleArray(CHORD.size)
         private var noiseLp = 0.0
-
-        fun startPing() {
-            pingPos = 0
-        }
 
         fun startFinale() {
             finalePos = 0
@@ -139,23 +123,21 @@ class IntroSounds {
             val target = if (stopping || finalePos >= 0) 0.0 else 1.0
             master += (target - master) * 0.0003
 
-            // Zumbido: grave tipo organo con una segunda voz desafinada (batido) que sube con la carga.
-            val fDrone = 55.0 * (1.0 + prog * 1.2)
+            // Zumbido: grave tipo organo con una segunda voz desafinada (batido). Sube una octava
+            // y media con la carga, sin saltos: un solo sonido que crece todo el tiempo.
+            val fDrone = 55.0 * 2.0.pow(prog * 1.5)
             phDrone += TWO_PI * fDrone / SR
-            phDetune += TWO_PI * fDrone * 1.008 / SR
+            phDetune += TWO_PI * fDrone * (1.004 + 0.01 * prog) / SR
             val drone = sin(phDrone) + 0.5 * sin(2 * phDrone) + 0.3 * sin(3 * phDetune) + 0.4 * sin(phDetune)
-            // Brillo: tono que sube de 220 a 880 Hz con tremolo.
-            phLfo += TWO_PI * (5.0 + 4.0 * prog) / SR
-            phShimmer += TWO_PI * (220.0 * 2.0.pow(prog * 2)) / SR
-            val shimmer = sin(phShimmer) * (0.5 + 0.5 * sin(phLfo))
-            var s = master * ((0.035 + 0.25 * lvl) * drone * 0.45 + 0.22 * lvl * shimmer)
-
-            if (pingPos >= 0) {
-                val x = pingPos.toDouble() / SR
-                phPing += TWO_PI * (1600.0 - 800.0 * (x / PING_S)) / SR
-                s += 0.18 * exp(-x * 28) * sin(phPing)
-                if (++pingPos > (PING_S * SR).toInt()) pingPos = -1
-            }
+            // Brillo: tono que sube de 220 a 1320 Hz con un tremolo cada vez mas rapido.
+            phLfo += TWO_PI * (4.0 + 8.0 * prog) / SR
+            phShimmer += TWO_PI * (220.0 * 2.0.pow(prog * 2.6)) / SR
+            val shimmer = sin(phShimmer) * (0.55 + 0.45 * sin(phLfo))
+            // Armonico agudo que aparece en la segunda mitad de la carga.
+            phHigh += TWO_PI * fDrone * 8 / SR
+            val high = sin(phHigh) * ((prog - 0.5) * 2).coerceIn(0.0, 1.0)
+            val swell = 0.04 + 0.12 * lvl + 0.3 * prog
+            var s = master * (swell * drone * 0.45 + (0.08 * lvl + 0.22 * prog) * shimmer + 0.06 * high)
 
             if (finalePos >= 0) {
                 val x = finalePos.toDouble() / SR
@@ -187,7 +169,6 @@ class IntroSounds {
         const val SR = 44_100
         const val BLOCK = 512
         const val TWO_PI = 2 * PI
-        const val PING_S = 0.14
         const val SWEEP_S = 0.55
         const val FINALE_S = 2.2
         /** Do mayor con octava y quinta arriba: suena a "acceso concedido". */

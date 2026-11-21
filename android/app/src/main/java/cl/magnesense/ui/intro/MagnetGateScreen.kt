@@ -75,7 +75,6 @@ fun MagnetGateScreen(app: MagneSenseApp, onEnter: () -> Unit) {
     LaunchedEffect(Unit) {
         app.speaker.speak("Acerca el imán para entrar")
         var start = -1L
-        var lastRipple = 0
         while (true) {
             var finished = false
             withFrameNanos { now ->
@@ -92,10 +91,6 @@ fun MagnetGateScreen(app: MagneSenseApp, onEnter: () -> Unit) {
                     val charging = state.phase == GatePhase.CHARGING
                     sounds.level = if (charging) glow.coerceAtLeast(0.4f) else glow * 0.5f
                     sounds.progress = state.progress.toFloat()
-                    // Un "ping" por cada onda que sale del circulo.
-                    val ripple = (t / RIPPLE_PERIOD_S * 3).toInt()
-                    if (charging && ripple != lastRipple) sounds.ping()
-                    lastRipple = ripple
                     finished = state.phase == GatePhase.DONE
                 }
             }
@@ -127,7 +122,8 @@ fun MagnetGateScreen(app: MagneSenseApp, onEnter: () -> Unit) {
             val center = Offset(size.width / 2, size.height / 2)
             val radius = min(size.width, size.height) * 0.2f * (1f + exit * 0.5f)
             val charging = state.phase == GatePhase.CHARGING || state.phase == GatePhase.DONE
-            drawFieldLines(center, radius, glow, time)
+            // Las lineas siguen saliendo a medida que se llena el anillo.
+            drawFieldLines(center, radius, maxOf(glow, state.progress.toFloat()), time)
             if (charging || glow > 0.05f) drawRipples(center, radius, glow.coerceAtLeast(if (charging) 0.4f else 0f), time)
             val breathe = if (charging) 1f else 1f + 0.03f * sin(2 * PI.toFloat() * time / 2.4f)
             drawCore(center, radius * breathe, charging)
@@ -169,11 +165,10 @@ fun MagnetGateScreen(app: MagneSenseApp, onEnter: () -> Unit) {
  */
 private fun DrawScope.drawFieldLines(center: Offset, radius: Float, intensity: Float, time: Float) {
     if (intensity < 0.01f) return
-    val scales = floatArrayOf(1.5f, 2.1f, 2.9f, 3.9f, 5.2f)
     val dash = PathEffect.dashPathEffect(floatArrayOf(28f, 18f), phase = -time * 90f)
-    scales.forEachIndexed { i, k ->
+    FIELD_LINE_SCALES.forEachIndexed { i, k ->
         // Las lineas exteriores aparecen despues, a medida que sube la intensidad.
-        val grow = ((intensity * scales.size * 1.2f) - i).coerceIn(0f, 1f)
+        val grow = ((intensity * FIELD_LINE_SCALES.size * 1.15f) - i).coerceIn(0f, 1f)
         if (grow <= 0f) return@forEachIndexed
         for (side in intArrayOf(1, -1)) {
             val full = dipoleLine(center, radius, k * radius, side)
@@ -182,8 +177,8 @@ private fun DrawScope.drawFieldLines(center: Offset, radius: Float, intensity: F
             measure.getSegment(0f, measure.length * grow, partial, true)
             drawPath(
                 partial,
-                Palette.Highlight.copy(alpha = (0.2f + 0.6f * grow) * (1f - i * 0.1f)),
-                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, pathEffect = dash),
+                Palette.Highlight.copy(alpha = (0.2f + 0.6f * grow) * (1f - i * 0.06f)),
+                style = Stroke(width = (3f - i * 0.15f).dp.toPx(), cap = StrokeCap.Round, pathEffect = dash),
             )
         }
     }
@@ -253,6 +248,9 @@ private fun DrawScope.drawProgressRing(center: Offset, radius: Float, progress: 
         style = Stroke(width = 10.dp.toPx(), cap = StrokeCap.Round),
     )
 }
+
+/** Tamano de cada linea de campo respecto al circulo: 10 lineas, de la mas cercana a la mas lejana. */
+private val FIELD_LINE_SCALES = floatArrayOf(1.3f, 1.6f, 1.95f, 2.35f, 2.8f, 3.3f, 3.9f, 4.6f, 5.4f, 6.3f)
 
 private const val NO_SENSOR_AFTER_S = 3.0
 private const val EXIT_S = 0.6
