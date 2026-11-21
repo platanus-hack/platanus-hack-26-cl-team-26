@@ -46,7 +46,7 @@ const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Copa de ár
 const LEYENDA: Record<string, [string, string]> = {
   calor: [grad(OCRE), "Índice de calor: 60 % suelo y 40 % aire donde hay sensores con confianza alta o media; si no, solo suelo"],
   copa: [grad(VERDE), "Copa de árboles, de 0 % a 25 % o más"],
-  personas: [grad(VERDE), "Personas: 50 % densidad del Censo y 50 % cercanía a servicios"],
+  personas: [grad(VERDE), "Personas: 70 % habitantes del Censo en la cuadra y 30 % cercanía a colegios, salud, metro y paraderos"],
 };
 // Cerros isla y parques grandes de Santiago: las islas verdes que el corredor busca unir.
 const ISLAS: [string, number, number][] = [
@@ -292,7 +292,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   }, [B]);
   const personas = useMemo(() => {
     const p = norm(B.pob);
-    return p.map((x, i) => 0.5 * (x ?? 0.5) + 0.5 * Math.min(1, Math.max(0, B.social[i] ?? 0.5)));
+    return p.map((x, i) => 0.7 * (x ?? 0.5) + 0.3 * Math.min(1, Math.max(0, B.social[i] ?? 0.5)));   // igual que optimizer.urgencia
   }, [B]);
   const datosAhora = useMemo(() => coleccion((i) => ({ calor: calor[i], copa: B.copa[i], personas: personas[i] })), [calor, personas, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
   // Cifras de lo elegido: el total y, debajo, cada comuna (o cada comuna que toca la zona dibujada).
