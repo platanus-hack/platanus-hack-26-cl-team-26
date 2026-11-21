@@ -11,9 +11,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cl.magnesense.sensor.SensorService
 import cl.magnesense.ui.AppRoot
+import cl.magnesense.ui.intro.MagnetGateScreen
 import cl.magnesense.ui.theme.MagneSenseTheme
 import cl.magnesense.ui.theme.Palette
 
@@ -32,7 +37,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             MagneSenseTheme {
                 Box(Modifier.fillMaxSize().background(Palette.Background).safeDrawingPadding()) {
-                    AppRoot(application as MagneSenseApp)
+                    val app = application as MagneSenseApp
+                    // Intro "puerta magnetica" en cada apertura: se entra acercando el iman.
+                    var unlocked by remember { mutableStateOf(false) }
+                    if (unlocked) AppRoot(app) else MagnetGateScreen(app, onEnter = { unlocked = true })
                 }
             }
         }
