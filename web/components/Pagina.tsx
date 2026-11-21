@@ -83,9 +83,17 @@ function Seccion({ id, alt, children }: { id: string; alt?: boolean; children: R
 
 export default function Pagina({ serie }: { serie: Serie }) {
   const t = useTerreno();
+  // La barra queda fija; al bajar de la portada se le marca el borde para separarla del contenido.
+  const [bajo, setBajo] = useState(false);
+  useEffect(() => {
+    const mira = () => setBajo(window.scrollY > 8);
+    mira();
+    window.addEventListener("scroll", mira, { passive: true });
+    return () => window.removeEventListener("scroll", mira);
+  }, []);
   return (
     <main className="b">
-      <header className="b-pad"><div className="b-in">
+      <header className={`b-pad${bajo ? " bajo" : ""}`}><div className="b-in">
         <a className="marca" href="#inicio"><img src="/viridis.svg" alt="" width={34} height={34} />VIRIDIS</a>
         <nav aria-label="Secciones"><a href="#ahora">El calor ahora</a><a href="#planificar">Planificar</a><a href="#historico">Histórico</a><a href="#fuentes">Fuentes</a></nav>
       </div></header>
