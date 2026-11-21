@@ -16,7 +16,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -30,15 +29,14 @@ import cl.magnesense.ui.components.Panel
 import cl.magnesense.ui.components.ScreenColumn
 import cl.magnesense.ui.theme.Palette
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.util.Locale
 
 /**
- * Gestos aprendidos: estado del servidor, asistente, ensenar gestos nuevos y la lista
- * de gestos con su accion. Los gestos se pueden probar aqui aunque el modo sea escaneo.
+ * Gestos aprendidos (en el celular): estado del detector, asistente, ensenar gestos nuevos y la
+ * lista de gestos con su accion. Los gestos se pueden probar aqui aunque el modo sea escaneo.
  */
 @Composable
-fun GesturesScreen(app: MagneSenseApp, onOpenSettings: () -> Unit) {
+fun GesturesScreen(app: MagneSenseApp, onOpenSettings: () -> Unit, onOpenSetup: () -> Unit) {
     var teaching by rememberSaveable { mutableStateOf(false) }
     var draft by remember { mutableStateOf(TeachDraft()) }
     DisposableEffect(teaching) {
@@ -51,6 +49,7 @@ fun GesturesScreen(app: MagneSenseApp, onOpenSettings: () -> Unit) {
         GestureList(
             app = app,
             onOpenSettings = onOpenSettings,
+            onOpenSetup = onOpenSetup,
             onTeach = { d ->
                 draft = d
                 teaching = true
@@ -60,11 +59,10 @@ fun GesturesScreen(app: MagneSenseApp, onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun GestureList(app: MagneSenseApp, onOpenSettings: () -> Unit, onTeach: (TeachDraft) -> Unit) {
-    val server by app.server.state.collectAsState()
+private fun GestureList(app: MagneSenseApp, onOpenSettings: () -> Unit, onOpenSetup: () -> Unit, onTeach: (TeachDraft) -> Unit) {
+    val server by app.localGestures.state.collectAsState()
     val settings by app.settings.settings.collectAsState()
     val devices by app.access.devices.collectAsState()
-    val scope = rememberCoroutineScope()
     var flashing by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         app.gestures.fired.collect { f ->
@@ -81,8 +79,8 @@ private fun GestureList(app: MagneSenseApp, onOpenSettings: () -> Unit, onTeach:
             Panel {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ConditionChip(if (server.connected) "Servidor en vivo" else "Sin servidor", server.connected)
                         val p = server.phase2
+                        ConditionChip(if (p.calibrating) "Calibrando…" else "Calibrado", !p.calibrating)
                         ConditionChip(
                             when {
                                 !p.gyro -> "Sin giroscopio"
@@ -92,20 +90,15 @@ private fun GestureList(app: MagneSenseApp, onOpenSettings: () -> Unit, onTeach:
                             p.gyro && !p.phoneMoving,
                         )
                     }
-                    if (server.connected) {
-                        Text(
-                            "Ruido del servidor %.2f µT".format(Locale.US, server.phase2.noise),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Palette.Muted,
-                        )
-                    } else {
-                        Text(
-                            if (settings.serverUrl.isBlank()) "Para enseñar gestos hace falta el servidor (server.py en un notebook)."
-                            else "No hay respuesta de ${settings.serverUrl}. ¿Está corriendo server.py en la misma red?",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Palette.WarningSoft,
-                        )
-                        BigOutlineButton("Configurar servidor", onOpenSettings, Modifier.fillMaxWidth())
+                    Text(
+                        if (server.phase2.calibrating) "Deja el celular quieto y el imán lejos 2 segundos."
+                        else "Ruido en reposo %.2f µT. Todo corre en el celular, sin servidor.".format(Locale.US, server.phase2.noise),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Palette.Muted,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BigOutlineButton("Recalibrar", app.localGestures::recalibrate, Modifier.weight(1f))
+                        BigOutlineButton("Asistente de inicio", onOpenSetup, Modifier.weight(1f))
                     }
                     if (settings.activationMode != ActivationMode.GESTURES) {
                         Text(
@@ -122,10 +115,10 @@ private fun GestureList(app: MagneSenseApp, onOpenSettings: () -> Unit, onTeach:
 
             AssistantCard(app, onTeach = onTeach)
 
-            BigButton("Enseñar un gesto", { onTeach(TeachDraft()) }, Modifier.fillMaxWidth(), enabled = server.connected)
+            BigButton("Enseñar un gesto", { onTeach(TeachDraft()) }, Modifier.fillMaxWidth())
 
             val detectors = server.phase2.detectors
-            val forgotten = if (server.connected) settings.gestureBindings.keys.filter { n -> detectors.none { it.name == n } } else emptyList()
+            val forgotten = settings.gestureBindings.keys.filter { n -> detectors.none { it.name == n } }
             if (detectors.isEmpty() && forgotten.isEmpty()) {
                 Text("Todavía no hay gestos aprendidos.", style = MaterialTheme.typography.bodyLarge, color = Palette.Muted)
             }
@@ -138,10 +131,8 @@ private fun GestureList(app: MagneSenseApp, onOpenSettings: () -> Unit, onTeach:
                     flashing = flashing == d.name,
                     onTarget = { t -> app.settings.update { it.copy(gestureBindings = it.gestureBindings + (d.name to t)) } },
                     onDelete = {
-                        scope.launch {
-                            app.serverApi.removeDetector(d.name)
-                            app.settings.update { it.copy(gestureBindings = it.gestureBindings - d.name) }
-                        }
+                        app.localGestures.removeDetector(d.name)
+                        app.settings.update { it.copy(gestureBindings = it.gestureBindings - d.name) }
                     },
                 )
             }

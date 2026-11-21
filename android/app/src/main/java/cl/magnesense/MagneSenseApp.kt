@@ -11,12 +11,16 @@ import cl.magnesense.detector.DetectorEvent
 import cl.magnesense.detector.EventType
 import cl.magnesense.engine.AccessController
 import cl.magnesense.engine.Engine
+import cl.magnesense.detector.Vec3
 import cl.magnesense.feedback.Haptics
+import cl.magnesense.feedback.SoundPlayer
 import cl.magnesense.feedback.Speaker
 import cl.magnesense.gestures.GestureController
+import cl.magnesense.gestures.LocalGestures
 import cl.magnesense.remote.ServerApi
 import cl.magnesense.remote.ServerSocket
 import cl.magnesense.sensor.SensorHub
+import cl.magnesense.sensor.SensorSink
 import cl.magnesense.telemetry.TelemetryClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +52,11 @@ class MagneSenseApp : Application() {
         private set
     lateinit var gestures: GestureController
         private set
+    /** Gestos aprendidos que corren en el celular (sin servidor). */
+    lateinit var localGestures: LocalGestures
+        private set
+    lateinit var sounds: SoundPlayer
+        private set
     lateinit var speaker: Speaker
         private set
 
@@ -58,7 +67,9 @@ class MagneSenseApp : Application() {
         speaker = Speaker(this)
         engine = Engine()
         telemetry = TelemetryClient(scope)
-        engine.rawListener = telemetry
+        localGestures = LocalGestures(this)
+        sounds = SoundPlayer()
+        engine.rawListener = Tee(telemetry, localGestures)
         server = ServerSocket(scope)
         serverApi = ServerApi { settings.settings.value.serverUrl.trim().trimEnd('/') }
         settings.loadCalibration()?.let(engine.detector::restore)
@@ -73,10 +84,12 @@ class MagneSenseApp : Application() {
 
         gestures = GestureController(
             scope = scope,
-            server = server,
+            source = localGestures.state,
+            events = localGestures.events,
             access = access,
             settings = settings.settings,
             speaker = speaker,
+            sounds = sounds,
             log = { history.add(HistoryKind.ACTIVATION, it) },
         )
 
@@ -135,4 +148,14 @@ class MagneSenseApp : Application() {
     private fun saveCalibration() {
         engine.detector.calibration()?.let(settings::saveCalibration)
     }
+}
+
+/** Reparte cada muestra cruda a varios oyentes (telemetria y gestos aprendidos). */
+private class Tee(private vararg val sinks: SensorSink) : SensorSink {
+    override fun onSensorsStarted(magMaxRange: Double, gyroAvailable: Boolean) =
+        sinks.forEach { it.onSensorsStarted(magMaxRange, gyroAvailable) }
+
+    override fun onMagnetometer(tNanos: Long, value: Vec3) = sinks.forEach { it.onMagnetometer(tNanos, value) }
+
+    override fun onGyroscope(tNanos: Long, value: Vec3) = sinks.forEach { it.onGyroscope(tNanos, value) }
 }

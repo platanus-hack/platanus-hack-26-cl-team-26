@@ -89,6 +89,7 @@ object ServerJson {
         r.label?.let { o.put("label", it) }
         if (r.labels.isNotEmpty()) o.put("labels", JSONArray(r.labels))
         r.trigger?.let { o.put("trigger", it) }
+        r.minOnMs?.let { o.put("min_on_ms", it) }
         return o.toString()
     }
 

@@ -18,19 +18,24 @@ data class AppSettings(
     val voiceEnabled: Boolean = true,
     val tuning: DetectionTuning = DetectionTuning(),
     val activationMode: ActivationMode = ActivationMode.SCANNING,
-    /** Gesto aprendido (nombre del detector en el servidor) -> id de dispositivo, [BIND_SCAN] o [BIND_NONE]. */
+    /** Gesto aprendido -> id de dispositivo, [BIND_SCAN], [BIND_SONG], [BIND_QUACK] o [BIND_NONE]. */
     val gestureBindings: Map<String, String> = emptyMap(),
+    /** Ya se hizo (o se salto) el asistente de inicio. */
+    val setupDone: Boolean = false,
 ) {
     companion object {
         const val BIND_SCAN = "scan"
         const val BIND_NONE = "none"
+        /** Pone o para la cancion (sonido local). Mismo nombre que la accion de server.py. */
+        const val BIND_SONG = "play:cancion"
+        const val BIND_QUACK = "play:cuack"
     }
 }
 
 /** Como se activan las opciones. */
 enum class ActivationMode(val label: String, val description: String) {
     SCANNING("Escaneo con un gesto", "Funciona sin internet: un gesto inicia el escaneo y otro elige."),
-    GESTURES("Gestos aprendidos", "Cada gesto enseñado hace una acción directa. Necesita el servidor; sin él vuelve al escaneo."),
+    GESTURES("Gestos aprendidos", "Cada gesto enseñado hace una acción directa. Todo corre en el celular, sin servidor."),
 }
 
 /**

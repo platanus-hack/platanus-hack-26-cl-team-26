@@ -57,6 +57,7 @@ class SettingsStore(context: Context) {
             .put("voiceEnabled", s.voiceEnabled)
             .put("activationMode", s.activationMode.name)
             .put("gestureBindings", JSONObject(s.gestureBindings))
+            .put("setupDone", s.setupDone)
             .put(
                 "tuning",
                 JSONObject()
@@ -109,6 +110,7 @@ class SettingsStore(context: Context) {
                 gestureBindings = o.optJSONObject("gestureBindings")?.let { b ->
                     b.keys().asSequence().associateWith { b.optString(it) }.filterValues { it.isNotBlank() }
                 } ?: d.gestureBindings,
+                setupDone = o.optBoolean("setupDone", d.setupDone),
             )
         }
 

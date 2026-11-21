@@ -35,6 +35,7 @@ import cl.magnesense.ui.debug.DebugScreen
 import cl.magnesense.ui.gestures.GesturesScreen
 import cl.magnesense.ui.history.HistoryScreen
 import cl.magnesense.ui.settings.SettingsScreen
+import cl.magnesense.ui.setup.SetupWizard
 import cl.magnesense.ui.theme.Palette
 
 enum class Screen(val label: String) {
@@ -54,6 +55,17 @@ fun AppRoot(app: MagneSenseApp) {
     var screen by rememberSaveable { mutableStateOf(Screen.CONTROL) }
     val detector by engine.detector.status.collectAsState()
     val scan by access.scanning.state.collectAsState()
+    // La primera vez se abre el asistente de inicio (imán, calibrar, gestos).
+    var setup by rememberSaveable { mutableStateOf(!app.settings.settings.value.setupDone) }
+
+    if (setup) {
+        SetupWizard(app, onDone = {
+            app.settings.update { it.copy(setupDone = true) }
+            setup = false
+            screen = Screen.GESTURES
+        })
+        return
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -61,7 +73,7 @@ fun AppRoot(app: MagneSenseApp) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (screen) {
                     Screen.CONTROL -> ControlScreen(app, onCalibrate = { screen = Screen.CALIBRATION })
-                    Screen.GESTURES -> GesturesScreen(app, onOpenSettings = { screen = Screen.SETTINGS })
+                    Screen.GESTURES -> GesturesScreen(app, onOpenSettings = { screen = Screen.SETTINGS }, onOpenSetup = { setup = true })
                     Screen.CALIBRATION -> CalibrationScreen(engine.detector, onDone = { screen = Screen.CONTROL })
                     Screen.HISTORY -> HistoryScreen(app.history)
                     Screen.SETTINGS -> SettingsScreen(app.settings, access.actions, app.telemetry, app.server)

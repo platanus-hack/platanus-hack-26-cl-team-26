@@ -160,11 +160,7 @@ private fun ActivationSettings(s: AppSettings, store: SettingsStore, serverConne
             }
         }
         if (s.activationMode == ActivationMode.GESTURES) {
-            when {
-                s.serverUrl.isBlank() -> Hint("! Falta la URL del servidor (más abajo). Mientras tanto se usa el escaneo.")
-                !serverConnected -> Hint("! El servidor no responde: se usa el escaneo hasta que vuelva.")
-                else -> Hint("✓ Servidor en vivo. Enseña y enlaza gestos en la pestaña Gestos.")
-            }
+            Hint("✓ Los gestos corren en el celular, sin servidor. Enséñalos y enlázalos en la pestaña Gestos.")
         }
     }
 }

@@ -59,10 +59,11 @@ fun ChoiceRow(options: List<Choice>, selected: String?, onSelect: (String) -> Un
     }
 }
 
-/** Que hace un gesto: un dispositivo, abrir el escaneo o nada. */
+/** Que hace un gesto: un sonido, un dispositivo, abrir el escaneo o nada. */
 @Composable
 fun TargetPicker(devices: List<Device>, selected: String?, onSelect: (String) -> Unit) {
-    val options = devices.map { Choice(it.id, it.name, it.icon) } +
+    val options = listOf(Choice(AppSettings.BIND_SONG, "♪ Canción"), Choice(AppSettings.BIND_QUACK, "🦆 Cuack")) +
+        devices.map { Choice(it.id, it.name, it.icon) } +
         listOf(Choice(AppSettings.BIND_SCAN, "Abrir escaneo"), Choice(AppSettings.BIND_NONE, "Nada (solo probar)"))
     ChoiceRow(options, selected, onSelect)
 }
@@ -70,6 +71,8 @@ fun TargetPicker(devices: List<Device>, selected: String?, onSelect: (String) ->
 fun targetLabel(target: String?, devices: List<Device>): String = when (target) {
     null, AppSettings.BIND_NONE -> "Sin acción"
     AppSettings.BIND_SCAN -> "Abre el escaneo"
+    AppSettings.BIND_SONG -> "Pone o para la canción"
+    AppSettings.BIND_QUACK -> "Cuack de pato"
     else -> devices.firstOrNull { it.id == target }?.name ?: "Sin acción"
 }
 
@@ -81,7 +84,7 @@ fun ruleLabel(d: RemoteDetector): String = when (d.type) {
 
 /**
  * Un gesto aprendido. Se pone ambar un segundo cada vez que se dispara, para probarlo en vivo.
- * [detector] es null si el servidor ya no lo tiene (se reinicio).
+ * [detector] es null si ya no esta aprendido (solo queda su accion guardada).
  */
 @Composable
 fun GestureCard(
@@ -109,7 +112,7 @@ fun GestureCard(
         Text(name, style = MaterialTheme.typography.titleLarge, color = textColor)
         if (detector == null) {
             Text(
-                "! El servidor olvidó este gesto (se reinició): vuelve a enseñarlo.",
+                "! Este gesto ya no está aprendido: vuelve a enseñarlo.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (flashing) Palette.OnHighlight else Palette.WarningSoft,
             )

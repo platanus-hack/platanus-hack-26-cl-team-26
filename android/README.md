@@ -61,19 +61,28 @@ O copiar el APK al celular y abrirlo (permitir "instalar apps desconocidas").
    se puede ampliar el cono de dirección, aceptar el imán dado vuelta o desactivar el chequeo, y bajar la fuerza mínima.
 7. **Historial** muestra los últimos eventos. **Debug** muestra |ΔB|, coseno, umbrales, giroscopio y frecuencia de muestreo.
 
-## Gestos aprendidos (con el servidor)
+## Gestos aprendidos (en el celular, sin servidor)
 
-Además del escaneo (que funciona sin internet), la app puede usar gestos que el servidor aprende de ejemplos:
+Además del escaneo, la app aprende gestos de 3 ejemplos. Todo corre en el celular: solo hace falta el celular y el imán.
 
-1. Ajustes → Servidor: URL de `server.py`. La pestaña **Gestos** debe mostrar "Servidor en vivo".
-2. **Enseñar un gesto**: nombre y tipo (movimiento breve, posición o movimiento repetido), grabar 3–5 ejemplos
-   con la cuenta regresiva, crear el detector y elegir qué hace (un dispositivo o abrir el escaneo).
-3. Ajustes → Activación → **Gestos aprendidos**: cada gesto actúa directo. Si el servidor se cae más de 5 s,
-   la app vuelve sola al escaneo y lo avisa en voz alta.
-4. **Asistente**: un pedido en lenguaje natural ("con el dedo a la izquierda, prende la luz") se envía a
-   `POST /agent` del servidor. Contrato en [SERVER_API.md](SERVER_API.md).
+1. **Asistente de inicio** (se abre la primera vez; después en Gestos → Asistente de inicio):
+   ubicar el imán a 2–3 cm del sensor mirando la barra en vivo, calibrar el reposo, enseñar un gesto
+   para la **canción** y, si quieres, otro para el **cuack** (sonidos sintetizados en la app).
+2. **Enseñar un gesto**: nombre, grabar 3 ejemplos con la cuenta regresiva, crear el detector y elegir
+   qué hace (canción, cuack, un dispositivo o abrir el escaneo). Grabar de nuevo un nombre reemplaza sus ejemplos.
+3. Ajustes → Activación → **Gestos aprendidos**: cada gesto actúa directo.
+4. **Asistente** en lenguaje natural: sigue usando `POST /agent` del servidor (contrato en [SERVER_API.md](SERVER_API.md)).
 
-El servidor solo detecta (la app crea los detectores con `action: none`); la app ejecuta la acción, habla y la registra en el historial.
+El detector (`gestures/local/`) es un port de `detectors.py` (validado evento por evento contra la versión de Python):
+
+- Calibración: descarta los primeros 0,5 s (el toque en la pantalla) y mide 2 s quieto.
+- Umbral `max(6σ, 1 µT)` ajustado a la fuerza de los ejemplos (40 % del pico, sin pasar del 60 %).
+- Duración mínima 160 ms; el interruptor **Filtrar fasciculaciones** la sube a 300 ms.
+- Exige un cambio rápido (< 2 s): una deriva lenta no es un gesto y pasa a ser el reposo.
+- Dirección aprendida de los ejemplos, aceptando las dos caras del imán; con dos gestos, solo dispara el más parecido.
+- Un cambio más fuerte que 1,6× lo aprendido es un golpe y se descarta.
+- Si el giroscopio detecta que el celular gira, pausa y luego toma la posición nueva como reposo (sin compensar la rotación).
+- Sin acciones mientras calibra, mientras graba ni 1,5 s después. Los gestos se guardan en disco y sobreviven al reinicio.
 
 
 

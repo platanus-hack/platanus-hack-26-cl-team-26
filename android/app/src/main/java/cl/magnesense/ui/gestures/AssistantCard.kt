@@ -40,7 +40,7 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun AssistantCard(app: MagneSenseApp, onTeach: (TeachDraft) -> Unit) {
-    val server by app.server.state.collectAsState()
+    val server by app.localGestures.state.collectAsState()
     val devices by app.access.devices.collectAsState()
     val scope = rememberCoroutineScope()
     var text by remember { mutableStateOf("") }
@@ -77,7 +77,7 @@ fun AssistantCard(app: MagneSenseApp, onTeach: (TeachDraft) -> Unit) {
             is AgentStep.Record -> onTeach(TeachDraft(type = step.type, name = step.label))
             is AgentStep.Train -> scope.launch {
                 busy = true
-                val r = app.serverApi.train(step.request)
+                val r = app.localGestures.train(step.request)
                 busy = false
                 if (r.ok) done += index else notice = r.error ?: "No se pudo crear el detector"
             }
@@ -93,7 +93,7 @@ fun AssistantCard(app: MagneSenseApp, onTeach: (TeachDraft) -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle("Asistente")
             Field("Pídele algo (p. ej. \"con el dedo a la izquierda, prende la luz\")", text) { text = it }
-            BigButton(if (busy) "Pensando…" else "Enviar", { send() }, Modifier.fillMaxWidth(), enabled = !busy && text.isNotBlank() && server.connected)
+            BigButton(if (busy) "Pensando…" else "Enviar", { send() }, Modifier.fillMaxWidth(), enabled = !busy && text.isNotBlank())
             notice?.let { Text("! $it", style = MaterialTheme.typography.bodyLarge, color = Palette.WarningSoft) }
             reply?.let { r ->
                 if (r.reply.isNotBlank()) Text(r.reply, style = MaterialTheme.typography.bodyLarge, color = Palette.Text)

@@ -63,6 +63,8 @@ data class TrainRequest(
     /** state: etiquetas a distinguir. */
     val labels: List<String> = emptyList(),
     val trigger: String? = null,
+    /** event: duracion minima del gesto (160 ms; 300 ms filtra fasciculaciones). */
+    val minOnMs: Int? = null,
 )
 
 /** Resultado de POST /train, con la calidad en palabras simples. */
@@ -74,6 +76,8 @@ data class TrainResult(
     val consistency: Double? = null,
     /** state: separacion (bueno > 2). */
     val separation: Double? = null,
+    /** p. ej. senal debil: los ejemplos apenas superan el umbral. */
+    val warning: String? = null,
 ) {
     val good: Boolean
         get() = when {
