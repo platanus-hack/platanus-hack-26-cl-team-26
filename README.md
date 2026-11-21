@@ -33,6 +33,36 @@ Advertencias:
 
 Prueba offline: `python -m tests.test_h3_sintetico`.
 
+## Gran Santiago (34 comunas)
+
+Las 32 comunas de la Provincia de Santiago más Puente Alto y San Bernardo, recortadas a `BBOX_URBANO`.
+Van aparte de las 4 comunas de arriba, que no cambian:
+
+- `datos/salida_h3_gs/santiago_h3.parquet`: 1.956 hexágonos res 8 y 13.172 res 9, mismas columnas más
+  `elev_m`, `precordillera` (≥ 900 m), `baja_poblacion` (< 500 hab/km²) y `comuna_piloto` (las 4 originales).
+- `datos/salida_h3_gs/capas_osm.gpkg` y `resumen_h3.json`.
+- `datos/cache_gs/`: rásters recortados al área completa, más `elev_cop30.tif` (Copernicus DEM 30 m).
+
+Para regenerarlos (los rásters de caché no llevan el bbox en el nombre, por eso van en otra carpeta):
+
+```bash
+python -m verdeh3.mosaico_s2 --cache datos/cache_gs --fecha 2026-02-06   # ninguna tesela S2 cubre sola el área
+python -m verdeh3.pipeline --cache datos/cache_gs --salida datos/salida_h3_gs --comunas Cerrillos "Cerro Navia" \
+  Conchalí "El Bosque" "Estación Central" Huechuraba Independencia "La Cisterna" "La Florida" "La Granja" \
+  "La Pintana" "La Reina" "Las Condes" "Lo Barnechea" "Lo Espejo" "Lo Prado" Macul Maipú Ñuñoa \
+  "Pedro Aguirre Cerda" Peñalolén Providencia Pudahuel Quilicura "Quinta Normal" Recoleta Renca \
+  "San Joaquín" "San Miguel" "San Ramón" Santiago Vitacura "Puente Alto" "San Bernardo"
+python -m verdeh3.marcar_gs --cache datos/cache_gs --salida datos/salida_h3_gs
+```
+
+NDVI: mosaico de `S2A_MSIL2A_20260206T144901_R096_T19HCD` y `..._T19HCC` (2026-02-06). LST: la misma escena Landsat.
+
+Advertencias:
+
+- Para sacar el cerro usa `precordillera`; `baja_poblacion` también atrapa parques, aeropuerto e industrias.
+- WorldPop 2020 constrained reparte mal la población entre comunas (Maipú 1,58 M, Puente Alto 1,13 M,
+  Santiago 135 k; total 7,6 M). Sirve para comparar densidades, no para cifras por comuna.
+
 # Corredores Verdes · Bloque 1
 
 Ingesta geoespacial del Gran Santiago: `python -m ingesta.pipeline` (ver `ingesta/pipeline.py`).
