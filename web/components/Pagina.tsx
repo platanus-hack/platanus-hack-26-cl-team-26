@@ -6,7 +6,7 @@ import MapaHex, { type Capa } from "./MapaHex";
 import Cifra from "./Cifra";
 import FiltroComunas from "./FiltroComunas";
 import { formato, useRevela, useVisible } from "./movimiento";
-import { historico, useTerreno, type Captura, type Estado, type InfoComunas } from "@/lib/terreno";
+import { historico, useTerreno, type Captura, type Escucha, type Estado, type InfoComunas } from "@/lib/terreno";
 
 type Serie = { meses: string[]; escenas_landsat: number; escenas_sentinel2: number; media_mes: (number | null)[]; lst_fecha_ultima: string };
 
@@ -19,6 +19,9 @@ const sinNulos = (xs: (number | null)[]) => xs.filter((x): x is number => x != n
 const media = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0);
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 const est = (i: number) => ({ "--i": i } as React.CSSProperties);
+const ICONO: Record<string, string> = { ave: "🐦", abeja: "🐝", mariposa: "🦋", otro_polinizador: "🪲", otro: "🐾" };
+const RUIDO: Record<string, string> = { bajo: "bajo", medio: "medio", alto: "alto (tráfico)" };
+const AVE = "#7A4E9E";
 
 // Min-max con percentiles 2 y 98, como optimizer._norm.
 function norm(xs: (number | null)[]) {
@@ -107,7 +110,8 @@ export default function Pagina({ serie }: { serie: Serie }) {
         <p><b>Calor del suelo.</b> Landsat 8 y 9, Collection 2 Level 2 (USGS), vía Microsoft Planetary Computer. Serie mensual: {serie.escenas_landsat} escenas Landsat y {serie.escenas_sentinel2} Sentinel-2, de enero de 2023 a noviembre de 2026.</p>
         <p><b>Copa de árboles.</b> Modelo propio sobre Sentinel-2 de febrero de 2026, entrenado con la altura de copa de Meta y WRI (r = 0,92 por cuadra en comunas que el modelo no vio).</p>
         <p><b>Personas.</b> Censo 2024 del INE por manzana, más cercanía a colegios, salud, metro y paraderos de OpenStreetMap. No es ingreso.</p>
-        <p><b>Aire en vivo y terreno.</b> DMC, SINCA y Sensor.Community por barrio (H3 resolución 7). Fotos y videos con GPS desde el teléfono, validados por Claude; la foto complementa al satélite, no lo reemplaza. Mapa base: CARTO y OpenStreetMap.</p>
+        <p><b>Aire en vivo y terreno.</b> DMC, SINCA y Sensor.Community por barrio (H3 resolución 7). Fotos y videos con GPS desde el teléfono (<code>/captura</code>, con la clave del equipo), validados por Claude; la foto complementa al satélite, no lo reemplaza. Mapa base: CARTO y OpenStreetMap.</p>
+        <p><b>Aves y polinizadores.</b> Aves por su canto con BirdNET (K. Lisa Yang Center for Conservation Bioacoustics, Cornell; modelo CC BY-NC-SA 4.0), filtradas por lugar y semana del año, grabando quieto o caminando con el video; cada escucha mide el ruido del tráfico, y sin aves con ruido alto queda «no concluyente». Aves, abejas, mariposas y flores vistas en las fotos, según Claude. No detectar fauna no significa que no haya.</p>
         <p><b>Fondo del titular.</b> Sentinel-2 L2A del 6 de febrero de 2026 (Copernicus, vía Microsoft Planetary Computer), 16 m por píxel: la vegetación en verde según su NDVI y lo construido en gris.</p>
       </div></footer>
     </main>
@@ -169,27 +173,52 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
     for (const [c, v] of Object.entries(por)) sueloComuna.current.set(c, media(v));
   }, [H]);
 
+  // Fotos y escuchas de aves en la misma capa de puntos; MapLibre aplana los objetos, así que el detalle va como texto.
   const capturasGeo = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
-    features: estado.capturas.map((c) => ({
-      type: "Feature", properties: { ...c, obstaculos: (c.obstaculos ?? []).join(", "), color: c.validacion === "descartada" ? "#9A9A8E" : c.cuenta ? "#2D5E9E" : "#9A9A8E" },
-      geometry: { type: "Point", coordinates: [c.lon, c.lat] },
-    })),
-  }), [estado.capturas]);
+    features: [
+      ...estado.capturas.map((c) => ({
+        type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [c.lon, c.lat] },
+        properties: {
+          ...c, tipo: "foto", obstaculos: (c.obstaculos ?? []).join(", "),
+          fauna: (c.fauna ?? []).map((x) => `${ICONO[x.grupo] ?? ""} ${x.nombre || x.grupo.replace("_", " ")} ×${x.cantidad}`).join(", "),
+          color: c.validacion === "descartada" ? "#9A9A8E" : c.cuenta ? "#2D5E9E" : "#9A9A8E",
+        },
+      })),
+      ...(estado.escuchas ?? []).map((e) => ({
+        type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [e.lon, e.lat] },
+        properties: { tipo: "escucha", datos: JSON.stringify(e), color: e.detecciones.length ? AVE : "#B9A9C9" },
+      })),
+    ],
+  }), [estado.capturas, estado.escuchas]);
   const recorridosGeo = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
     features: estado.recorridos.filter((r) => r.linea.length > 1).map((r) => ({
       type: "Feature", properties: { id: r.id }, geometry: { type: "LineString", coordinates: r.linea.map(([la, lo]) => [lo, la]) },
     })),
   }), [estado.recorridos]);
+  const hora = (t: unknown) => new Date(String(t)).toLocaleString("es-CL", { timeZone: "America/Santiago" });
+  const popupEscucha = (e: Escucha) => {
+    const lista = !e.analizada ? "<i>Sin analizar: BirdNET no estaba disponible</i>"
+      : e.detecciones.length ? e.detecciones.map((d) => `🐦 <i>${esc(d.cientifico)}</i> <small>${esc(d.comun)} · ${Math.round(d.confianza * 100)} %</small>`).join("<br>")
+      : e.concluyente === false ? "<b>No concluyente:</b> no se oyeron aves, pero había mucho ruido"
+      : "No se identificaron aves <small>(no significa que no haya)</small>";
+    const tramo = e.video_id ? `#t=${e.desde_s},${e.hasta_s}` : "";
+    return `<div class="pop"><b>${e.video_id ? "Tramo de recorrido" : "Escucha de aves"}, ${Math.round(e.duracion_s)} s</b><br>${lista}
+      ${e.ruido ? `<br><small>Ruido de la calle: ${RUIDO[e.ruido.nivel]} · ${e.ruido.db} dB relativo</small>` : ""}
+      <br><audio controls preload="none" src="/audios/${esc(e.archivo || e.id + ".wav")}${tramo}" style="width:220px;margin-top:6px"></audio>
+      <br><small>${esc(hora(e.tomado_en || e.medido_en))} · GPS ±${Math.round(Number(e.precision_m ?? 0))} m</small></div>`;
+  };
   const popupCaptura = (p: Record<string, unknown>) => {
+    if (p.tipo === "escucha") return popupEscucha(JSON.parse(String(p.datos)) as Escucha);
     const c = p as unknown as Captura;
     if (c.validacion === "descartada") return `<div class="pop"><b>Descartada</b><br>${esc(c.motivo_rechazo)}</div>`;
-    const cuando = new Date(String(c.tomado_en || c.medido_en)).toLocaleString("es-CL", { timeZone: "America/Santiago" });
+    const cerca = c.arbol_pct == null || String(c.arbol_pct) === "null";
     return `<div class="pop"><img src="/fotos/${esc(c.id)}_min.jpg" alt="Foto de terreno">
-      Árboles ${Math.round(Number(c.arbol_pct ?? 0))} % (${c.fuente === "claude" ? "Claude" : "índice de verde"}) · plantable: ${esc(c.espacio_plantable ?? "sin estimar")}<br>
-      ${p.obstaculos ? `Obstáculos: ${esc(p.obstaculos)}<br>` : ""}<small>${esc(c.descripcion)}</small>
-      ${c.cuenta ? "" : "<br><b>Sin validar: no cuenta</b>"}<br><small>${esc(cuando)} · GPS ±${Math.round(Number(c.precision_m ?? 0))} m</small></div>`;
+      ${cerca ? "Foto de cerca (fauna o flores)" : `Árboles ${Math.round(Number(c.arbol_pct ?? 0))} % (${c.fuente === "claude" ? "Claude" : "índice de verde"}) · plantable: ${esc(c.espacio_plantable ?? "sin estimar")}`}<br>
+      ${p.obstaculos ? `Obstáculos: ${esc(p.obstaculos)}<br>` : ""}${p.fauna ? `Fauna: ${esc(p.fauna)}<br>` : ""}
+      ${c.flores && c.flores !== "ninguna" && String(c.flores) !== "null" ? `🌸 Flores: ${esc(c.flores)}<br>` : ""}<small>${esc(c.descripcion)}</small>
+      ${c.cuenta ? "" : "<br><b>Sin validar: no cuenta</b>"}<br><small>${esc(hora(c.tomado_en || c.medido_en))} · GPS ±${Math.round(Number(c.precision_m ?? 0))} m</small></div>`;
   };
   const mapaComun = { comunas: comunasGeo, capturas: capturasGeo, recorridos: recorridosGeo, popupCaptura, alComuna: tocarComuna };
 
@@ -220,9 +249,11 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
 
   // ---- Planificar: presupuesto y pesos van al servidor, que recalcula con y sin terreno
   const p = estado.parametros;
+  // Calor, árboles y personas suman 100; la biodiversidad va en la misma escala (10 = un décimo de los otros tres).
   const [pesos, setPesos] = useState(() => {
     const tot = p.w_calor + p.w_arbol + p.w_personas || 1;
-    return { km: p.km, calor: Math.round((100 * p.w_calor) / tot), arbol: Math.round((100 * p.w_arbol) / tot), pers: Math.round((100 * p.w_personas) / tot) };
+    return { km: p.km, calor: Math.round((100 * p.w_calor) / tot), arbol: Math.round((100 * p.w_arbol) / tot),
+             pers: Math.round((100 * p.w_personas) / tot), bio: Math.round((100 * (p.w_bio ?? 0)) / tot) };
   });
   const temporizador = useRef<ReturnType<typeof setTimeout>>(undefined);
   function mover(k: keyof typeof pesos, v: number) {
@@ -230,11 +261,11 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
     setPesos(nuevo);
     clearTimeout(temporizador.current);
     temporizador.current = setTimeout(() => {
-      const w = nuevo.calor + nuevo.arbol + nuevo.pers > 0 ? nuevo : { ...nuevo, calor: 40, arbol: 40, pers: 20 };
-      cambiar({ km: w.km, w_calor: w.calor, w_arbol: w.arbol, w_personas: w.pers });
+      const w = nuevo.calor + nuevo.arbol + nuevo.pers + nuevo.bio > 0 ? nuevo : { ...nuevo, calor: 40, arbol: 40, pers: 20, bio: 10 };
+      cambiar({ km: w.km, w_calor: w.calor, w_arbol: w.arbol, w_personas: w.pers, w_bio: w.bio });
     }, 450);
   }
-  const total = pesos.calor + pesos.arbol + pesos.pers || 1;
+  const total = pesos.calor + pesos.arbol + pesos.pers + pesos.bio || 1;
   const a = estado.ahora, b = estado.antes;
   const datosPlan = useMemo(() => coleccion((i) => ({ u: H.u[i], k: H.parque[i] })), [H, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
   const corredor = useMemo<GeoJSON.FeatureCollection>(() => ({
@@ -309,7 +340,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
         <div className="leyenda">
           <span><i className="barra" style={{ background: LEYENDA[capa][0] }} />{LEYENDA[capa][1]}</span>
           <span className="detalle num" aria-live="polite">{det != null
-            ? `${H.distrito[det]}${H.parque[det] ? ", parque" : ""}: suelo ${formato(H.lst[det] ?? 0, 1)} °C${H.vivo[det] != null ? `, aire ${formato(H.vivo[det] as number, 1)} °C` : ""}, copa ${formato(H.copa[det] ?? 0, 1)} %, ${formato(H.pob[det])} personas, urgencia ${formato(H.u[det] ?? 0, 3)}.`
+            ? `${H.distrito[det]}${H.parque[det] ? ", parque" : ""}: suelo ${formato(H.lst[det] ?? 0, 1)} °C${H.vivo[det] != null ? `, aire ${formato(H.vivo[det] as number, 1)} °C` : ""}, copa ${formato(H.copa[det] ?? 0, 1)} %, ${formato(H.pob[det])} personas, urgencia ${formato(H.u[det] ?? 0, 3)}.${H.especies?.[det] ? ` Aves: ${H.especies[det]}.` : ""}${H.polinizadores?.[det] ? ` ${H.polinizadores[det]} polinizadores vistos.` : ""}`
             : "Toca una cuadra para ver sus datos."}</span>
           {det != null && todas && (
             <button type="button" className="pill" style={{ minHeight: 36, fontSize: 14 }} disabled={ocupado}
@@ -351,7 +382,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
       <Seccion id="planificar">
         <div className="b-cab escalon"><h2>Planificar</h2><p>Mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes del área elegida.</p></div>
         <div className="b-controles escalon" style={est(2)}>
-          {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"]] as const).map(([k, nombre]) => (
+          {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"], ["bio", "Biodiversidad (terreno)"]] as const).map(([k, nombre]) => (
             <div className="peso" key={k}>
               <label htmlFor={`p-${k}`}><span>{nombre}</span><b>{Math.round((100 * pesos[k]) / total)} %</b></label>
               <input id={`p-${k}`} type="range" min={0} max={100} step={5} value={pesos[k]} onChange={(e) => mover(k, Number(e.target.value))} />
@@ -378,6 +409,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
               <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Sin datos de terreno</span>
               <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno</span>
               <span><i className="cuadro" style={{ background: "#2D5E9E", borderRadius: 7 }} />Foto válida</span>
+              <span><i className="cuadro" style={{ background: AVE, borderRadius: 7 }} />Escucha con aves</span>
             </div>
           </div>
           <div className="cifras">
@@ -406,7 +438,15 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
             <div className="grupo escalon" style={est(6)}>
               <button type="button" className="pill llena" onClick={exportar} disabled={!a.hexes}>Exportar tramos</button>
             </div>
-            <p className="nota">{estado.capturas.length} {estado.capturas.length === 1 ? "captura" : "capturas"} en terreno; {estado.capturas.filter((c) => c.cuenta).length} cuentan. El mapa se actualiza solo cuando llega una foto nueva.</p>
+            {estado.fauna_corredor && (estado.fauna_corredor.especies.length > 0 || estado.fauna_corredor.polinizadores > 0) && (
+              <div className="cifra escalon" style={est(7)}>
+                <b><Cifra valor={estado.fauna_corredor.especies.length} /></b>
+                <span>{estado.fauna_corredor.especies.length === 1 ? "especie de ave registrada" : "especies de aves registradas"} en el corredor
+                  {estado.fauna_corredor.especies.length ? `: ${estado.fauna_corredor.especies.join(", ")}` : ""}
+                  {estado.fauna_corredor.polinizadores ? `; ${estado.fauna_corredor.polinizadores} polinizadores vistos` : ""}. Con el peso de biodiversidad, el corredor prefiere pasar por donde hay fauna.</span>
+              </div>
+            )}
+            <p className="nota">{estado.capturas.length} {estado.capturas.length === 1 ? "captura" : "capturas"} en terreno; {estado.capturas.filter((c) => c.cuenta).length} cuentan{estado.escuchas?.length ? `; ${estado.escuchas.length} ${estado.escuchas.length === 1 ? "escucha" : "escuchas"} de aves` : ""}. El mapa se actualiza solo cuando llega una foto o escucha nueva.</p>
           </div>
         </div>
       </Seccion>

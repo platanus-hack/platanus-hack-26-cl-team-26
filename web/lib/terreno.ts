@@ -1,11 +1,12 @@
 "use client";
-// Cliente del servidor de terreno (terreno/servidor.py, FastAPI). Next reenvía /api, /fotos y /videos a ese
+// Cliente del servidor de terreno (terreno/servidor.py, FastAPI). Next reenvía /api, /fotos, /videos y /audios a ese
 // servidor (next.config.mjs), que es quien cruza los datos por comuna: contornos, vecinas, el área elegida,
 // el corredor con y sin capturas en terreno, y la serie histórica.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type Parametros = {
   comunas: string[]; distritos: string[]; zona: number; km: number; w_calor: number; w_arbol: number; w_personas: number;
+  w_bio?: number; birdnet?: string;
 };
 export type InfoComunas = {
   comunas: string[]; vecinas: Record<string, string[]>; geo: Record<string, number[][][][]>;
@@ -15,6 +16,7 @@ export type HexCols = {
   h: string[]; comuna: string[]; distrito: string[]; u: (number | null)[]; lst: (number | null)[]; vivo: (number | null)[];
   ndvi: (number | null)[]; copa: (number | null)[]; pob: number[]; social: (number | null)[];
   parque: boolean[]; antes: boolean[]; ahora: boolean[]; verificado: boolean[];
+  bio?: (number | null)[]; especies?: string[]; polinizadores?: number[];
 };
 export type ResumenCorredor = {
   hexes: number; km: number; urgencia_cubierta: number; urgencia_azar: number; personas_cubiertas: number;
@@ -24,13 +26,23 @@ export type Captura = {
   id: string; lat: number; lon: number; validacion: string; cuenta: boolean; fuente?: string; arbol_pct?: number;
   espacio_plantable?: string; obstaculos?: string[]; descripcion?: string; motivo_rechazo?: string;
   tomado_en?: string; medido_en?: string; precision_m?: number; video_id?: string; t_video_s?: number;
+  tipo_foto?: string | null; fauna?: Avistamiento[]; flores?: string | null;
+};
+export type Avistamiento = { grupo: string; nombre: string; cantidad: number };
+export type Deteccion = { cientifico: string; comun: string; confianza: number; inicio_s: number; fin_s: number };
+export type Ruido = { db: number; max_db: number; nivel: "bajo" | "medio" | "alto" };
+export type Escucha = {
+  id: string; lat: number; lon: number; duracion_s: number; analizada: boolean; detecciones: Deteccion[];
+  ruido?: Ruido | null; concluyente?: boolean; archivo?: string | null; video_id?: string; desde_s?: number;
+  hasta_s?: number; tomado_en?: string | null; medido_en?: string; precision_m?: number | null;
 };
 export type Recorrido = { id: string; inicio?: string; duracion_s?: number; archivo?: string; linea: [number, number][] };
 export type Estado = {
   version: number; sel_id: number; seleccion: string[]; parametros: Parametros; hex: HexCols;
   capturas: Captura[]; recorridos: Recorrido[]; en_vivo: boolean; antes: ResumenCorredor; ahora: ResumenCorredor;
+  escuchas?: Escucha[]; fauna_corredor?: { especies: string[]; polinizadores: number };
 };
-export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number }>;
+export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number; w_bio: number }>;
 
 const SONDEO_MS = 3000;
 

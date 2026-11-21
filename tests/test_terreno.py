@@ -435,6 +435,8 @@ def test_audio():
         with tempfile.TemporaryDirectory() as tmp:
             c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, clave="secreta", usar_claude=False))
             v0 = c.get("/api/version").json()["version"]
+            pag = c.get("/captura?k=secreta")  # la misma página del teléfono, para el sitio web/
+            assert pag.status_code == 200 and "Escuchar aves" in pag.text and pag.text == c.get("/").text
             datos = {"lat": la, "lon": lo, "precision_m": 8, "tomado_en": "2026-11-21T15:00:00-03:00"}
             assert c.post("/api/audio", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")}).status_code == 403
             r = c.post("/api/audio?k=secreta", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")})

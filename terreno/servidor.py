@@ -3,7 +3,7 @@
     python -m terreno.servidor --puerto 8000          # 34 comunas; el corredor se calcula en las elegidas
     cloudflared tunnel --url http://localhost:8000      # HTTPS público: el GPS del teléfono lo exige
 
-Teléfono: https://<túnel>/?k=<clave>   ·   Mapa para proyectar: http://localhost:8000/mapa
+Teléfono: https://<túnel>/?k=<clave> (o /captura?k=<clave>, también desde el sitio web/)   ·   Mapa: /mapa
 Aves por sonido: el teléfono graba 15 s (WAV) y BirdNET identifica especies (terreno/aves.py). Con las fotos
 (fauna y flores según Claude) arman la biodiversidad por hexágono, que entra al corredor con el peso w_bio.
 El mapa filtra por comuna, distrito (barrio H3 res 7) o una zona dibujada, mueve presupuesto y pesos del
@@ -243,6 +243,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             raise HTTPException(403, "Clave incorrecta: abre la página con ?k=<clave>")
 
     @app.get("/")
+    @app.get("/captura")  # el sitio Next (web/) usa «/» para su portada y reenvía /captura aquí
     def captura_html():
         return FileResponse(ESTATICO / "captura.html")
 
