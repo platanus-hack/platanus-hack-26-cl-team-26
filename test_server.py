@@ -1,4 +1,6 @@
 """Pruebas de la fase 1 con datos de prueba (solo para validar el codigo, no para la demo)."""
+import tempfile
+from pathlib import Path
 import random
 from fastapi.testclient import TestClient
 import server
@@ -33,6 +35,7 @@ def run(client, field, seconds, start=0.0, extra_names=()):
 
 
 def fresh():
+    server.DATA_DIR = Path(tempfile.mkdtemp())   # nunca tocar data/ real
     server.det.reset()
     server.bank.detectors.clear()
     server.bank.pipeline.reset()

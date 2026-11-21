@@ -1,4 +1,6 @@
 """Pruebas de la fase 2 con datos de prueba (solo validan el codigo)."""
+import tempfile
+from pathlib import Path
 import math
 
 import numpy as np
@@ -97,16 +99,36 @@ def test_state():
     assert [e["action"] for e in ev] == ["off", "on", "off"]
 
 
-def test_gyro_compensates_slow_turn():
-    # El telefono gira 10 grados lento (0.1 rad/s) sin iman: no debe detectar nada
-    ang = lambda t: 0.0 if t < 3 else min((t - 3) * 0.1, math.radians(10))
-    w = lambda t: (0, 0, 0.1 if 3 <= t < 3 + math.radians(10) / 0.1 else 0.0)
+def test_gyro_ignores_slow_turn():
+    # El telefono gira 10 grados lento (0.15 rad/s) sin iman: no debe detectar nada
+    rate = 0.15
+    ang = lambda t: 0.0 if t < 3 else min((t - 3) * rate, math.radians(10))
+    w = lambda t: (0, 0, rate if 3 <= t < 3 + math.radians(10) / rate else 0.0)
     data = stream(8, lambda t: np.zeros(3), rot=ang)
     with_g, without = Bank(), Bank()
     with_g.add(EventDetector("g"))
     without.add(EventDetector("g"))
     assert not [e for e in run(with_g, data, gyro=w) if e["kind"] == "start"]
     assert [e for e in run(without, data) if e["kind"] == "start"]   # sin giroscopio se confunde
+
+
+def test_slow_drift_does_not_trigger():
+    # El campo se corre 8 uT en 40 s (deriva, parlante cerca): no es un gesto
+    drift = lambda t: V * 8 * min(max(t - 3, 0) / 40, 1)
+    field = add(drift, pulse(50, 50.6, U, 8))                         # y luego un gesto real
+    b = Bank()
+    b.add(EventDetector("g"))
+    starts = [e for e in run(b, stream(53, field)) if e["kind"] == "start"]
+    assert len(starts) == 1 and 50 <= starts[0]["t"] < 50.6, starts
+
+
+def test_phase1_drift_does_not_trigger():
+    d = server.Detector()
+    ons = []
+    for t, v in stream(53, add(lambda t: V * 8 * min(max(t - 3, 0) / 40, 1), pulse(50, 50.6, U, 8))):
+        if "on" in d.process(t, *v):
+            ons.append(t)
+    assert len(ons) == 1 and 50 <= ons[0] < 50.6, ons
 
 
 def test_gyro_pauses_detection_on_fast_move():
@@ -120,6 +142,7 @@ def test_gyro_pauses_detection_on_fast_move():
 
 
 def test_server_record_train_and_gyro():
+    server.DATA_DIR = Path(tempfile.mkdtemp())   # nunca tocar data/ real
     server.det.reset()
     server.bank.detectors.clear()
     server.bank.pipeline.reset()

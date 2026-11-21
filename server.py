@@ -128,6 +128,12 @@ class Detector:
         self.baseline_tau = 4.0      # s, seguimiento de deriva en reposo
         self.smooth_tau = 0.040      # s, suavizado
         self.stuck_after = 6.0       # s activo -> nuevo reposo
+        # Cambio rapido: para activar, la senal debe haber subido al menos
+        # rise_frac * umbral en los ultimos rise_window s. Una deriva lenta que
+        # cruza el umbral no activa: se toma como nuevo reposo.
+        self.rise_window = 2.0
+        self.rise_frac = 0.7
+        self.gray_tau = 20.0         # s, seguimiento lento entre umbral/2 y umbral
         self.calib_seconds = 2.0
         self.mode = "toggle"         # "toggle" o "hold"
         self.lamp_enabled = True     # False cuando la lampara la manejan los detectores fase 2
@@ -147,6 +153,9 @@ class Detector:
         self.activations = 0
         self.seen_uncal = False
         self.suspended = False
+        self.history: deque[tuple[float, float]] = deque()
+        self.onset_min = 0.0
+        self.drifts = 0
         self.start_calibration()
 
     def start_calibration(self):
@@ -218,6 +227,9 @@ class Detector:
         raw = math.sqrt((x - bx) ** 2 + (y - by) ** 2 + (z - bz) ** 2)
         self.signal = sig
         thr = self.threshold
+        self.history.append((t, sig))
+        while self.history and t - self.history[0][0] > self.rise_window + 1.0:
+            self.history.popleft()
 
         if not self.active:
             # La lectura cruda tambien debe seguir alta: asi la cola del
@@ -225,19 +237,31 @@ class Detector:
             if sig > thr and raw > thr / 2:
                 if self.above_since is None:
                     self.above_since = t
+                    # minimo antes de cruzar (sin historia, p. ej. tras un corte: 0)
+                    lo = [v for (ht, v) in self.history if t - self.rise_window <= ht < t]
+                    self.onset_min = min(lo) if lo else 0.0
                 if t - self.above_since >= self.min_on:
-                    self.active = True
-                    self.active_since = t
-                    self.below_since = None
-                    self.activations += 1
-                    events.append("on")
+                    if sig - self.onset_min >= self.rise_frac * thr:
+                        self.active = True
+                        self.active_since = t
+                        self.below_since = None
+                        self.activations += 1
+                        events.append("on")
+                    elif t - self.above_since >= self.rise_window:
+                        # Cruzo el umbral sin un cambio rapido: es deriva
+                        self.baseline = list(self.smooth)
+                        self.above_since = None
+                        self.drifts += 1
+                        events.append("drift")
             else:
                 self.above_since = None
-                if sig < thr / 2 and dt > 0:
-                    # Reposo: seguir deriva lenta y actualizar ruido
-                    a = dt / self.baseline_tau
+                if dt > 0 and sig < thr:
+                    # Reposo: seguir deriva lenta (mas lento en la zona gris,
+                    # para que la linea base no quede pegada) y actualizar ruido
+                    a = dt / (self.baseline_tau if sig < thr / 2 else self.gray_tau)
                     self.baseline = [b + a * (s - b) for b, s in zip(self.baseline, self.smooth)]
-                    self.noise = math.sqrt(self.noise ** 2 + a * (sig ** 2 - self.noise ** 2))
+                    if sig < thr / 2:
+                        self.noise = math.sqrt(self.noise ** 2 + a * (sig ** 2 - self.noise ** 2))
         else:
             if sig < thr / 2:
                 if self.below_since is None:
@@ -280,6 +304,7 @@ class Detector:
             "active": self.active,
             "lamp": self.lamp,
             "activations": self.activations,
+            "drifts": self.drifts,
             "config": {
                 "k": self.k, "floor": self.floor, "min_on_ms": round(self.min_on * 1000),
                 "min_off_ms": round(self.min_off * 1000), "mode": self.mode,

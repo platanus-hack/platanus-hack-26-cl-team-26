@@ -36,8 +36,13 @@ class Pipeline:
     """
 
     def __init__(self, smooth_tau=0.04, baseline_tau=4.0, offaxis_tau=1.5, calib_seconds=2.0,
-                 gyro_moving=0.25, settle_s=0.6):
+                 gyro_moving=0.1, settle_s=0.6, compensate_rotation=False):
         self.smooth_tau = smooth_tau
+        # Compensar el giro solo sirve si el campo medido es solo el de la Tierra.
+        # Con el magnetometro sin calibrar (lo que usamos) hay un sesgo propio del
+        # telefono que gira con el; compensarlo inventa cambios de 1-3 uT por
+        # grado. Por defecto el giroscopio solo pausa la deteccion.
+        self.compensate_rotation = compensate_rotation
         self.gyro_deadband = 0.03
         self.gyro_moving = gyro_moving   # rad/s: sobre esto el telefono "se esta moviendo"
         self.settle_s = settle_s         # s quieto tras moverse antes de volver a detectar
@@ -77,7 +82,7 @@ class Pipeline:
             ang = self.omega * dt
             # Zona muerta: bajo ~1.7 grados/s no integrar, para que el ruido y
             # el sesgo del giroscopio no giren de a poco el campo de la Tierra.
-            if self.omega > self.gyro_deadband and ang > 1e-9:
+            if self.compensate_rotation and self.omega > self.gyro_deadband and ang > 1e-9:
                 k = w / self.omega
                 K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
                 self.R = self.R @ (np.eye(3) + math.sin(ang) * K + (1 - math.cos(ang)) * K @ K)
@@ -132,17 +137,21 @@ class Pipeline:
             self.moved = False
         delta = self.smooth - self.baseline
         mag = float(np.linalg.norm(delta))
-        rest = (not self.hold) and not self.phone_moving(t) and mag < max(6 * self.noise, 1.0) / 2
+        thr0 = max(6 * self.noise, 1.0)
+        rest = (not self.hold) and not self.phone_moving(t) and mag < thr0
+        gray = mag >= thr0 / 2
         if rest and dt > 0:
+            tau = 20.0 if gray else self.baseline_tau
             if self.direction is None:
-                self.baseline += (dt / self.baseline_tau) * delta
+                self.baseline += (dt / tau) * delta
             else:
                 u = self.direction
                 along = (delta @ u) * u
                 off = delta - along
-                self.baseline += (dt / self.baseline_tau) * along + (dt / self.offaxis_tau) * off
+                self.baseline += (dt / tau) * along + (dt / self.offaxis_tau) * off
             a = dt / self.baseline_tau
-            self.noise = math.sqrt(self.noise ** 2 + a * (mag ** 2 - self.noise ** 2))
+            if not gray:
+                self.noise = math.sqrt(self.noise ** 2 + a * (mag ** 2 - self.noise ** 2))
         return self.smooth, delta, dt
 
 
@@ -211,7 +220,8 @@ class EventDetector:
 
     def __init__(self, name="evento", direction: DirectionModel | None = None,
                  k=6.0, floor=1.0, min_on=0.15, min_off=0.10, long_s=0.8,
-                 double_gap=0.5, stuck_after=6.0, peak_frac=0.4):
+                 double_gap=0.5, stuck_after=6.0, peak_frac=0.4,
+                 rise_window=2.0, rise_frac=0.7):
         self.name = name
         self.direction = direction
         self.k, self.floor = k, floor
@@ -219,6 +229,7 @@ class EventDetector:
         self.long_s, self.double_gap = long_s, double_gap
         self.stuck_after = stuck_after
         self.peak_frac = peak_frac
+        self.rise_window, self.rise_frac = rise_window, rise_frac
         self.reset()
 
     def reset(self):
@@ -230,6 +241,8 @@ class EventDetector:
         self.pending_short_end = None   # para detectar doble
         self.count = 0
         self.last_gesture = None
+        self.history: deque[tuple[float, float]] = deque()
+        self.onset_min = 0.0
 
     def threshold(self, noise: float) -> float:
         thr = max(self.k * noise, self.floor)
@@ -253,6 +266,9 @@ class EventDetector:
         sig, raw = self._signal(delta, raw_delta)
         self.signal = sig
         thr = self.threshold(noise)
+        self.history.append((t, sig))
+        while self.history and t - self.history[0][0] > self.rise_window + 1.0:
+            self.history.popleft()
 
         # Resolver un corto pendiente si ya paso la ventana de doble
         if self.pending_short_end is not None and not self.active and self.above_since is None \
@@ -264,11 +280,19 @@ class EventDetector:
             if sig > thr and raw > thr / 2:
                 if self.above_since is None:
                     self.above_since = t
+                    # minimo antes de cruzar (sin historia, p. ej. tras un corte: 0)
+                    lo = [v for (ht, v) in self.history if t - self.rise_window <= ht < t]
+                    self.onset_min = min(lo) if lo else 0.0
                 if t - self.above_since >= self.min_on:
-                    self.active = True
-                    self.active_since = self.above_since
-                    self.below_since = None
-                    ev.append({"kind": "start", "t": t})
+                    if sig - self.onset_min >= self.rise_frac * thr:
+                        self.active = True
+                        self.active_since = self.above_since
+                        self.below_since = None
+                        ev.append({"kind": "start", "t": t})
+                    elif t - self.above_since >= self.rise_window:
+                        # Cruzo el umbral sin un cambio rapido: deriva, no gesto
+                        self.above_since = None
+                        ev.append({"kind": "drift", "t": t})
             else:
                 self.above_since = None
         else:
@@ -571,6 +595,8 @@ class Bank:
             else:
                 ev = d.step(t, smooth)
             for e in ev:
+                if e["kind"] == "drift":
+                    p.baseline = p.smooth.copy()     # tomar la posicion actual como reposo
                 e["detector"] = name
                 e["action"] = self._action(b, e)
                 out.append(e)
