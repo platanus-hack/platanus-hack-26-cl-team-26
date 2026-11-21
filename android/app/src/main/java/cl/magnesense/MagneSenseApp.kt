@@ -4,6 +4,7 @@ import android.app.Application
 import cl.magnesense.actions.CaregiverConfig
 import cl.magnesense.actions.DeviceActions
 import cl.magnesense.data.AppSettings
+import cl.magnesense.data.DiagLog
 import cl.magnesense.data.EventLog
 import cl.magnesense.data.HistoryKind
 import cl.magnesense.data.SettingsStore
@@ -11,12 +12,18 @@ import cl.magnesense.detector.DetectorEvent
 import cl.magnesense.detector.EventType
 import cl.magnesense.engine.AccessController
 import cl.magnesense.engine.Engine
+import cl.magnesense.detector.Vec3
 import cl.magnesense.feedback.Haptics
+import cl.magnesense.feedback.SoundPlayer
 import cl.magnesense.feedback.Speaker
 import cl.magnesense.gestures.GestureController
+import cl.magnesense.gestures.LocalGestures
+import cl.magnesense.pulses.PulseController
+import cl.magnesense.data.ActivationMode
 import cl.magnesense.remote.ServerApi
 import cl.magnesense.remote.ServerSocket
 import cl.magnesense.sensor.SensorHub
+import cl.magnesense.sensor.SensorSink
 import cl.magnesense.telemetry.TelemetryClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +43,9 @@ class MagneSenseApp : Application() {
         private set
     lateinit var history: EventLog
         private set
+    /** Registro tecnico para buscar errores (se comparte desde Historial). */
+    lateinit var diag: DiagLog
+        private set
     lateinit var engine: Engine
         private set
     lateinit var access: AccessController
@@ -48,6 +58,14 @@ class MagneSenseApp : Application() {
         private set
     lateinit var gestures: GestureController
         private set
+    /** Gestos aprendidos que corren en el celular (sin servidor). */
+    lateinit var localGestures: LocalGestures
+        private set
+    lateinit var sounds: SoundPlayer
+        private set
+    /** Modo Pulsos (por defecto): puntos y rayas con el iman. */
+    lateinit var pulses: PulseController
+        private set
     lateinit var speaker: Speaker
         private set
 
@@ -55,10 +73,23 @@ class MagneSenseApp : Application() {
         super.onCreate()
         settings = SettingsStore(this)
         history = EventLog(this)
+        diag = DiagLog(this)
+        diag.catchCrashes()
+        diag.add("App iniciada (v${packageManager.getPackageInfo(packageName, 0).versionName})")
         speaker = Speaker(this)
         engine = Engine()
         telemetry = TelemetryClient(scope)
-        engine.rawListener = telemetry
+        localGestures = LocalGestures(this, diag::add, history::add)
+        sounds = SoundPlayer()
+        pulses = PulseController(
+            this,
+            speaker,
+            sounds,
+            enabled = { settings.settings.value.activationMode == ActivationMode.PULSES && !(::gestures.isInitialized && gestures.teaching) },
+            diag = diag::add,
+            history = history::add,
+        )
+        engine.rawListener = Tee(telemetry, localGestures, pulses)
         server = ServerSocket(scope)
         serverApi = ServerApi { settings.settings.value.serverUrl.trim().trimEnd('/') }
         settings.loadCalibration()?.let(engine.detector::restore)
@@ -73,11 +104,16 @@ class MagneSenseApp : Application() {
 
         gestures = GestureController(
             scope = scope,
-            server = server,
+            source = localGestures.state,
+            events = localGestures.events,
             access = access,
             settings = settings.settings,
             speaker = speaker,
-            log = { history.add(HistoryKind.ACTIVATION, it) },
+            sounds = sounds,
+            log = {
+                history.add(HistoryKind.ACTIVATION, it)
+                diag.add(it)
+            },
         )
 
         scope.launch { settings.settings.collect(::apply) }
@@ -85,6 +121,7 @@ class MagneSenseApp : Application() {
         scope.launch {
             access.selections.collect { (device, result) ->
                 history.add(if (result.ok) HistoryKind.ACTION else HistoryKind.ACTION_FAILED, result.message)
+                diag.add("${if (result.ok) "Acción" else "ERROR en acción"} ${device.name}: ${result.message}")
                 telemetry.sendEvent(if (result.ok) "selected" else "action_failed", "${device.name}: ${result.message}")
             }
         }
@@ -135,4 +172,14 @@ class MagneSenseApp : Application() {
     private fun saveCalibration() {
         engine.detector.calibration()?.let(settings::saveCalibration)
     }
+}
+
+/** Reparte cada muestra cruda a varios oyentes (telemetria y gestos aprendidos). */
+private class Tee(private vararg val sinks: SensorSink) : SensorSink {
+    override fun onSensorsStarted(magMaxRange: Double, gyroAvailable: Boolean) =
+        sinks.forEach { it.onSensorsStarted(magMaxRange, gyroAvailable) }
+
+    override fun onMagnetometer(tNanos: Long, value: Vec3) = sinks.forEach { it.onMagnetometer(tNanos, value) }
+
+    override fun onGyroscope(tNanos: Long, value: Vec3) = sinks.forEach { it.onGyroscope(tNanos, value) }
 }

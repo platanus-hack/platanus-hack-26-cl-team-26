@@ -11,8 +11,8 @@ android {
         applicationId = "cl.magnesense"
         minSdk = 26
         targetSdk = 37
-        versionCode = 4
-        versionName = "0.2.0"
+        versionCode = 8
+        versionName = "0.4.0"
     }
 
     buildTypes {

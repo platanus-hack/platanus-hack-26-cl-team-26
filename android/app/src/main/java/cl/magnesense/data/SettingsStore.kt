@@ -57,6 +57,8 @@ class SettingsStore(context: Context) {
             .put("voiceEnabled", s.voiceEnabled)
             .put("activationMode", s.activationMode.name)
             .put("gestureBindings", JSONObject(s.gestureBindings))
+            .put("setupDone", s.setupDone)
+            .put("pulsesIntroduced", true)
             .put(
                 "tuning",
                 JSONObject()
@@ -104,11 +106,13 @@ class SettingsStore(context: Context) {
                 startOnBoot = o.optBoolean("startOnBoot", d.startOnBoot),
                 voiceEnabled = o.optBoolean("voiceEnabled", d.voiceEnabled),
                 tuning = decodeTuning(o.optJSONObject("tuning")),
-                activationMode = runCatching { ActivationMode.valueOf(o.optString("activationMode")) }
-                    .getOrDefault(d.activationMode),
+                // v0.4: Pulsos pasa a ser el modo por defecto, tambien para quien ya tenia la app.
+                activationMode = if (!o.has("pulsesIntroduced")) d.activationMode
+                else runCatching { ActivationMode.valueOf(o.optString("activationMode")) }.getOrDefault(d.activationMode),
                 gestureBindings = o.optJSONObject("gestureBindings")?.let { b ->
                     b.keys().asSequence().associateWith { b.optString(it) }.filterValues { it.isNotBlank() }
                 } ?: d.gestureBindings,
+                setupDone = o.optBoolean("setupDone", d.setupDone),
             )
         }
 

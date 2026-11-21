@@ -17,6 +17,7 @@
     <uses-feature android:name="android.hardware.sensor.compass" android:required="true" />
     <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
 
     <queries>
         <intent>

@@ -2,7 +2,6 @@ package cl.magnesense.ui.gestures
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,9 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -32,8 +31,8 @@ import androidx.compose.ui.unit.sp
 import cl.magnesense.MagneSenseApp
 import cl.magnesense.data.AppSettings
 import cl.magnesense.gestures.GestureMatcher
+import cl.magnesense.gestures.LocalGestures
 import cl.magnesense.remote.DetectorType
-import cl.magnesense.remote.ServerApi
 import cl.magnesense.remote.TrainRequest
 import cl.magnesense.remote.TrainResult
 import cl.magnesense.ui.components.BigButton
@@ -52,20 +51,23 @@ data class TeachDraft(
     val type: DetectorType = DetectorType.EVENT,
     val name: String = "",
     val stateLabels: List<String> = listOf("abierta", "cerrada"),
+    /** Accion ya elegida (p. ej. desde el asistente de inicio). */
+    val target: String? = null,
 )
 
 /**
- * Asistente para ensenar un gesto nuevo: nombre y tipo, grabar ejemplos, crear el detector
- * en el servidor y elegir que hace. El servidor solo detecta; la accion la hace la app.
+ * Asistente para ensenar un gesto nuevo: nombre, grabar ejemplos, crear el detector y elegir
+ * que hace. Todo corre en el celular ([LocalGestures]); grabar de nuevo reemplaza los ejemplos.
  */
 @Composable
 fun TeachGestureFlow(app: MagneSenseApp, initial: TeachDraft = TeachDraft(), onClose: () -> Unit) {
-    val server by app.server.state.collectAsState()
+    val server by app.localGestures.state.collectAsState()
     val devices by app.access.devices.collectAsState()
     val scope = rememberCoroutineScope()
 
     var step by remember { mutableStateOf(Step.SETUP) }
-    var type by remember { mutableStateOf(initial.type) }
+    // En el celular solo hay gestos breves.
+    var type by remember { mutableStateOf(DetectorType.EVENT) }
     var name by remember { mutableStateOf(initial.name) }
     var labelA by remember { mutableStateOf(initial.stateLabels.getOrElse(0) { "abierta" }) }
     var labelB by remember { mutableStateOf(initial.stateLabels.getOrElse(1) { "cerrada" }) }
@@ -76,7 +78,11 @@ fun TeachGestureFlow(app: MagneSenseApp, initial: TeachDraft = TeachDraft(), onC
     var trained by remember { mutableStateOf<TrainResult?>(null) }
     var trainedTrigger by remember { mutableStateOf<String?>(null) }
     var trigger by remember { mutableStateOf<String?>(null) }
-    var target by remember { mutableStateOf<String?>(null) }
+    var target by remember { mutableStateOf(initial.target) }
+    var filterTwitch by remember {
+        mutableStateOf(app.localGestures.minOnMs(initial.name.trim()) == LocalGestures.FILTER_TWITCH_MIN_ON_MS)
+    }
+    val minOnMs = if (filterTwitch) LocalGestures.FILTER_TWITCH_MIN_ON_MS else LocalGestures.DEFAULT_MIN_ON_MS
 
     val cleanName = name.trim().take(MAX_NAME)
     val labels = when (type) {
@@ -88,7 +94,7 @@ fun TeachGestureFlow(app: MagneSenseApp, initial: TeachDraft = TeachDraft(), onC
     val recordingNow = server.recording.isNotEmpty()
 
     fun request(withTrigger: String?) = when (type) {
-        DetectorType.EVENT -> TrainRequest(type, cleanName, label = cleanName, trigger = withTrigger ?: GestureMatcher.TRIGGER_ANY)
+        DetectorType.EVENT -> TrainRequest(type, cleanName, label = cleanName, trigger = withTrigger ?: GestureMatcher.TRIGGER_ANY, minOnMs = minOnMs)
         DetectorType.STATE -> TrainRequest(type, cleanName, labels = labels, trigger = withTrigger ?: labels.first())
         DetectorType.RHYTHM -> TrainRequest(type, cleanName)
     }
@@ -103,33 +109,28 @@ fun TeachGestureFlow(app: MagneSenseApp, initial: TeachDraft = TeachDraft(), onC
         }
         countdown = 0
         app.speaker.speak("ahora")
-        when (val r = app.serverApi.startRecording(currentLabel)) {
-            is ServerApi.Outcome.Error -> {
-                message = r.message
-                busy = false
-                return@launch
-            }
-            is ServerApi.Outcome.Ok -> Unit
+        app.localGestures.startRecording(currentLabel)?.let {
+            message = it
+            busy = false
+            return@launch
         }
         if (type == DetectorType.EVENT) {
             delay(EVENT_RECORD_MS)
-            val stop = app.serverApi.stopRecording()
-            if (stop is ServerApi.Outcome.Error) message = stop.message
+            app.localGestures.stopRecording()
             busy = false
         }
         // Posiciones: se detiene con "Listo".
     }
 
     fun stopState() = scope.launch {
-        val stop = app.serverApi.stopRecording()
-        if (stop is ServerApi.Outcome.Error) message = stop.message
+        app.localGestures.stopRecording()
         busy = false
     }
 
     fun train(withTrigger: String?, then: () -> Unit) = scope.launch {
         busy = true
         message = null
-        val r = app.serverApi.train(request(withTrigger))
+        val r = app.localGestures.train(request(withTrigger))
         busy = false
         if (r.ok) {
             trained = r
@@ -155,9 +156,9 @@ fun TeachGestureFlow(app: MagneSenseApp, initial: TeachDraft = TeachDraft(), onC
         ScreenColumn {
             Text("Enseñar un gesto", style = MaterialTheme.typography.headlineMedium, color = Palette.Text)
             message?.let { Text("! $it", style = MaterialTheme.typography.titleMedium, color = Palette.WarningSoft) }
-            if (!server.connected) {
+            if (server.phase2.calibrating) {
                 Text(
-                    "! Sin conexión con el servidor: no se pueden grabar ejemplos.",
+                    "! Calibrando: deja el celular quieto y el imán lejos un par de segundos.",
                     style = MaterialTheme.typography.titleMedium,
                     color = Palette.WarningSoft,
                 )
@@ -168,15 +169,25 @@ fun TeachGestureFlow(app: MagneSenseApp, initial: TeachDraft = TeachDraft(), onC
                     Panel {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Field("Nombre del gesto (p. ej. izquierda)", name) { name = it }
-                            Text("¿Qué tipo de gesto es?", style = MaterialTheme.typography.titleMedium, color = Palette.Text)
-                            for (t in DetectorType.entries) TypeOption(t, t == type) { type = t }
+                            // En el celular solo hay gestos breves (los de posicion y ritmo eran del servidor).
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Filtrar fasciculaciones", style = MaterialTheme.typography.titleMedium, color = Palette.Text)
+                                    Text(
+                                        "Solo cuentan los gestos de 300 ms o más (normal: 160 ms).",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Palette.Muted,
+                                    )
+                                }
+                                Switch(checked = filterTwitch, onCheckedChange = { filterTwitch = it })
+                            }
                             if (type == DetectorType.STATE) {
                                 Field("Posición 1 (la que activa)", labelA) { labelA = it }
                                 Field("Posición 2", labelB) { labelB = it }
                             }
-                            if (app.server.state.value.phase2.detectors.any { it.name == cleanName }) {
+                            if (server.phase2.detectors.any { it.name == cleanName } || (server.examples[cleanName] ?: 0) > 0) {
                                 Text(
-                                    "Ya existe un gesto con ese nombre: se reemplazará.",
+                                    "Ya existe un gesto con ese nombre: se reemplazará con los ejemplos nuevos.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Palette.WarningSoft,
                                 )
@@ -189,6 +200,9 @@ fun TeachGestureFlow(app: MagneSenseApp, initial: TeachDraft = TeachDraft(), onC
                         BigOutlineButton("Cancelar", onClose, Modifier.weight(1f))
                         BigButton("Siguiente", {
                             labelIndex = 0
+                            // Grabar de nuevo reemplaza: los ejemplos viejos de este nombre se borran.
+                            labels.forEach(app.localGestures::clearExamples)
+                            trained = null
                             step = if (type == DetectorType.RHYTHM) Step.TRAIN else Step.RECORD
                         }, Modifier.weight(1f), enabled = valid)
                     }
@@ -222,10 +236,10 @@ fun TeachGestureFlow(app: MagneSenseApp, initial: TeachDraft = TeachDraft(), onC
                             if (type == DetectorType.STATE && recordingNow) {
                                 BigButton("Listo", { stopState() }, Modifier.fillMaxWidth())
                             } else {
-                                BigButton("Grabar", { record() }, Modifier.fillMaxWidth(), enabled = !busy && server.connected)
+                                BigButton("Grabar", { record() }, Modifier.fillMaxWidth(), enabled = !busy && !server.phase2.calibrating)
                             }
                             BigOutlineButton("Borrar ejemplos de \"$currentLabel\"", {
-                                scope.launch { app.serverApi.clearExamples(currentLabel) }
+                                app.localGestures.clearExamples(currentLabel)
                             }, Modifier.fillMaxWidth(), enabled = !busy && count > 0)
                         }
                     }
@@ -245,7 +259,7 @@ fun TeachGestureFlow(app: MagneSenseApp, initial: TeachDraft = TeachDraft(), onC
                             Text("Crear el detector \"$cleanName\"", style = MaterialTheme.typography.titleLarge, color = Palette.Text)
                             Text(
                                 if (type == DetectorType.RHYTHM) "No necesita ejemplos: aprende el ritmo mientras ocurre."
-                                else "El servidor aprende de los ejemplos grabados.",
+                                else "El celular aprende la dirección y la fuerza de los ejemplos grabados.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Palette.Muted,
                             )
@@ -255,7 +269,7 @@ fun TeachGestureFlow(app: MagneSenseApp, initial: TeachDraft = TeachDraft(), onC
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         BigOutlineButton("Atrás", { step = if (type == DetectorType.RHYTHM) Step.SETUP else Step.RECORD }, Modifier.weight(1f), enabled = !busy)
                         if (trained == null) {
-                            BigButton(if (busy) "Creando…" else "Crear detector", { train(null) {} }, Modifier.weight(1f), enabled = !busy && server.connected)
+                            BigButton(if (busy) "Creando…" else "Crear detector", { train(null) {} }, Modifier.weight(1f), enabled = !busy)
                         } else {
                             BigButton("Siguiente", {
                                 trigger = trainedTrigger
@@ -295,26 +309,6 @@ fun TeachGestureFlow(app: MagneSenseApp, initial: TeachDraft = TeachDraft(), onC
 }
 
 @Composable
-private fun TypeOption(type: DetectorType, selected: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(14.dp)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(if (selected) Palette.Highlight else Palette.Background, shape)
-            .border(1.dp, Palette.Border, shape)
-            .clickable(onClick = onClick)
-            .padding(14.dp),
-    ) {
-        Text(
-            (if (selected) "● " else "○ ") + type.label,
-            style = MaterialTheme.typography.titleMedium,
-            color = if (selected) Palette.OnHighlight else Palette.Text,
-        )
-        Text(type.description, style = MaterialTheme.typography.bodyMedium, color = if (selected) Palette.OnHighlight else Palette.Muted)
-    }
-}
-
-@Composable
 private fun QualityText(r: TrainResult) {
     val text = when {
         r.consistency != null -> if (r.good) {
@@ -330,6 +324,7 @@ private fun QualityText(r: TrainResult) {
         else -> "✓ Detector creado"
     }
     Text(text, style = MaterialTheme.typography.titleMedium, color = if (r.good) Palette.Ok else Palette.WarningSoft)
+    r.warning?.let { Text("! $it", style = MaterialTheme.typography.bodyLarge, color = Palette.WarningSoft) }
 }
 
 @Composable

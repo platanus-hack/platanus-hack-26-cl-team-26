@@ -34,10 +34,14 @@ import cl.magnesense.ui.control.PauseOverlay
 import cl.magnesense.ui.debug.DebugScreen
 import cl.magnesense.ui.gestures.GesturesScreen
 import cl.magnesense.ui.history.HistoryScreen
+import cl.magnesense.ui.pulses.PulsesScreen
 import cl.magnesense.ui.settings.SettingsScreen
+import cl.magnesense.data.ActivationMode
+import cl.magnesense.ui.setup.SetupWizard
 import cl.magnesense.ui.theme.Palette
 
 enum class Screen(val label: String) {
+    PULSES("Pulsos"),
     CONTROL("Control"),
     GESTURES("Gestos"),
     CALIBRATION("Calibrar"),
@@ -51,19 +55,45 @@ enum class Screen(val label: String) {
 fun AppRoot(app: MagneSenseApp) {
     val engine = app.engine
     val access = app.access
-    var screen by rememberSaveable { mutableStateOf(Screen.CONTROL) }
+    var screen by rememberSaveable {
+        mutableStateOf(if (app.settings.settings.value.activationMode == ActivationMode.PULSES) Screen.PULSES else Screen.CONTROL)
+    }
     val detector by engine.detector.status.collectAsState()
     val scan by access.scanning.state.collectAsState()
+    // La primera vez se abre el asistente de inicio (imán, calibrar, gestos).
+    var teachRequest by rememberSaveable { mutableStateOf(false) }
+    var setup by rememberSaveable {
+        mutableStateOf(!app.settings.settings.value.setupDone && app.settings.settings.value.activationMode == ActivationMode.GESTURES)
+    }
+
+    if (setup) {
+        SetupWizard(app, onDone = {
+            app.settings.update { it.copy(setupDone = true) }
+            setup = false
+            screen = Screen.GESTURES
+        })
+        return
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Tabs(screen) { screen = it }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (screen) {
-                    Screen.CONTROL -> ControlScreen(app, onCalibrate = { screen = Screen.CALIBRATION })
-                    Screen.GESTURES -> GesturesScreen(app, onOpenSettings = { screen = Screen.SETTINGS })
+                    Screen.PULSES -> PulsesScreen(app)
+                    Screen.CONTROL -> ControlScreen(app, onCalibrate = { screen = Screen.CALIBRATION }, onTeachGesture = {
+                        teachRequest = true
+                        screen = Screen.GESTURES
+                    })
+                    Screen.GESTURES -> GesturesScreen(
+                        app,
+                        onOpenSettings = { screen = Screen.SETTINGS },
+                        onOpenSetup = { setup = true },
+                        startTeaching = teachRequest,
+                        onTeachStarted = { teachRequest = false },
+                    )
                     Screen.CALIBRATION -> CalibrationScreen(engine.detector, onDone = { screen = Screen.CONTROL })
-                    Screen.HISTORY -> HistoryScreen(app.history)
+                    Screen.HISTORY -> HistoryScreen(app.history, app.diag)
                     Screen.SETTINGS -> SettingsScreen(app.settings, access.actions, app.telemetry, app.server)
                     Screen.DEBUG -> DebugScreen(engine.detector, app.settings, app.server)
                 }

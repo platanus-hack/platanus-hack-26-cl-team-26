@@ -5,9 +5,10 @@ import cl.magnesense.actions.Device
 import cl.magnesense.data.ActivationMode
 import cl.magnesense.data.AppSettings
 import cl.magnesense.engine.AccessController
+import cl.magnesense.feedback.SoundPlayer
 import cl.magnesense.feedback.Speaker
 import cl.magnesense.remote.ServerEvent
-import cl.magnesense.remote.ServerSocket
+import cl.magnesense.remote.ServerState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -19,7 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-/** Modo en uso en este momento (puede diferir del elegido si no hay servidor). */
+/** Modo en uso en este momento (puede diferir del elegido si no hay detector de gestos). */
 data class GestureStatus(
     val chosen: ActivationMode = ActivationMode.SCANNING,
     /** Los gestos aprendidos estan mandando (modo elegido y servidor en vivo). */
@@ -32,17 +33,20 @@ data class GestureStatus(
 data class GestureFired(val detector: String, val target: String?, val deviceId: String?, val atMs: Long)
 
 /**
- * Ejecuta los gestos aprendidos: escucha los eventos del servidor, aplica la regla de cada
- * detector y hace la accion enlazada (un dispositivo o abrir el escaneo).
+ * Ejecuta los gestos aprendidos: escucha los eventos del detector de gestos ([LocalGestures],
+ * en el celular), aplica la regla de cada uno y hace la accion enlazada (un dispositivo,
+ * abrir el escaneo, la cancion o el cuack).
  * En modo gestos, la activacion del detector local se ignora para no actuar dos veces;
- * si el servidor se cae mas de [FALLBACK_AFTER_MS], vuelve al escaneo y lo dice en voz alta.
+ * si la fuente de gestos se cae mas de [FALLBACK_AFTER_MS], vuelve al escaneo y lo dice en voz alta.
  */
 class GestureController(
     private val scope: CoroutineScope,
-    private val server: ServerSocket,
+    private val source: StateFlow<ServerState>,
+    events: SharedFlow<ServerEvent>,
     private val access: AccessController,
     private val settings: StateFlow<AppSettings>,
     private val speaker: Speaker,
+    private val sounds: SoundPlayer,
     private val log: (String) -> Unit,
 ) {
     private val _status = MutableStateFlow(GestureStatus())
@@ -57,14 +61,14 @@ class GestureController(
     var teaching = false
         set(value) {
             field = value
-            access.suppressMagnetActivation = value || _status.value.gesturesActive
+            updateSuppress()
         }
 
     private val lastFire = HashMap<String, Long>()
     private var disconnectedSince = 0L
 
     init {
-        scope.launch { server.events.collect(::onServerEvent) }
+        scope.launch { events.collect(::onServerEvent) }
         scope.launch {
             while (isActive) {
                 updateStatus()
@@ -76,7 +80,7 @@ class GestureController(
     private fun updateStatus() {
         val chosen = settings.value.activationMode
         val now = SystemClock.elapsedRealtime()
-        val connected = server.state.value.connected
+        val connected = source.value.connected
         if (connected) disconnectedSince = 0L else if (disconnectedSince == 0L) disconnectedSince = now
         val previous = _status.value
         val next = when {
@@ -88,15 +92,21 @@ class GestureController(
         }
         if (next == previous) return
         _status.value = next
-        access.suppressMagnetActivation = next.gesturesActive || teaching
+        updateSuppress()
         if (previous.chosen == chosen && chosen == ActivationMode.GESTURES) {
-            if (next.fallback && previous.gesturesActive) speaker.speak("Sin servidor, vuelvo al escaneo", queue = true)
+            if (next.fallback && previous.gesturesActive) speaker.speak("Sin gestos, vuelvo al escaneo", queue = true)
             if (next.gesturesActive && previous.fallback) speaker.speak("Gestos aprendidos activos", queue = true)
         }
     }
 
+    /** El iman local arma el escaneo solo en modo escaneo, y nunca mientras se ensena un gesto. */
+    private fun updateSuppress() {
+        access.suppressMagnetActivation =
+            teaching || _status.value.gesturesActive || settings.value.activationMode == ActivationMode.PULSES
+    }
+
     private fun onServerEvent(e: ServerEvent) {
-        val detector = server.state.value.phase2.detectors.firstOrNull { it.name == e.detector } ?: return
+        val detector = source.value.phase2.detectors.firstOrNull { it.name == e.detector } ?: return
         if (!GestureMatcher.fires(detector, e)) return
         val now = SystemClock.elapsedRealtime()
         if (now - (lastFire[e.detector] ?: 0L) < DEBOUNCE_MS) return
@@ -108,6 +118,14 @@ class GestureController(
         if (!_status.value.gesturesActive) return
 
         when {
+            target == AppSettings.BIND_SONG -> {
+                val playing = sounds.toggleSong()
+                log("Gesto '${e.detector}' → ${if (playing) "canción" else "canción parada"}")
+            }
+            target == AppSettings.BIND_QUACK -> {
+                log("Gesto '${e.detector}' → cuack")
+                sounds.quack()
+            }
             target == AppSettings.BIND_SCAN -> {
                 log("Gesto '${e.detector}' → escaneo")
                 access.scanning.onActivation(now)
