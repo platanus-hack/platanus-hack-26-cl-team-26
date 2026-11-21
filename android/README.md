@@ -61,7 +61,21 @@ O copiar el APK al celular y abrirlo (permitir "instalar apps desconocidas").
    se puede ampliar el cono de dirección, aceptar el imán dado vuelta o desactivar el chequeo, y bajar la fuerza mínima.
 7. **Historial** muestra los últimos eventos. **Debug** muestra |ΔB|, coseno, umbrales, giroscopio y frecuencia de muestreo.
 
-## Panel web (server.py)
+## Gestos aprendidos (con el servidor)
+
+Además del escaneo (que funciona sin internet), la app puede usar gestos que el servidor aprende de ejemplos:
+
+1. Ajustes → Servidor: URL de `server.py`. La pestaña **Gestos** debe mostrar "Servidor en vivo".
+2. **Enseñar un gesto**: nombre y tipo (movimiento breve, posición o movimiento repetido), grabar 3–5 ejemplos
+   con la cuenta regresiva, crear el detector y elegir qué hace (un dispositivo o abrir el escaneo).
+3. Ajustes → Activación → **Gestos aprendidos**: cada gesto actúa directo. Si el servidor se cae más de 5 s,
+   la app vuelve sola al escaneo y lo avisa en voz alta.
+4. **Asistente**: un pedido en lenguaje natural ("con el dedo a la izquierda, prende la luz") se envía a
+   `POST /agent` del servidor. Contrato en [SERVER_API.md](SERVER_API.md).
+
+El servidor solo detecta (la app crea los detectores con `action: none`); la app ejecuta la acción, habla y la registra en el historial.
+
+
 
 La app puede enviar el magnetómetro al `server.py` del repositorio con el mismo formato que la app
 Sensor Logger, así el panel en vivo funciona igual:
