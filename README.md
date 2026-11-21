@@ -76,6 +76,31 @@ python -m tests.test_contrato
 `optimizer.solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None)` devuelve el
 corredor continuo entre parques que más urgencia cubre dentro del presupuesto.
 
+## Captura en terreno (teléfono → corredor en vivo)
+
+El equipo recorre el corredor con un teléfono: cada foto lleva GPS, se analiza (índice de verde siempre;
+Claude estima árboles, espacio para plantar y obstáculos si hay credenciales de Anthropic), actualiza su
+hexágono en `data/terreno_h3.parquet` (ver `CONTRATO.md`) y `optimizer.solve_corridor` recalcula el corredor.
+El mapa en vivo muestra el corredor antes y después de las fotos.
+
+```bash
+python -m venv .venv && .venv/Scripts/pip install h3 pandas numpy pyarrow fastapi uvicorn python-multipart pillow anthropic httpx
+set TERRENO_CLAVE=una-clave                        # la URL del túnel es pública: la clave protege la subida
+.venv/Scripts/python -m terreno.servidor           # --sin-claude para usar solo el índice de verde
+cloudflared tunnel --url http://localhost:8000     # entrega https://<algo>.trycloudflare.com
+```
+
+- Teléfono: `https://<algo>.trycloudflare.com/?k=una-clave` (el GPS del navegador exige HTTPS). Aceptar la
+  ubicación, esperar precisión ≤ 30 m, «Tomar foto», «Subir captura».
+- Mapa para proyectar: `http://localhost:8000/mapa` (se actualiza cada 3 s).
+- Claude: usa `ANTHROPIC_API_KEY` o un perfil de `ant auth login`. Sin credenciales sigue solo con el índice.
+- Las fotos se guardan sin EXIF en `data/terreno/fotos/` (no se versionan); `data/terreno/capturas.jsonl` sí,
+  para repetir la demo con datos reales grabados.
+- Prueba offline: `python -m tests.test_terreno`.
+
+Honestidad: una foto de calle muestra parte de un hexágono de ~0,1 km²; complementa al satélite (promedio
+50/50) y no lo reemplaza. Los porcentajes de Claude son estimaciones visuales.
+
 # Corredores Verdes · Bloque 1
 
 Ingesta geoespacial del Gran Santiago: `python -m ingesta.pipeline` (ver `ingesta/pipeline.py`).

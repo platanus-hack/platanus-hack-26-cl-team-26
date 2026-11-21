@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VerdeH3 · Terreno</title>
+<style>
+  :root { --verde:#1f6e43; --fondo:#f4f6f3; --texto:#1b241e; --tenue:#5d6b61; --borde:#d5ddd6; --alerta:#b3541e; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.45 system-ui, sans-serif; background:var(--fondo); color:var(--texto); }
+  main { max-width:480px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:4px 0 2px; color:var(--verde); }
+  .sub { color:var(--tenue); margin:0 0 16px; font-size:.9rem; }
+  .card { background:#fff; border:1px solid var(--borde); border-radius:12px; padding:14px; margin-bottom:12px; }
+  .gps { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .punto { width:12px; height:12px; border-radius:50%; background:#bbb; flex:none; }
+  .ok .punto { background:var(--verde); } .mal .punto { background:var(--alerta); }
+  .gps small { color:var(--tenue); }
+  label.boton, button { display:block; width:100%; text-align:center; padding:18px; border-radius:12px; border:0;
+    font-size:1.1rem; font-weight:600; background:var(--verde); color:#fff; cursor:pointer; }
+  button.sec { background:#fff; color:var(--verde); border:2px solid var(--verde); margin-top:8px; padding:12px; }
+  button:disabled { opacity:.5; }
+  input[type=file] { display:none; }
+  textarea { width:100%; border:1px solid var(--borde); border-radius:8px; padding:8px; font:inherit; min-height:44px; }
+  img.prev { width:100%; border-radius:8px; margin:10px 0; display:none; }
+  .res dl { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:8px 0 0; }
+  .res dt { color:var(--tenue); } .res dd { margin:0; font-weight:600; }
+  .cambio { padding:10px; border-radius:8px; background:#e6f2ea; margin-top:10px; }
+  .cambio.no { background:#f1f1ee; }
+  .error { color:var(--alerta); font-weight:600; }
+  .oculto { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>VerdeH3 · captura en terreno</h1>
+  <p class="sub">Foto de la calle con GPS: verifica el hexágono y recalcula el corredor.</p>
+
+  <div class="card gps" id="gps"><span class="punto"></span><span id="gpsTxt" style="flex:1">Buscando GPS…</span></div>
+
+  <div class="card">
+    <label class="boton" for="foto">📷 Tomar foto</label>
+    <input id="foto" type="file" accept="image/*" capture="environment">
+    <img id="prev" class="prev" alt="Vista previa">
+    <textarea id="nota" placeholder="Nota opcional (ej: vereda ancha, sin árboles)"></textarea>
+    <button id="enviar" class="sec" disabled>Subir captura</button>
+    <p id="estado" class="sub" style="margin:8px 0 0"></p>
+  </div>
+
+  <div class="card res oculto" id="res"></div>
+</main>
+<script>
+const k = new URLSearchParams(location.search).get("k");
+let pos = null, rumbo = null, blob = null;
+const $ = id => document.getElementById(id);
+
+if (!("geolocation" in navigator) || !isSecureContext) {
+  $("gpsTxt").textContent = "GPS no disponible: abre la página por HTTPS (túnel).";
+  $("gps").className = "card gps mal";
+} else {
+  navigator.geolocation.watchPosition(p => {
+    pos = p.coords;
+    const acc = Math.round(pos.accuracy);
+    $("gps").className = "card gps " + (acc <= 30 ? "ok" : "mal");
+    $("gpsTxt").innerHTML = `GPS ±${acc} m<br><small>${pos.latitude.toFixed(5)}, ${pos.longitude.toFixed(5)}${acc > 30 ? " · espera a que mejore" : ""}</small>`;
+    habilitar();
+  }, e => {
+    $("gpsTxt").innerHTML = e.code === 1
+      ? "Sin permiso de ubicación.<br><small>Permítela para este sitio en el navegador y recarga la página.</small>"
+      : "Sin GPS todavía: " + e.message;
+    $("gps").className = "card gps mal";
+  }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+}
+
+window.addEventListener("deviceorientationabsolute", e => { if (e.alpha != null) rumbo = (360 - e.alpha) % 360; });
+window.addEventListener("deviceorientation", e => {
+  if (e.webkitCompassHeading != null) rumbo = e.webkitCompassHeading;
+});
+
+function habilitar() { $("enviar").disabled = !(pos && blob); }
+
+$("foto").addEventListener("change", async ev => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  $("estado").textContent = "Preparando foto…";
+  const img = await createImageBitmap(f);
+  const s = Math.min(1, 1280 / Math.max(img.width, img.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85));
+  $("prev").src = URL.createObjectURL(blob); $("prev").style.display = "block";
+  $("estado").textContent = "";
+  habilitar();
+});
+
+$("enviar").addEventListener("click", async () => {
+  if (!pos || !blob) return;
+  $("enviar").disabled = true;
+  $("estado").textContent = "Subiendo y analizando… (hasta 30 s)";
+  const fd = new FormData();
+  fd.append("foto", blob, "captura.jpg");
+  fd.append("lat", pos.latitude); fd.append("lon", pos.longitude);
+  fd.append("precision_m", pos.accuracy);
+  if (rumbo != null) fd.append("rumbo", Math.round(rumbo));
+  fd.append("nota", $("nota").value);
+  try {
+    const r = await fetch("/api/captura" + (k ? "?k=" + encodeURIComponent(k) : ""), { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.status);
+    mostrar(d);
+    blob = null; $("foto").value = ""; $("prev").style.display = "none"; $("nota").value = "";
+    $("estado").textContent = "Listo. Puedes tomar la siguiente.";
+  } catch (e) {
+    $("estado").innerHTML = `<span class="error">Error: ${e.message}</span>`;
+  }
+  habilitar();
+});
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function mostrar(d) {
+  const c = d.captura, a = d.previo, n = d.ahora;
+  const fuente = c.fuente === "claude" ? "Claude (visión)" : "índice de verde";
+  $("res").classList.remove("oculto");
+  $("res").innerHTML = `
+    <strong>Hexágono ${esc(c.h3_index.slice(0, 9))}…</strong>${d.fuera_de_area ? ' <span class="error">fuera del área de estudio</span>' : ""}
+    <dl>
+      <dt>Árboles</dt><dd>${Math.round(c.arbol_pct)} % <small>(${fuente})</small></dd>
+      <dt>Verde en la foto</dt><dd>${Math.round(c.verde_pct)} %</dd>
+      <dt>Espacio para plantar</dt><dd>${esc(c.espacio_plantable ?? "sin estimar")}</dd>
+      <dt>Obstáculos</dt><dd>${c.obstaculos?.length ? c.obstaculos.map(esc).join(", ") : "—"}</dd>
+    </dl>
+    ${c.descripcion ? `<p class="sub" style="margin:8px 0 0">${esc(c.descripcion)}</p>` : ""}
+    <div class="cambio ${d.corredor_cambio ? "" : "no"}">
+      ${d.corredor_cambio ? "<strong>El corredor cambió.</strong>" : "El corredor se mantiene."}
+      ${d.en_corredor ? " Este hexágono está en el corredor." : ""}<br>
+      Urgencia cubierta ${a.urgencia_cubierta} → ${n.urgencia_cubierta} ·
+      personas ${a.personas_cubiertas.toLocaleString("es-CL")} → ${n.personas_cubiertas.toLocaleString("es-CL")} ·
+      verificados ${n.verificados}
+    </div>`;
+}
+</script>
+</body>
+</html>

@@ -17,6 +17,11 @@ parques cuestan 0. Un Dijkstra con todos los parques como origen da el camino m�
 par de parques vecinos (tramos). Se arma una sola red continua parque-tramo-parque, agregando tramos
 de mayor urgencia por km mientras quepan en el presupuesto. Se compara con caminatas al azar del
 mismo largo que parten junto a un parque. No se informan °C de enfriamiento (sin coeficiente citado).
+
+Terreno (opcional, `terreno=` = data/terreno_h3.parquet, ver CONTRATO.md): donde hay fotos de terreno,
+arbol_pct pasa a ser el promedio entre satélite y terreno (la foto de calle complementa al satélite), y
+los hexágonos con viabilidad_terreno < 0,2 que no son parque salen del grafo (verificados como no
+plantables). Sin `terreno` el resultado es idéntico al de antes.
 """
 from __future__ import annotations
 
@@ -33,6 +38,7 @@ CONFIANZA_OK = ("alta", "media")
 MIN_PERSONAS_HEX = 50      # ~500 hab/km²: industria o eriazo; ahí no se planta salvo parques
 N_AZAR = 200
 SEMILLAS = 20
+VIABILIDAD_MIN = 0.2       # bajo esto, un hexágono verificado en terreno no entra al grafo (salvo parques)
 
 
 def _norm(s: pd.Series) -> pd.Series:
@@ -41,7 +47,13 @@ def _norm(s: pd.Series) -> pd.Series:
     return ((s - lo) / (hi - lo)).clip(0, 1) if hi > lo else s * 0.0
 
 
-def urgencia(df, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None) -> pd.Series:
+def _terreno(df, terreno):
+    """Columnas de terreno alineadas con df (NaN donde no hay captura)."""
+    t = terreno.drop_duplicates("h3_index").set_index("h3_index")
+    return df["h3_index"].map(t["arbol_pct_terreno"]), df["h3_index"].map(t["viabilidad_terreno"])
+
+
+def urgencia(df, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None, terreno=None) -> pd.Series:
     w = (w_calor, w_arbol, w_personas)
     if min(w) < 0 or sum(w) <= 0:
         raise ValueError(f"Pesos deben ser >= 0 y no todos 0: {w}")
@@ -53,7 +65,11 @@ def urgencia(df, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None) -> pd.Seri
         vivo = padre.map(ok.groupby("h3_padre")["temp_aire_c"].last())
         if ok["h3_padre"].nunique() >= 2:  # con un solo barrio no hay contra qué normalizar
             calor = (0.6 * calor + 0.4 * _norm(vivo)).where(vivo.notna(), calor)
-    falta = 1 - df["arbol_pct"].clip(0, 100) / 100
+    arbol = df["arbol_pct"]
+    if terreno is not None and len(terreno):
+        campo, _ = _terreno(df, terreno)
+        arbol = ((arbol + campo) / 2).where(campo.notna(), arbol)
+    falta = 1 - arbol.clip(0, 100) / 100
     personas = 0.7 * _norm(df["poblacion"]) + 0.3 * df["social"].clip(0, 1)
     return ((w_calor * calor + w_arbol * falta + w_personas * personas) / sum(w)).rename("urgencia")
 
@@ -132,9 +148,16 @@ def _red_continua(tramos, paso, budget_km):
     return max(redes, key=lambda r: r[1])[0] if redes else []
 
 
-def solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None) -> dict:
-    U_todo = urgencia(df, w_calor, w_arbol, w_personas, live)
-    ok = (df["es_parque"] | (df["poblacion"] >= MIN_PERSONAS_HEX)).to_numpy()
+def solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None,
+                   terreno=None) -> dict:
+    U_todo = urgencia(df, w_calor, w_arbol, w_personas, live, terreno)
+    ok = df["es_parque"] | (df["poblacion"] >= MIN_PERSONAS_HEX)
+    verificado = pd.Series(False, index=df.index)
+    if terreno is not None and len(terreno):
+        _, viab = _terreno(df, terreno)
+        verificado = df["h3_index"].isin(terreno["h3_index"])
+        ok &= df["es_parque"] | ~(viab < VIABILIDAD_MIN)  # NaN (sin dato de espacio) no excluye
+    ok = ok.to_numpy()
     hexs = df["h3_index"][ok].tolist()
     U, parque, pob = U_todo[ok].to_numpy(), df["es_parque"][ok].to_numpy(), df["poblacion"][ok].to_numpy()
     idx = {h: i for i, h in enumerate(hexs)}
@@ -176,6 +199,7 @@ def solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, 
         "urgencia_azar": float(np.mean(u_az)) if u_az else 0.0,
         "personas_cubiertas": int(pob[sel].sum()) if sel else 0,
         "personas_azar": int(np.mean(p_az)) if p_az else 0,
+        "verificados": int(verificado[ok].to_numpy()[sel].sum()) if sel else 0,
         "tramos": [[hexs[i] for i in tramos[k][2]] for k in red],
         "urgencia": U_todo,
     }

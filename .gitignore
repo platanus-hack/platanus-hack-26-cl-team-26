@@ -10,3 +10,5 @@ datos/cache/chl_ppp_*.tif
 datos/cache/*.part
 datos/cache/osmnx/
 datos/cache/red_cruda_*.pkl
+# fotos de terreno: pueden tener caras o patentes
+data/terreno/fotos/

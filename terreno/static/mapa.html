@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VerdeH3 · Mapa en vivo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { --verde:#1f6e43; --texto:#1b241e; --tenue:#5d6b61; --borde:#d5ddd6; }
+  html, body { margin:0; height:100%; font:15px/1.4 system-ui, sans-serif; color:var(--texto); background:#f4f6f3; }
+  #mapa { position:absolute; inset:0; }
+  .panel { position:absolute; z-index:1000; top:12px; right:12px; width:300px; max-width:calc(100% - 24px);
+    background:#fff; border:1px solid var(--borde); border-radius:12px; padding:14px; box-shadow:0 4px 16px #0002; }
+  .panel h1 { font-size:1.1rem; margin:0 0 4px; color:var(--verde); }
+  .panel .sub { color:var(--tenue); font-size:.85rem; margin:0 0 10px; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th, td { padding:4px 0; text-align:right; } th:first-child, td:first-child { text-align:left; color:var(--tenue); font-weight:400; }
+  thead th { font-size:.8rem; color:var(--tenue); font-weight:600; border-bottom:1px solid var(--borde); }
+  .sube { color:var(--verde); font-weight:700; }
+  .leyenda { margin-top:10px; font-size:.8rem; color:var(--tenue); display:grid; gap:4px; }
+  .leyenda span { display:inline-block; width:22px; height:0; vertical-align:middle; margin-right:6px; }
+  .flash { animation:flash 1.5s ease-out; } @keyframes flash { from { background:#d6f0de; } to { background:#fff; } }
+  .pop img { width:220px; border-radius:6px; display:block; margin-bottom:6px; }
+</style>
+</head>
+<body>
+<div id="mapa"></div>
+<div class="panel" id="panel">
+  <h1>Corredor verde · en vivo</h1>
+  <p class="sub" id="sub">Cargando…</p>
+  <table>
+    <thead><tr><th></th><th>Antes</th><th>Ahora</th></tr></thead>
+    <tbody id="tabla"></tbody>
+  </table>
+  <div class="leyenda">
+    <div><span style="border-top:3px dashed #333"></span>Corredor antes de terreno</div>
+    <div><span style="border-top:4px solid #0b5cad"></span>Corredor ahora</div>
+    <div><span style="border-top:3px solid #e0a100"></span>Verificado en terreno</div>
+    <div>Relleno: urgencia (amarillo → rojo), parques en verde</div>
+  </div>
+</div>
+<script>
+const mapa = L.map("mapa", { zoomControl: true }).setView([-33.44, -70.65], 12);  // Santiago, hasta encuadrar
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19, attribution: "© OpenStreetMap"
+}).addTo(mapa);
+const capaHex = L.layerGroup().addTo(mapa), capaCap = L.layerGroup().addTo(mapa);
+let encuadrado = false, firma = "";
+
+function color(u) {  // urgencia 0..1 → amarillo claro a rojo
+  const t = Math.max(0, Math.min(1, (u - 0.3) / 0.6));
+  return `hsl(${50 - 50 * t}, 85%, ${80 - 30 * t}%)`;
+}
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function fila(nombre, a, n, mejorSiSube = true) {
+  const sube = n !== a && (n > a) === mejorSiSube;
+  return `<tr><th>${nombre}</th><td>${a}</td><td class="${sube ? "sube" : ""}">${n}</td></tr>`;
+}
+
+async function actualizar() {
+  let d;
+  try { d = await (await fetch("/api/estado")).json(); } catch { return; }
+  const nueva = JSON.stringify([d.capturas.length, d.ahora]);
+  if (nueva === firma) return;
+  const primera = firma === "";
+  firma = nueva;
+
+  capaHex.clearLayers();
+  const ahoraLineas = [], antesLineas = [];
+  for (const h of d.hexes) {
+    L.polygon(h.pol, {
+      stroke: false, fillColor: h.parque ? "#3f9a5b" : color(h.u), fillOpacity: h.parque ? 0.55 : 0.45
+    }).bindTooltip(`urgencia ${h.u}${h.verificado ? " · verificado" : ""}`).addTo(capaHex);
+    if (h.antes) antesLineas.push(h.pol);
+    if (h.ahora) ahoraLineas.push(h.pol);
+  }
+  for (const p of antesLineas) L.polygon(p, { fill: false, color: "#333", weight: 2, dashArray: "6 5" }).addTo(capaHex);
+  for (const p of ahoraLineas) L.polygon(p, { fill: false, color: "#0b5cad", weight: 4 }).addTo(capaHex);
+  for (const h of d.hexes.filter(h => h.verificado))  // encima de los corredores para que siempre se vea
+    L.polygon(h.pol, { fill: false, color: "#e0a100", weight: 3, dashArray: h.ahora ? null : "2 4" }).addTo(capaHex);
+
+  capaCap.clearLayers();
+  for (const c of d.capturas) {
+    const fuente = c.fuente === "claude" ? "Claude" : "índice de verde";
+    L.circleMarker([c.lat, c.lon], { radius: 7, color: "#fff", weight: 2, fillColor: "#0b5cad", fillOpacity: 1 })
+      .bindPopup(`<div class="pop"><img src="/fotos/${esc(c.id)}_min.jpg" alt="Foto de terreno">
+        Árboles ${Math.round(c.arbol_pct)} % (${fuente}) · plantable: ${esc(c.espacio_plantable ?? "sin estimar")}<br>
+        ${c.obstaculos?.length ? "Obstáculos: " + c.obstaculos.map(esc).join(", ") + "<br>" : ""}
+        <small>${esc(c.descripcion)}</small></div>`).addTo(capaCap);
+  }
+
+  const a = d.antes, n = d.ahora;
+  $tabla.innerHTML =
+    fila("Urgencia cubierta", a.urgencia_cubierta, n.urgencia_cubierta) +
+    fila("Personas", a.personas_cubiertas.toLocaleString("es-CL"), n.personas_cubiertas.toLocaleString("es-CL")) +
+    fila("Largo (km)", a.km, n.km, false) +
+    fila("Hex. verificados", a.verificados, n.verificados);
+  $sub.textContent = `${d.capturas.length} captura${d.capturas.length === 1 ? "" : "s"} en terreno`;
+  if (!primera) { $panel.classList.remove("flash"); void $panel.offsetWidth; $panel.classList.add("flash"); }
+
+  encuadrar(ahoraLineas.length ? ahoraLineas.flat() : d.hexes.flatMap(h => h.pol), ahoraLineas.length ? 0.6 : 0.05);
+}
+
+let foco = null, margen = 0;
+function encuadrar(puntos, pad) {
+  if (encuadrado || !puntos.length) return;
+  foco = puntos; margen = pad;
+  mapa.invalidateSize();
+  if (!mapa.getSize().x) return;  // pestaña oculta al cargar: se reintenta al cambiar de tamaño
+  mapa.fitBounds(L.latLngBounds(foco).pad(margen));
+  encuadrado = true;
+}
+window.addEventListener("resize", () => foco && encuadrar(foco, margen));
+const $tabla = document.getElementById("tabla"), $sub = document.getElementById("sub"), $panel = document.getElementById("panel");
+actualizar();
+setInterval(actualizar, 3000);
+</script>
+</body>
+</html>
