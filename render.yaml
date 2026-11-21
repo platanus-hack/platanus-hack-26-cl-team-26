@@ -6,5 +6,10 @@ services:
     region: oregon
     envVars:
       - key: PORT
-        value: 8501
-    healthCheckPath: /_stcore/health
+        value: 8000
+      # Se definen en el panel de Render, no aquí: la clave de subida del teléfono y la API key de Claude.
+      - key: TERRENO_CLAVE
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+    healthCheckPath: /api/salud

@@ -3,167 +3,454 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VerdeH3 · Mapa en vivo</title>
+<title>VerdeH3 · Corredores verdes de Santiago</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-  :root { --verde:#1f6e43; --texto:#1b241e; --tenue:#5d6b61; --borde:#d5ddd6; }
-  html, body { margin:0; height:100%; font:15px/1.4 system-ui, sans-serif; color:var(--texto); background:#f4f6f3; }
-  #mapa { position:absolute; inset:0; }
-  .panel { position:absolute; z-index:1000; top:12px; right:12px; width:300px; max-width:calc(100% - 24px);
-    background:#fff; border:1px solid var(--borde); border-radius:12px; padding:14px; box-shadow:0 4px 16px #0002; }
-  .panel h1 { font-size:1.1rem; margin:0 0 4px; color:var(--verde); }
-  .panel .sub { color:var(--tenue); font-size:.85rem; margin:0 0 10px; }
+  :root { --verde:#1f6e43; --verde-suave:#e6f2ea; --texto:#1b241e; --tenue:#5d6b61; --borde:#d5ddd6; --fondo:#f4f6f3; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; font:14px/1.4 system-ui, sans-serif; color:var(--texto); background:var(--fondo); }
+  body { display:flex; }
+  #panel { width:370px; flex:none; height:100%; overflow-y:auto; background:#fff; border-right:1px solid var(--borde);
+    padding:14px 16px 24px; }
+  #mapa { flex:1; height:100%; }
+  @media (max-width: 760px) {
+    body { flex-direction:column-reverse; }
+    #panel { width:100%; height:55%; border-right:0; border-top:1px solid var(--borde); }
+    #mapa { flex:none; height:45%; }
+  }
+  h1 { font-size:1.15rem; margin:0; color:var(--verde); }
+  h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.04em; color:var(--tenue); margin:16px 0 6px; }
+  .sub { color:var(--tenue); font-size:.85rem; margin:2px 0 10px; }
+  .vistas { display:grid; grid-template-columns:repeat(3, 1fr); gap:4px; background:var(--fondo); padding:4px; border-radius:10px; }
+  .vistas button { border:0; background:none; padding:7px 4px; border-radius:7px; font:inherit; font-weight:600;
+    color:var(--tenue); cursor:pointer; }
+  .vistas button[aria-pressed="true"] { background:#fff; color:var(--verde); box-shadow:0 1px 3px #0002; }
+  .fila { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .boton { border:1px solid var(--borde); background:#fff; border-radius:8px; padding:5px 10px; font:inherit;
+    font-size:.85rem; cursor:pointer; color:var(--texto); }
+  .boton:hover { border-color:var(--verde); } .boton.activo { background:var(--verde); color:#fff; border-color:var(--verde); }
+  .chips { display:flex; flex-wrap:wrap; gap:5px; margin:6px 0; }
+  .chip { display:inline-flex; align-items:center; gap:2px; padding:2px 3px 2px 9px; border-radius:99px;
+    background:var(--verde-suave); color:var(--verde); font-size:.82rem; font-weight:600; }
+  .chip button { border:0; background:none; color:inherit; font-size:1rem; line-height:1; cursor:pointer;
+    width:22px; height:22px; border-radius:50%; } .chip button:hover { background:#cfe6d7; }
+  .dist { border:1px solid var(--borde); background:#fff; border-radius:99px; padding:2px 9px; font:inherit;
+    font-size:.78rem; cursor:pointer; color:var(--tenue); }
+  .dist[aria-pressed="true"] { background:var(--verde-suave); color:var(--verde); border-color:var(--verde); font-weight:600; }
+  .ayuda { color:var(--tenue); font-size:.8rem; margin:4px 0; }
+  details summary { cursor:pointer; color:var(--tenue); font-size:.85rem; margin:6px 0; }
+  label.capa { display:flex; gap:8px; align-items:center; padding:3px 0; cursor:pointer; }
+  .muestra { width:28px; height:10px; border-radius:3px; flex:none; }
+  .control { display:grid; grid-template-columns:1fr 64px; gap:8px; align-items:center; margin:4px 0; }
+  .control span { grid-column:1 / -1; font-size:.85rem; margin-bottom:-4px; }
+  .control input[type=range] { width:100%; accent-color:var(--verde); }
+  .control input[type=number], input[type=date] { width:100%; padding:4px 6px; border:1px solid var(--borde); border-radius:6px; font:inherit; }
+  .reparto { display:grid; gap:3px; margin-top:6px; font-size:.8rem; color:var(--tenue); }
+  .barra { height:6px; background:var(--fondo); border-radius:3px; overflow:hidden; }
+  .barra i { display:block; height:100%; background:var(--verde); }
+  .metricas { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .metrica { border:1px solid var(--borde); border-radius:10px; padding:8px 10px; }
+  .metrica b { display:block; font-size:1.2rem; font-variant-numeric:tabular-nums; }
+  .metrica small { color:var(--tenue); } .metrica .delta { color:var(--verde); font-weight:600; }
   table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
-  th, td { padding:4px 0; text-align:right; } th:first-child, td:first-child { text-align:left; color:var(--tenue); font-weight:400; }
-  thead th { font-size:.8rem; color:var(--tenue); font-weight:600; border-bottom:1px solid var(--borde); }
+  th, td { padding:3px 0; text-align:right; } th:first-child, td:first-child { text-align:left; color:var(--tenue); font-weight:400; }
+  thead th { font-size:.78rem; color:var(--tenue); font-weight:600; border-bottom:1px solid var(--borde); }
   .sube { color:var(--verde); font-weight:700; }
-  .leyenda { margin-top:10px; font-size:.8rem; color:var(--tenue); display:grid; gap:4px; }
+  .leyenda { font-size:.8rem; color:var(--tenue); display:grid; gap:3px; }
   .leyenda span { display:inline-block; width:22px; height:0; vertical-align:middle; margin-right:6px; }
+  .leyenda .caja { height:10px; border-radius:2px; }
   .flash { animation:flash 1.5s ease-out; } @keyframes flash { from { background:#d6f0de; } to { background:#fff; } }
   .pop img { width:220px; border-radius:6px; display:block; margin-bottom:6px; }
-  .comunas { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 6px; }
-  .chip { display:inline-flex; align-items:center; gap:4px; padding:3px 4px 3px 10px; border-radius:99px;
-    background:#e6f2ea; color:var(--verde); font-size:.85rem; font-weight:600; }
-  .chip button { border:0; background:none; color:inherit; font-size:1rem; line-height:1; cursor:pointer;
-    width:24px; height:24px; border-radius:50%; }
-  .chip button:hover { background:#cfe6d7; } .chip button:disabled { opacity:.3; cursor:default; }
-  .ayuda { color:var(--tenue); font-size:.8rem; margin:0 0 10px; }
+  .pop table td, .pop table th { padding:1px 0; } .pop .boton { margin-top:6px; }
   .leaflet-tooltip.nombre { font-weight:600; }
+  .aviso { background:#fff7e0; border:1px solid #f0d98a; border-radius:8px; padding:6px 8px; font-size:.82rem; margin:6px 0; }
+  .fuentes { font-size:.78rem; color:var(--tenue); } .fuentes li { margin:3px 0; } .fuentes code { font-size:.74rem; }
+  [hidden] { display:none !important; }
 </style>
 </head>
 <body>
-<div id="mapa"></div>
-<div class="panel" id="panel">
-  <h1>Corredor verde · en vivo</h1>
+<aside id="panel">
+  <h1>VerdeH3 · Corredores verdes</h1>
   <p class="sub" id="sub">Cargando…</p>
-  <div class="comunas" id="chips"></div>
-  <p class="ayuda">Toca una comuna vecina (borde punteado) para sumarla al corredor, u otra comuna para empezar ahí.</p>
-  <table>
-    <thead><tr><th></th><th>Antes</th><th>Ahora</th></tr></thead>
-    <tbody id="tabla"></tbody>
-  </table>
-  <div class="leyenda">
-    <div><span style="border-top:3px dashed #333"></span>Corredor antes de terreno</div>
-    <div><span style="border-top:4px solid #0b5cad"></span>Corredor ahora</div>
-    <div><span style="border-top:3px solid #e0a100"></span>Verificado en terreno</div>
-    <div>Punto azul: foto válida · gris: descartada o sin validar</div>
-    <div><span style="border-top:4px solid #7b2cbf"></span>Recorrido grabado en video</div>
-    <div>Relleno: urgencia (amarillo → rojo), parques en verde</div>
+  <div class="vistas" role="group" aria-label="Tipo de mapa">
+    <button data-vista="vivo" aria-pressed="true">Tiempo real</button>
+    <button data-vista="corredor" aria-pressed="false">Corredor</button>
+    <button data-vista="historico" aria-pressed="false">Histórico</button>
   </div>
-</div>
+
+  <h2>Área</h2>
+  <div class="fila">
+    <button class="boton" id="piloto">Piloto (Providencia + Cerro Navia)</button>
+    <button class="boton" id="todas">Todas (34)</button>
+  </div>
+  <div class="chips" id="chips"></div>
+  <p class="ayuda">Toca una comuna vecina (borde punteado) para sumarla, u otra para empezar ahí. Dentro de una elegida ves
+    el detalle del hexágono y puedes quitarla.</p>
+  <details id="detDistritos">
+    <summary>Distritos (barrios H3 res 7) <span id="nDist"></span></summary>
+    <div class="chips" id="distritos"></div>
+  </details>
+  <div class="fila">
+    <button class="boton" id="zona">Encerrar zona</button>
+    <button class="boton" id="zonaFin" hidden>Terminar zona</button>
+    <button class="boton" id="zonaBorrar" hidden>Limpiar zona</button>
+  </div>
+  <p class="ayuda" id="zonaAyuda" hidden>Toca el mapa para marcar puntos; doble toque o «Terminar zona» para cerrar.</p>
+
+  <section data-para="vivo historico">
+    <h2>Capas</h2>
+    <label class="capa"><input type="checkbox" id="cCalor" checked><i class="muestra" style="background:linear-gradient(90deg,#fff6e5,#ff5f00)"></i>Calor superficial</label>
+    <label class="capa"><input type="checkbox" id="cVerde"><i class="muestra" style="background:linear-gradient(90deg,#ebf8eb,#16a34a)"></i>Áreas verdes (copa + NDVI)</label>
+    <label class="capa"><input type="checkbox" id="cSocial"><i class="muestra" style="background:linear-gradient(90deg,#eef2ff,#4f46e5)"></i>Índice social / densidad</label>
+    <p class="ayuda">Con varias capas el color es el promedio RGB.</p>
+  </section>
+
+  <section data-para="historico">
+    <h2>Rango de fechas</h2>
+    <div class="control"><span>Desde</span><input type="date" id="desde" value="2024-01-01" min="2023-01-01" max="2026-11-21"></div>
+    <div class="control"><span>Hasta</span><input type="date" id="hasta" value="2026-11-21" min="2023-01-01" max="2026-11-21"></div>
+  </section>
+
+  <section data-para="corredor">
+    <h2>Presupuesto y pesos</h2>
+    <div id="controles"></div>
+    <div class="reparto" id="reparto"></div>
+  </section>
+
+  <h2 id="tituloMetricas">Métricas</h2>
+  <div class="metricas" id="metricas"></div>
+
+  <section data-para="corredor">
+    <h2>Efecto de la captura en terreno</h2>
+    <table>
+      <thead><tr><th></th><th>Sin terreno</th><th>Con terreno</th></tr></thead>
+      <tbody id="tabla"></tbody>
+    </table>
+  </section>
+
+  <h2>Leyenda</h2>
+  <div class="leyenda" id="leyenda"></div>
+
+  <details class="fuentes">
+    <summary>Fuentes de datos</summary>
+    <ul>
+      <li><b>Base:</b> <code>data/santiago_h3_gs.parquet</code>, 34 comunas, grilla H3 res 9.</li>
+      <li><b>Copa de árboles:</b> modelo propio Gradient Boosting sobre Sentinel-2 2026, entrenado con Meta/WRI 1 m (<code>verdeh3.modelo_copa</code>).</li>
+      <li><b>Temperatura superficial:</b> Landsat 8/9 C2 L2. <b>Serie histórica:</b> <code>data/historico_h3.parquet</code>, <span id="infoHist">Landsat y Sentinel-2 mensual 2023–2026</span>, vía Microsoft Planetary Computer.</li>
+      <li><b>Población:</b> Censo 2024 (INE, manzana). <b>Equipamiento y parques:</b> OpenStreetMap.</li>
+      <li><b>Sensores en vivo por barrio (res 7):</b> DMC, SINCA y Sensor.Community → <code>data/live_h3.parquet</code>.</li>
+      <li><b>Terreno:</b> fotos y videos con GPS desde el teléfono, validados y analizados por Claude → <code>data/terreno_h3.parquet</code>.</li>
+      <li><i>El índice social combina 50 % densidad (Censo) y 50 % cercanía a servicios (OSM); no es ingreso. La foto de calle complementa al satélite, no lo reemplaza.</i></li>
+    </ul>
+  </details>
+</aside>
+<div id="mapa"></div>
 <script>
-const mapa = L.map("mapa", { zoomControl: true, preferCanvas: true }).setView([-33.44, -70.65], 12);  // Santiago, hasta encuadrar
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19, attribution: "© OpenStreetMap"
-}).addTo(mapa);
-// Capas: hexágonos en canvas (rápido, abajo); comunas en SVG encima, para que reciban los toques (un canvas
-// encima los taparía todos); capturas y recorridos en SVG arriba de todo. La comuna elegida no tiene relleno,
-// así que los toques dentro de ella pasan a sus hexágonos.
+// ---------- Utilidades ----------
+const $ = id => document.getElementById(id);
+const K = new URLSearchParams(location.search).get("k");
+const url = p => K ? p + (p.includes("?") ? "&" : "?") + "k=" + encodeURIComponent(K) : p;
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const num = (x, d = 1) => x == null ? "—" : Number(x).toLocaleString("es-CL", { maximumFractionDigits: d, minimumFractionDigits: d });
+const ent = x => Math.round(x ?? 0).toLocaleString("es-CL");
+const prom = a => { const v = a.filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+function pct(v, p) { const i = (v.length - 1) * p, lo = Math.floor(i); return v[lo] + (v[Math.ceil(i)] - v[lo]) * (i - lo); }
+function norm(a) {  // como optimizer._norm: min-max con percentiles 2 y 98, recortado a 0..1; sin dato → 0,5
+  const v = a.filter(x => x != null).sort((x, y) => x - y);
+  if (!v.length) return a.map(() => 0.5);
+  const lo = pct(v, .02), hi = pct(v, .98);
+  return a.map(x => x == null ? 0.5 : hi > lo ? Math.min(1, Math.max(0, (x - lo) / (hi - lo))) : 0);
+}
+const mezcla = (t, a, b) => a.map((x, i) => x + Math.max(0, Math.min(1, t)) * (b[i] - x));
+const rgb = c => `rgb(${c.map(Math.round).join(",")})`;
+function dentro(pt, anillo) {  // punto [lat, lon] en polígono [[lat, lon], ...]
+  let si = false;
+  for (let i = 0, j = anillo.length - 1; i < anillo.length; j = i++) {
+    const [yi, xi] = anillo[i], [yj, xj] = anillo[j];
+    if ((yi > pt[0]) !== (yj > pt[0]) && pt[1] < (xj - xi) * (pt[0] - yi) / (yj - yi) + xi) si = !si;
+  }
+  return si;
+}
+async function enviar(cuerpo) {
+  const r = await fetch(url("/api/seleccion"), { method: "POST", headers: { "Content-Type": "application/json" },
+                                                 body: JSON.stringify(cuerpo) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
+  return r.json();
+}
+
+// ---------- Mapa y capas ----------
+const mapa = L.map("mapa", { zoomControl: true, preferCanvas: true }).setView([-33.44, -70.65], 12);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(mapa);
+// Hexágonos en canvas (rápido, abajo, sin eventos); comunas en SVG encima para recibir los toques;
+// capturas, recorridos y zona en SVG arriba de todo.
 mapa.createPane("comunas").style.zIndex = 450;
 mapa.createPane("capturas").style.zIndex = 620;
 const svgComunas = L.svg({ pane: "comunas" }), svgCapturas = L.svg({ pane: "capturas" });
-const capaCom = L.layerGroup().addTo(mapa), capaHex = L.layerGroup().addTo(mapa), capaCap = L.layerGroup().addTo(mapa);
-let firma = "", seleccion = [], info = null, cambiando = false;
+const capaHex = L.layerGroup().addTo(mapa), capaLineas = L.layerGroup().addTo(mapa),
+      capaCom = L.layerGroup().addTo(mapa), capaCap = L.layerGroup().addTo(mapa), capaZona = L.layerGroup().addTo(mapa);
 
-function color(u) {  // urgencia 0..1 → amarillo claro a rojo
-  const t = Math.max(0, Math.min(1, (u - 0.3) / 0.6));
-  return `hsl(${50 - 50 * t}, 85%, ${80 - 30 * t}%)`;
-}
-const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let info = null, d = null, H = null, polys = [], selId = null, version = null, vista = "vivo", hist = null;
+let ocupado = false, porEncuadrar = true, dibujando = false, puntosZona = [];
 
-function fila(nombre, a, n, mejorSiSube = true) {
-  const sube = n !== a && (n > a) === mejorSiSube;
-  return `<tr><th>${nombre}</th><td>${a}</td><td class="${sube ? "sube" : ""}">${n}</td></tr>`;
-}
-
-// ---------- Comunas: se dibujan una vez; el estilo depende de la selección ----------
+// ---------- Comunas ----------
 const capasComuna = {};
-async function cargarComunas() {
-  info = await (await fetch("/api/comunas")).json();
-  for (const c of info.comunas) {
-    capasComuna[c] = L.polygon(info.geo[c], { pane: "comunas", renderer: svgComunas })
-      .bindTooltip(c, { sticky: true, className: "nombre" })
-      .on("click", () => tocarComuna(c))
-      .addTo(capaCom);
-  }
-}
-
+const seleccion = () => d?.parametros.comunas || [];
 function vecinasDe(sel) {
   const v = new Set();
   for (const c of sel) for (const x of info.vecinas[c] || []) if (!sel.includes(x)) v.add(x);
   return v;
 }
-
+async function cargarComunas() {
+  info = await (await fetch("/api/comunas")).json();
+  for (const c of info.comunas)
+    capasComuna[c] = L.polygon(info.geo[c], { pane: "comunas", renderer: svgComunas })
+      .bindTooltip(c, { sticky: true, className: "nombre" })
+      .on("click", e => tocarComuna(c, e.latlng)).addTo(capaCom);
+  const m = info.parametros;
+  armarControles(m);
+}
 function estilarComunas() {
-  const vec = vecinasDe(seleccion);
+  const sel = seleccion(), vec = vecinasDe(sel);
   for (const [c, capa] of Object.entries(capasComuna)) {
-    const elegida = seleccion.includes(c), vecina = vec.has(c);
-    capa.setStyle(elegida
-      ? { color: "#1f6e43", weight: 3, dashArray: null, fill: false }
-      : vecina
+    capa.setStyle(sel.includes(c)
+      ? { color: "#1f6e43", weight: 3, dashArray: null, fill: true, fillColor: "#1f6e43", fillOpacity: .01 }
+      : vec.has(c)
         ? { color: "#1f6e43", weight: 2, dashArray: "6 6", fill: true, fillColor: "#1f6e43", fillOpacity: .08 }
         : { color: "#6b7a70", weight: 1, dashArray: null, fill: true, fillColor: "#6b7a70", fillOpacity: .04 });
   }
-  $chips.innerHTML = seleccion.map(c =>
-    `<span class="chip">${esc(c)}<button aria-label="Quitar ${esc(c)}" data-c="${esc(c)}" ${seleccion.length < 2 ? "disabled" : ""}>×</button></span>`
-  ).join("");
-  $chips.querySelectorAll("button").forEach(b => b.onclick = () => elegirComunas(seleccion.filter(x => x !== b.dataset.c)));
+  $("chips").innerHTML = sel.map(c =>
+    `<span class="chip">${esc(c)}<button aria-label="Quitar ${esc(c)}" data-c="${esc(c)}">×</button></span>`).join("")
+    || '<span class="ayuda">Ninguna comuna: toca una en el mapa.</span>';
+  $("chips").querySelectorAll("button").forEach(b => b.onclick = () => cambiar({ comunas: sel.filter(x => x !== b.dataset.c) }));
+  const elegidos = new Set(d.parametros.distritos), lista = sel.flatMap(c => info.distritos[c] || []);
+  $("nDist").textContent = elegidos.size ? `· ${elegidos.size} elegido${elegidos.size > 1 ? "s" : ""}` : "· todos";
+  $("distritos").innerHTML = lista.map(n =>
+    `<button class="dist" aria-pressed="${elegidos.has(n)}" data-n="${esc(n)}">${esc(n.replace(" - Distrito ", " · D"))}</button>`).join("");
+  $("distritos").querySelectorAll("button").forEach(b => b.onclick = () => {
+    const n = b.dataset.n, nuevo = elegidos.has(n) ? [...elegidos].filter(x => x !== n) : [...elegidos, n];
+    cambiar({ distritos: nuevo });
+  });
+  $("zonaBorrar").hidden = !d.parametros.zona || dibujando;
+}
+function tocarComuna(c, latlng) {
+  if (ocupado || dibujando) return;
+  const sel = seleccion();
+  if (sel.includes(c)) return mostrarHex(c, latlng);
+  cambiar({ comunas: vecinasDe(sel).has(c) ? [...sel, c] : [c] }, true);
+}
+function mostrarHex(c, latlng) {
+  const pt = [latlng.lat, latlng.lng];
+  let i = -1;
+  if (H) for (let j = 0; j < H.h.length; j++) if (H.comuna[j] === c && dentro(pt, H.pol[j])) { i = j; break; }
+  let html = `<div class="pop"><strong>${esc(c)}</strong>`;
+  if (i >= 0) {
+    const t = valores();
+    html += `<br><small>${esc(H.distrito[i])}</small><table>
+      <tr><th>Urgencia</th><td>${num(H.u[i], 3)}</td></tr>
+      <tr><th>${vista === "historico" ? "Temp. período" : H.vivo[i] != null ? "Temp. aire (vivo)" : "Temp. superficial"}</th><td>${num(t.temp[i])} °C</td></tr>
+      <tr><th>Copa de árboles</th><td>${num(H.copa[i])} %</td></tr>
+      <tr><th>NDVI</th><td>${num(t.ndvi[i], 2)}</td></tr>
+      <tr><th>Índice social</th><td>${num(H.social[i], 2)}</td></tr>
+      <tr><th>Población</th><td>${ent(H.pob[i])}</td></tr>
+      <tr><th>En corredor</th><td>${H.ahora[i] ? "sí" : "no"}${H.parque[i] ? " · parque" : ""}${H.verificado[i] ? " · verificado" : ""}</td></tr></table>`;
+  } else {
+    html += '<br><small>Fuera del área filtrada (distrito o zona).</small>';
+  }
+  html += `<button class="boton" id="quitarComuna">Quitar ${esc(c)}</button></div>`;
+  const pop = L.popup().setLatLng(latlng).setContent(html).openOn(mapa);
+  setTimeout(() => { const b = document.getElementById("quitarComuna");
+    if (b) b.onclick = () => { mapa.closePopup(pop); cambiar({ comunas: seleccion().filter(x => x !== c) }, true); }; });
+}
+async function cambiar(cuerpo, encuadrar = false) {
+  if (ocupado) return;
+  ocupado = true; $("sub").textContent = "Calculando…";
+  try { await enviar(cuerpo); if (encuadrar) porEncuadrar = true; }
+  catch (e) { $("sub").textContent = "No se pudo cambiar: " + e.message; }
+  ocupado = false;
+  await sondear(true);
+}
+$("piloto").onclick = () => cambiar({ comunas: ["Providencia", "Cerro Navia"], distritos: [], zona: null }, true);
+$("todas").onclick = () => cambiar({ comunas: info.comunas, distritos: [], zona: null }, true);
+
+// ---------- Zona dibujada (lazo) ----------
+function pintarZona() {
+  capaZona.clearLayers();
+  if (puntosZona.length) L.polyline(puntosZona, { color: "#b45309", weight: 2, dashArray: "4 4", pane: "capturas", renderer: svgCapturas }).addTo(capaZona);
+  for (const p of puntosZona) L.circleMarker(p, { radius: 4, color: "#b45309", fillOpacity: 1, pane: "capturas", renderer: svgCapturas }).addTo(capaZona);
+}
+function modoZona(on) {
+  dibujando = on; puntosZona = []; pintarZona();
+  $("zona").hidden = on; $("zonaFin").hidden = !on; $("zonaAyuda").hidden = !on;
+  $("zonaBorrar").hidden = on || !d?.parametros.zona;
+  on ? mapa.doubleClickZoom.disable() : mapa.doubleClickZoom.enable();
+  mapa.getContainer().style.cursor = on ? "crosshair" : "";
+}
+async function cerrarZona() {
+  const anillo = puntosZona.slice();
+  modoZona(false);
+  if (anillo.length < 3 || !H) return;
+  const hs = [];
+  for (let i = 0; i < H.h.length; i++) {  // hexágonos cuyo centro cae dentro
+    const p = H.pol[i], c = [prom(p.map(x => x[0])), prom(p.map(x => x[1]))];
+    if (dentro(c, anillo)) hs.push(H.h[i]);
+  }
+  if (!hs.length) { $("sub").textContent = "La zona no encierra hexágonos del área"; return; }
+  cambiar({ zona: hs }, true);
+}
+mapa.on("click", e => {
+  if (!dibujando) return;
+  const u = puntosZona[puntosZona.length - 1];
+  if (u && Math.abs(u[0] - e.latlng.lat) + Math.abs(u[1] - e.latlng.lng) < 1e-6) return;
+  puntosZona.push([e.latlng.lat, e.latlng.lng]); pintarZona();
+});
+mapa.on("dblclick", () => { if (dibujando) cerrarZona(); });
+$("zona").onclick = () => modoZona(true);
+$("zonaFin").onclick = cerrarZona;
+$("zonaBorrar").onclick = () => cambiar({ zona: null }, true);
+
+// ---------- Presupuesto y pesos (barra + número, como en la app de Rol 3) ----------
+const CONTROLES = [["km", "Presupuesto (km)", 1, 20, .5], ["w_calor", "Calor (LST + vivo)", 0, 100, 5],
+                   ["w_arbol", "Falta de árboles", 0, 100, 5], ["w_personas", "Personas y social", 0, 100, 5]];
+let temporizador = null;
+function armarControles(p) {
+  const total = p.w_calor + p.w_arbol + p.w_personas || 1;
+  const val = { km: p.km, w_calor: Math.round(100 * p.w_calor / total), w_arbol: Math.round(100 * p.w_arbol / total),
+                w_personas: Math.round(100 * p.w_personas / total) };
+  $("controles").innerHTML = CONTROLES.map(([k, t, lo, hi, paso]) =>
+    `<div class="control"><span>${t}</span><input type="range" id="r_${k}" min="${lo}" max="${hi}" step="${paso}" value="${val[k]}">
+     <input type="number" id="n_${k}" min="${lo}" max="${hi}" step="${paso}" value="${val[k]}" aria-label="${t}"></div>`).join("");
+  for (const [k] of CONTROLES) {
+    const r = $("r_" + k), n = $("n_" + k);
+    r.oninput = () => { n.value = r.value; programar(); };
+    n.onchange = () => { r.value = n.value; programar(); };
+  }
+  repartir();
+}
+function leerControles() { return Object.fromEntries(CONTROLES.map(([k]) => [k, Number($("n_" + k).value)])); }
+function repartir() {
+  const v = leerControles(), t = v.w_calor + v.w_arbol + v.w_personas;
+  $("reparto").innerHTML = t ? [["Calor", v.w_calor], ["Árboles", v.w_arbol], ["Social", v.w_personas]].map(([n, x]) =>
+    `<div>${n}: <b>${Math.round(100 * x / t)} %</b></div><div class="barra"><i style="width:${100 * x / t}%"></i></div>`).join("")
+    : '<div class="aviso">Los pesos suman 0: se usará 40 / 40 / 20.</div>';
+}
+function programar() {
+  repartir(); clearTimeout(temporizador);
+  temporizador = setTimeout(() => {
+    const v = leerControles();
+    if (!(v.w_calor + v.w_arbol + v.w_personas)) Object.assign(v, { w_calor: 40, w_arbol: 40, w_personas: 20 });
+    cambiar(v);
+  }, 450);
 }
 
-function tocarComuna(c) {
-  if (cambiando || seleccion.includes(c)) return;
-  elegirComunas(vecinasDe(seleccion).has(c) ? [...seleccion, c] : [c]);
-}
+// ---------- Vistas ----------
+document.querySelectorAll(".vistas button").forEach(b => b.onclick = () => {
+  vista = b.dataset.vista;
+  document.querySelectorAll(".vistas button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  document.querySelectorAll("[data-para]").forEach(s => s.hidden = !s.dataset.para.split(" ").includes(vista));
+  if (vista === "historico") cargarHistorico(); else pintar();
+});
+document.querySelectorAll("[data-para]").forEach(s => s.hidden = !s.dataset.para.split(" ").includes(vista));
+["cCalor", "cVerde", "cSocial"].forEach(id => $(id).onchange = pintar);
+["desde", "hasta"].forEach(id => $(id).onchange = cargarHistorico);
 
-async function elegirComunas(sel) {
-  cambiando = true;
-  $sub.textContent = "Calculando corredor…";
+async function cargarHistorico() {
+  if (vista !== "historico") return;
+  const a = $("desde").value, b = $("hasta").value;
+  if (a > b) { hist = { error: "«Desde» debe ser anterior o igual a «Hasta»." }; return pintar(); }
   try {
-    const r = await fetch("/api/seleccion", { method: "POST", headers: { "Content-Type": "application/json" },
-                                              body: JSON.stringify({ comunas: sel }) });
-    if (!r.ok) throw new Error((await r.json()).detail || r.status);
-  } catch (e) { $sub.textContent = "No se pudo cambiar: " + e.message; cambiando = false; return; }
-  cambiando = false;
-  firma = "";
-  await actualizar();
+    const r = await fetch(`/api/historico?desde=${a}&hasta=${b}`);
+    hist = r.ok ? await r.json() : { error: (await r.json()).detail };
+    hist.rango = [a, b]; hist.selId = selId;
+    if (hist.meta) $("infoHist").textContent = `${hist.meta.meses_totales} meses (${hist.meta.mes_min} a ${hist.meta.mes_max}): ${hist.meta.escenas_landsat} escenas Landsat 8/9 y ${hist.meta.escenas_sentinel2} Sentinel-2`;
+  } catch { hist = { error: "No se pudo leer la serie histórica." }; }
+  pintar();
 }
 
-function encuadrarSeleccion() {
-  mapa.invalidateSize();
-  if (!mapa.getSize().x) return false;  // pestaña oculta al cargar: se reintenta al cambiar de tamaño
-  const b = L.latLngBounds([]);
-  for (const c of seleccion) b.extend(capasComuna[c].getBounds());
-  if (b.isValid()) mapa.fitBounds(b.pad(0.05));
-  return true;
+function valores() {  // temperatura y NDVI que usa la vista actual
+  if (vista === "historico" && hist?.h) {
+    const m = new Map(hist.h.map((h, i) => [h, i]));
+    return { temp: H.h.map((h, i) => m.has(h) ? hist.lst[m.get(h)] : H.lst[i]),
+             ndvi: H.h.map((h, i) => m.has(h) ? hist.ndvi[m.get(h)] : H.ndvi[i]) };
+  }
+  if (vista === "historico") return { temp: H.lst, ndvi: H.ndvi };
+  return { temp: H.h.map((_, i) => H.vivo[i] ?? H.lst[i]), ndvi: H.ndvi };  // tiempo real: aire en vivo si hay
 }
 
-let porEncuadrar = true;
-async function actualizar() {
-  let d;
-  try { d = await (await fetch("/api/estado")).json(); } catch { return; }
-  const nueva = JSON.stringify([d.seleccion, d.capturas.length, (d.recorridos || []).length, d.ahora]);
-  if (nueva === firma) return;
-  const primera = firma === "";
-  firma = nueva;
-  if (JSON.stringify(d.seleccion) !== JSON.stringify(seleccion)) {
-    seleccion = d.seleccion; estilarComunas(); porEncuadrar = true;
+function colores() {
+  const n = H.h.length;
+  if (vista === "corredor") return H.h.map((_, i) =>
+    H.ahora[i] ? [[21, 128, 61], .95] : H.parque[i] ? [[217, 119, 6], .7] : [mezcla(H.u[i] ?? 0, [241, 245, 249], [74, 222, 128]), .7]);
+  const v = valores(), capas = [];
+  if ($("cCalor").checked) capas.push(norm(v.temp).map(t => mezcla(t, [255, 246, 229], [255, 95, 0])));
+  if ($("cVerde").checked) {
+    const nd = norm(v.ndvi), s = H.copa.map((c, i) => 0.6 * Math.min(100, Math.max(0, c ?? 0)) / 100 + 0.4 * nd[i]);
+    capas.push(norm(s).map(t => mezcla(t, [235, 248, 235], [22, 163, 74])));
   }
-
-  capaHex.clearLayers();
-  const ahoraLineas = [], antesLineas = [];
-  for (const h of d.hexes) {
-    L.polygon(h.pol, {
-      stroke: false, fillColor: h.parque ? "#3f9a5b" : color(h.u), fillOpacity: h.parque ? 0.55 : 0.45
-    }).bindTooltip(`urgencia ${h.u}${h.verificado ? " · verificado" : ""}`).addTo(capaHex);
-    if (h.antes) antesLineas.push(h.pol);
-    if (h.ahora) ahoraLineas.push(h.pol);
+  if ($("cSocial").checked) {
+    const p = norm(H.pob);
+    capas.push(H.social.map((s, i) => mezcla(0.5 * p[i] + 0.5 * Math.min(1, Math.max(0, s ?? 0.5)), [238, 242, 255], [79, 70, 229])));
   }
-  for (const p of antesLineas) L.polygon(p, { fill: false, color: "#333", weight: 2, dashArray: "6 5" }).addTo(capaHex);
-  for (const p of ahoraLineas) L.polygon(p, { fill: false, color: "#0b5cad", weight: 4 }).addTo(capaHex);
-  for (const h of d.hexes.filter(h => h.verificado))  // encima de los corredores para que siempre se vea
-    L.polygon(h.pol, { fill: false, color: "#e0a100", weight: 3, dashArray: h.ahora ? null : "2 4" }).addTo(capaHex);
+  if (!capas.length) return H.h.map(() => [[200, 205, 215], .6]);
+  return Array.from({ length: n }, (_, i) => [[0, 1, 2].map(k => prom(capas.map(c => c[i][k]))), .8]);
+}
 
+function metrica(t, v, s = "") { return `<div class="metrica"><small>${t}</small><b>${v}</b><small>${s}</small></div>`; }
+function pintar() {
+  if (!H) return;
+  const col = colores();
+  polys.forEach((p, i) => p.setStyle({ fillColor: rgb(col[i][0]), fillOpacity: col[i][1] }));
+
+  capaLineas.clearLayers();
+  if (vista === "corredor") {  // corredor sin terreno punteado; verificados en magenta encima
+    H.h.forEach((_, i) => { if (H.antes[i]) L.polygon(H.pol[i], { fill: false, color: "#1b241e", weight: 2, dashArray: "6 5", interactive: false }).addTo(capaLineas); });
+  }
+  H.h.forEach((_, i) => { if (H.verificado[i]) L.polygon(H.pol[i], { fill: false, color: "#c026d3", weight: 3, dashArray: H.ahora[i] ? null : "2 4", interactive: false }).addTo(capaLineas); });
+
+  const n = H.h.length, a = d.antes, w = d.ahora;
+  let m = "";
+  if (!n) {
+    m = '<div class="aviso" style="grid-column:1/-1">Elige una comuna en el mapa.</div>';
+  } else if (vista === "vivo") {
+    const v = valores();
+    $("tituloMetricas").textContent = d.en_vivo ? "Métricas (con sensores en vivo)" : "Métricas";
+    m = metrica("Temp. media", num(prom(v.temp)) + " °C") + metrica("Temp. máxima", num(Math.max(...v.temp.filter(x => x != null))) + " °C") +
+        metrica("Copa arbórea media", num(prom(H.copa)) + " %") + metrica("Población (Censo 2024)", ent(H.pob.reduce((s, x) => s + x, 0)));
+  } else if (vista === "corredor") {
+    $("tituloMetricas").textContent = "Corredor óptimo (Dijkstra)";
+    const mejora = w.urgencia_azar > 0 ? (w.urgencia_cubierta / w.urgencia_azar - 1) * 100 : 0;
+    m = w.hexes ? metrica("Largo", num(w.km, 2) + " km", `${w.hexes} hexágonos`) +
+        metrica("Urgencia cubierta", num(w.urgencia_cubierta, 3), `<span class="delta">${mejora >= 0 ? "+" : ""}${num(mejora)} % vs azar</span>`) +
+        metrica("Personas beneficiadas", ent(w.personas_cubiertas), `<span class="delta">${w.personas_cubiertas >= w.personas_azar ? "+" : ""}${ent(w.personas_cubiertas - w.personas_azar)} vs azar</span>`) +
+        metrica("Verificados en terreno", w.verificados, "hexágonos del corredor")
+      : '<div class="aviso" style="grid-column:1/-1">Sin corredor: el área no tiene un parque consolidado desde donde partir. Suma una comuna vecina o amplía el filtro.</div>';
+  } else {
+    $("tituloMetricas").textContent = "Promedio del período";
+    const v = valores();
+    m = hist?.error ? `<div class="aviso" style="grid-column:1/-1">${esc(hist.error)}</div>`
+      : metrica("Temp. promedio", num(prom(v.temp)) + " °C") + metrica("NDVI promedio", num(prom(v.ndvi), 3)) +
+        metrica("Meses satelitales", hist?.meses ? hist.meses : "Base", hist?.meses ? "con escenas en el rango" : "sin escenas: referencia base");
+  }
+  $("metricas").innerHTML = m;
+
+  const f = (t, x, y, sube = true) => `<tr><th>${t}</th><td>${x}</td><td class="${x !== y && (y > x) === sube ? "sube" : ""}">${y}</td></tr>`;
+  $("tabla").innerHTML = f("Urgencia cubierta", a.urgencia_cubierta, w.urgencia_cubierta) +
+    f("Personas", a.personas_cubiertas, w.personas_cubiertas) + f("Largo (km)", a.km, w.km, false) + f("Verificados", a.verificados, w.verificados);
+
+  const L1 = (estilo, t) => `<div><span style="${estilo}"></span>${t}</div>`;
+  const caja = c => `display:inline-block;width:22px;height:10px;border-radius:2px;vertical-align:middle;margin-right:6px;background:${c}`;
+  $("leyenda").innerHTML = (vista === "corredor"
+      ? L1(caja("#15803d"), "Corredor óptimo") + L1(caja("linear-gradient(90deg,#f1f5f9,#4ade80)"), "Prioridad de plantación: baja → alta") +
+        L1(caja("#d97706"), "Parques existentes") + L1("border-top:2px dashed #1b241e", "Corredor sin datos de terreno")
+      : '<div>Color: promedio de las capas activas (claro → intenso)</div>') +
+    L1("border-top:3px solid #c026d3", "Verificado en terreno") +
+    '<div>Punto azul: foto válida · gris: descartada o sin validar</div>' + L1("border-top:4px solid #7b2cbf", "Recorrido en video");
+  const nCap = d.capturas.length, nCuenta = d.capturas.filter(c => c.cuenta).length;
+  $("sub").textContent = `${n.toLocaleString("es-CL")} hexágonos · ${nCap} captura${nCap === 1 ? "" : "s"} en terreno (${nCuenta} cuenta${nCuenta === 1 ? "" : "n"})` +
+    (d.parametros.zona ? ` · zona de ${d.parametros.zona} hex.` : "");
+}
+
+function pintarCapturas() {
   capaCap.clearLayers();
   for (const r of d.recorridos || []) {
     if (r.linea.length < 2) continue;
@@ -176,36 +463,53 @@ async function actualizar() {
   for (const c of d.capturas) {
     const fuente = c.fuente === "claude" ? "Claude" : "índice de verde";
     if (c.validacion === "descartada") {
-      L.circleMarker([c.lat, c.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#999", fillOpacity: 1,
-                                       pane: "capturas", renderer: svgCapturas })
+      L.circleMarker([c.lat, c.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#999", fillOpacity: 1, pane: "capturas", renderer: svgCapturas })
         .bindPopup(`<div class="pop"><strong>Descartada</strong><br>${esc(c.motivo_rechazo)}</div>`).addTo(capaCap);
       continue;
     }
-    L.circleMarker([c.lat, c.lon], { radius: 7, color: "#fff", weight: 2, fillColor: c.cuenta ? "#0b5cad" : "#999",
-                                     fillOpacity: 1, pane: "capturas", renderer: svgCapturas })
+    L.circleMarker([c.lat, c.lon], { radius: 7, color: "#fff", weight: 2, fillColor: c.cuenta ? "#0b5cad" : "#999", fillOpacity: 1, pane: "capturas", renderer: svgCapturas })
       .bindPopup(`<div class="pop"><img src="/fotos/${esc(c.id)}_min.jpg" alt="Foto de terreno">
         Árboles ${Math.round(c.arbol_pct)} % (${fuente}) · plantable: ${esc(c.espacio_plantable ?? "sin estimar")}<br>
         ${c.obstaculos?.length ? "Obstáculos: " + c.obstaculos.map(esc).join(", ") + "<br>" : ""}
         <small>${esc(c.descripcion)}</small>${c.cuenta ? "" : "<br><strong>Sin validar: no cuenta</strong>"}
         <br><small>${esc(new Date(c.tomado_en || c.medido_en).toLocaleString("es-CL"))} · GPS ±${Math.round(c.precision_m ?? 0)} m${c.video_id ? ` · cuadro del video, ${Math.round(c.t_video_s ?? 0)} s` : ""}</small></div>`).addTo(capaCap);
   }
-
-  const a = d.antes, n = d.ahora;
-  $tabla.innerHTML =
-    fila("Urgencia cubierta", a.urgencia_cubierta, n.urgencia_cubierta) +
-    fila("Personas", a.personas_cubiertas.toLocaleString("es-CL"), n.personas_cubiertas.toLocaleString("es-CL")) +
-    fila("Largo (km)", a.km, n.km, false) +
-    fila("Hex. verificados", a.verificados, n.verificados);
-  const nCuentan = d.capturas.filter(c => c.cuenta).length;
-  $sub.textContent = `${d.capturas.length} captura${d.capturas.length === 1 ? "" : "s"} en terreno · ${nCuentan} cuenta${nCuentan === 1 ? "" : "n"}`;
-  if (!primera) { $panel.classList.remove("flash"); void $panel.offsetWidth; $panel.classList.add("flash"); }
-  if (porEncuadrar) porEncuadrar = !encuadrarSeleccion();
 }
 
-window.addEventListener("resize", () => { if (porEncuadrar) porEncuadrar = !encuadrarSeleccion(); });
-const $tabla = document.getElementById("tabla"), $sub = document.getElementById("sub"),
-      $panel = document.getElementById("panel"), $chips = document.getElementById("chips");
-cargarComunas().then(() => { actualizar(); setInterval(actualizar, 3000); });
+function encuadrar() {
+  mapa.invalidateSize();
+  if (!mapa.getSize().x) return false;  // pestaña oculta al cargar: se reintenta al cambiar de tamaño
+  const b = L.latLngBounds([]);
+  if (H && H.h.length && (d.parametros.zona || d.parametros.distritos.length)) H.pol.forEach(p => b.extend(p));
+  else for (const c of seleccion()) b.extend(capasComuna[c].getBounds());
+  if (b.isValid()) mapa.fitBounds(b.pad(0.05));
+  return true;
+}
+
+// ---------- Sondeo: /api/version cada 3 s; el estado completo solo cuando cambia ----------
+async function sondear(forzar = false) {
+  let v;
+  try { v = await (await fetch("/api/version")).json(); } catch { return; }
+  if (!forzar && v.version === version && v.sel_id === selId) return;
+  let nuevo;
+  try { nuevo = await (await fetch(`/api/estado?sel_id=${selId ?? -1}`)).json(); } catch { return; }
+  const primera = d === null, areaNueva = nuevo.sel_id !== selId;
+  d = nuevo; version = d.version;
+  if (areaNueva) {
+    selId = d.sel_id; H = d.hex;
+    capaHex.clearLayers();
+    polys = H.pol.map(p => L.polygon(p, { stroke: false, interactive: false }).addTo(capaHex));
+    if (vista === "historico") { await cargarHistorico(); }
+  } else {
+    d.hex.pol = H.pol; H = d.hex;
+  }
+  estilarComunas(); pintarCapturas(); pintar();
+  if (!primera && !forzar) { $("panel").classList.remove("flash"); void $("panel").offsetWidth; $("panel").classList.add("flash"); }
+  if (porEncuadrar) porEncuadrar = !encuadrar();
+}
+
+window.addEventListener("resize", () => { if (porEncuadrar) porEncuadrar = !encuadrar(); });
+cargarComunas().then(() => sondear(true)).then(() => setInterval(sondear, 3000));
 </script>
 </body>
 </html>

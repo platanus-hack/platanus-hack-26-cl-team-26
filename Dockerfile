@@ -8,13 +8,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir streamlit pydeck matplotlib plotly "h3>=4.0"
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8501
+# Un solo servidor: mapa en /mapa, captura del teléfono en /?k=<clave>. Render define PORT.
+ENV PORT=8000
+EXPOSE 8000
 
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
+HEALTHCHECK CMD curl --fail http://localhost:${PORT}/api/salud
 
-ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
+# TERRENO_CLAVE y ANTHROPIC_API_KEY se configuran como variables de entorno (nunca en la imagen).
+CMD ["sh", "-c", "python -m terreno.servidor --host 0.0.0.0 --puerto ${PORT}"]

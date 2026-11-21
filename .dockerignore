@@ -1,0 +1,12 @@
+# Nunca dentro de la imagen: claves, entornos y fotos de terreno (caras o patentes)
+.anthropic_key
+.env
+.venv/
+.git/
+bin/
+data/terreno/
+data/terreno_h3.parquet
+datos/cache/
+__pycache__/
+*.pyc
+mockup.html

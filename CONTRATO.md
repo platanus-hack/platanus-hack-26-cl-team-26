@@ -48,7 +48,7 @@ solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live
   También trae `personas_azar`, `tramos` (cada tramo es una lista de hexágonos, de parque a parque) y
   `urgencia` (Serie por hexágono, para colorear el mapa).
 - `terreno` (opcional): el `data/terreno_h3.parquet` de la captura en terreno (ver abajo). Donde hay fotos,
-  `arbol_pct` pasa a ser el promedio entre satélite y terreno, y los hexágonos con `viabilidad_terreno < 0,2`
+  el déficit de árboles pasa a ser el promedio entre el satelital (`copa_modelo_pct`, o `arbol_pct`) y el de la foto (1 − `arbol_pct_terreno`/100), y los hexágonos con `viabilidad_terreno < 0,2`
   que no son parque salen del grafo. Devuelve además `verificados` (hexágonos del corredor con foto).
   Sin `terreno` el resultado es idéntico.
 

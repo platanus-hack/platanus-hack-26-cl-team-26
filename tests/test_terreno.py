@@ -20,6 +20,12 @@ GS = Path("data/santiago_h3_gs.parquet")
 COMUNAS_DEMO = ["Providencia", "Cerro Navia"]
 
 
+def filas(e: dict) -> list[dict]:
+    """/api/estado manda los hexágonos en columnas; para los tests, una fila por hexágono."""
+    col = e["hex"]
+    return [dict(zip(col, v)) for v in zip(*col.values())]
+
+
 def jpeg(rgb, tam=(320, 240)) -> bytes:
     b = io.BytesIO()
     Image.new("RGB", tam, rgb).save(b, "JPEG")
@@ -131,7 +137,7 @@ def test_servidor_validacion():
                 deshacer()
             assert d["validacion"] == esperado and not d["cuenta"] and not d["corredor_cambio"]
             assert d["ahora"]["verificados"] == 0
-        assert not any(h["verificado"] for h in c.get("/api/estado").json()["hexes"])
+        assert not any(h["verificado"] for h in filas(c.get("/api/estado").json()))
         deshacer = con_claude(obs(True, "ninguno"))  # válida y sin espacio: sale del corredor
         try:
             d = c.post("/api/captura", data=form, files=foto).json()
@@ -140,7 +146,7 @@ def test_servidor_validacion():
         assert d["validacion"] == "valida" and d["cuenta"] and d["corredor_cambio"]
         e = c.get("/api/estado").json()
         assert [x["validacion"] for x in e["capturas"]] == ["descartada", "sin_validar", "valida"]
-        assert any(h["verificado"] for h in e["hexes"])
+        assert any(h["verificado"] for h in filas(e))
 
 
 def test_servidor():
@@ -161,7 +167,7 @@ def test_servidor():
         d = r.json()
         assert d["captura"]["h3_index"] == hx and not d["fuera_de_area"] and d["captura"]["fuente"] == "indice_verde"
         e = c.get("/api/estado").json()
-        assert len(e["capturas"]) == 1 and any(h["verificado"] for h in e["hexes"])
+        assert len(e["capturas"]) == 1 and any(h["verificado"] for h in filas(e))
         assert c.get(f"/fotos/{d['captura']['id']}_min.jpg").status_code == 200
         assert c.get("/fotos/..%2F..%2Fsecreto.jpg").status_code == 404
         assert (Path(tmp) / "terreno_h3.parquet").exists()
@@ -237,13 +243,15 @@ def test_seleccion_comunas():
         assert all(a in info["vecinas"][b] for a in info["vecinas"] for b in info["vecinas"][a])  # simétrica
         e = c.get("/api/estado").json()
         df = pd.read_parquet(GS)
-        assert len(e["hexes"]) == (df["comuna"] == "Cerro Navia").sum()
+        assert len(filas(e)) == (df["comuna"] == "Cerro Navia").sum()
         r = c.post("/api/seleccion", json={"comunas": ["Quinta Normal", "Cerro Navia"]})
         assert r.status_code == 200 and r.json()["seleccion"] == ["Cerro Navia", "Quinta Normal"]
         e = c.get("/api/estado").json()
-        assert len(e["hexes"]) == df["comuna"].isin(["Cerro Navia", "Quinta Normal"]).sum()
-        assert set(df.set_index("h3_index").loc[[h["h"] for h in e["hexes"] if h["ahora"]], "comuna"]) <= {"Cerro Navia", "Quinta Normal"}
-        assert c.post("/api/seleccion", json={"comunas": []}).status_code == 422
+        assert len(filas(e)) == df["comuna"].isin(["Cerro Navia", "Quinta Normal"]).sum()
+        assert set(df.set_index("h3_index").loc[[h["h"] for h in filas(e) if h["ahora"]], "comuna"]) <= {"Cerro Navia", "Quinta Normal"}
+        r_vacio = c.post("/api/seleccion", json={"comunas": []})
+        assert r_vacio.status_code == 200 and r_vacio.json()["seleccion"] == []
+        assert filas(c.get("/api/estado").json()) == []
         assert c.post("/api/seleccion", json={"comunas": ["Narnia"]}).status_code == 422
         tunel = {"cf-connecting-ip": "1.2.3.4"}
         assert c.post("/api/seleccion", json={"comunas": ["Maipú"]}, headers=tunel).status_code == 403
@@ -253,6 +261,88 @@ def test_seleccion_comunas():
         f = c.post("/api/captura?k=secreta", data={"lat": la, "lon": lo},
                    files={"foto": ("c.jpg", jpeg((90, 90, 90)), "image/jpeg")}).json()
         assert f["comuna"] == "Providencia" and f["fuera_de_seleccion"] and not f["fuera_de_area"]
+
+
+def test_mapa_area_y_pesos():
+    """Distritos, zona dibujada, presupuesto y pesos: cambian el área y el corredor de antes y de ahora."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app, distritos
+
+    df = pd.read_parquet(GS)
+    nombres = distritos(df)
+    assert nombres == distritos(df.sample(frac=1, random_state=1))  # no depende del orden de las filas
+    assert all(n.startswith(c + " - Distrito ") for (c, _), n in nombres.items())
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(GS, Path(tmp), usar_claude=False, comunas=["Cerro Navia", "Quinta Normal"]))
+        info = c.get("/api/comunas").json()
+        assert all(n.startswith("Cerro Navia - ") for n in info["distritos"]["Cerro Navia"])
+        v0 = c.get("/api/version").json()
+        e = c.get("/api/estado").json()
+        n_area = len(e["hex"]["h"])
+        assert "pol" in e["hex"] and "pol" not in c.get(f"/api/estado?sel_id={e['sel_id']}").json()["hex"]
+        d1 = info["distritos"]["Cerro Navia"][:2]
+        r = c.post("/api/seleccion", json={"distritos": d1}).json()
+        e = c.get("/api/estado").json()
+        assert set(e["hex"]["distrito"]) == set(d1) and len(e["hex"]["h"]) < n_area
+        assert r["parametros"]["distritos"] == sorted(d1) and e["sel_id"] != v0["sel_id"]
+        # un distrito de una comuna no elegida se ignora; cambiar comunas descarta los que ya no aplican
+        r = c.post("/api/seleccion", json={"comunas": ["Cerro Navia"]}).json()
+        assert r["parametros"]["distritos"] == sorted(d1)
+        r = c.post("/api/seleccion", json={"comunas": ["Quinta Normal"]}).json()
+        assert r["parametros"]["distritos"] == []
+        # zona: solo los hexágonos encerrados; una zona fuera del área no la vacía
+        c.post("/api/seleccion", json={"comunas": ["Cerro Navia", "Quinta Normal"]})
+        todos = c.get("/api/estado").json()["hex"]["h"]
+        c.post("/api/seleccion", json={"zona": todos[:30]})
+        assert sorted(c.get("/api/estado").json()["hex"]["h"]) == sorted(todos[:30])
+        fuera = df.loc[df["comuna"] == "Maipú", "h3_index"].head(5).tolist()
+        c.post("/api/seleccion", json={"zona": fuera})
+        assert len(c.get("/api/estado").json()["hex"]["h"]) == len(todos)
+        c.post("/api/seleccion", json={"zona": None})
+        # presupuesto y pesos: antes y ahora los usan los dos
+        base = c.get("/api/estado").json()
+        r = c.post("/api/seleccion", json={"km": 8, "w_calor": 1, "w_arbol": 0, "w_personas": 0}).json()
+        assert r["parametros"]["km"] == 8 and r["antes"] == r["ahora"]  # sin capturas: iguales
+        assert r["ahora"]["km"] > base["ahora"]["km"]
+        sub = df[df["comuna"].isin(["Cerro Navia", "Quinta Normal"])]
+        esperado = solve_corridor(sub, 8, 1, 0, 0)
+        assert r["ahora"]["hexes"] == len(esperado["hexes"])
+        assert c.post("/api/seleccion", json={"w_calor": 0, "w_arbol": 0, "w_personas": 0}).status_code == 422
+        assert c.post("/api/seleccion", json={"km": 100}).status_code == 422
+        assert c.get("/api/version").json()["version"] > v0["version"]
+        assert c.get("/api/salud").json() == {"ok": True}
+
+
+def test_vivo_e_historico():
+    """live_h3.parquet entra a la urgencia y se relee al cambiar; el histórico promedia el rango pedido."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    df = pd.read_parquet(GS)
+    sub = df[df["comuna"] == "Cerro Navia"]
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        c = TestClient(crear_app(GS, tmp, usar_claude=False))
+        sin_vivo = c.get("/api/estado").json()
+        assert not sin_vivo["en_vivo"] and all(v is None for v in sin_vivo["hex"]["vivo"])
+        v0 = c.get("/api/version").json()["version"]
+        padres = sorted(sub["h3_padre"].unique())
+        live = pd.DataFrame({"h3_padre": padres, "temp_aire_c": np.linspace(20, 35, len(padres)),
+                             "confianza": "alta"})
+        live.to_parquet(tmp / "live_h3.parquet")
+        assert c.get("/api/version").json()["version"] > v0  # el sondeo nota el archivo nuevo
+        e = c.get("/api/estado").json()
+        assert e["en_vivo"] and all(x is not None for x in e["hex"]["vivo"])
+        esperado = solve_corridor(sub, 3.0, live=live)["urgencia"].round(3).tolist()
+        assert e["hex"]["u"] == esperado and e["hex"]["u"] != sin_vivo["hex"]["u"]
+        # histórico sintético: dos meses para el primer hexágono, uno fuera del rango
+        h0 = sub["h3_index"].iloc[0]
+        pd.DataFrame({"mes": ["2024-01", "2024-02", "2025-06"], "h3_index": [h0] * 3,
+                      "fecha": pd.to_datetime(["2024-01-10", "2024-02-10", "2025-06-01"]),
+                      "ndvi": [0.2, 0.4, 0.9], "lst_c": [30.0, 34.0, 10.0]}).to_parquet(tmp / "historico_h3.parquet")
+        r = c.get("/api/historico?desde=2024-01-01&hasta=2024-02-10").json()
+        assert r["meses"] == 2 and r["h"] == [h0] and r["lst"] == [32.0] and r["ndvi"] == [0.3]
+        assert c.get("/api/historico?desde=2025-01-01&hasta=2024-01-01").status_code == 422
 
 
 if __name__ == "__main__":

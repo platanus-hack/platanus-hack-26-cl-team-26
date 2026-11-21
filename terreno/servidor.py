@@ -1,9 +1,12 @@
-"""Servidor de captura en terreno: el teléfono sube fotos con GPS, el corredor se recalcula y el mapa se actualiza.
+"""Servidor de VerdeH3: el mapa (tiempo real, corredor Dijkstra, histórico) y la captura en terreno desde el teléfono.
 
     python -m terreno.servidor --puerto 8000          # 34 comunas; el corredor se calcula en las elegidas
     cloudflared tunnel --url http://localhost:8000      # HTTPS público: el GPS del teléfono lo exige
 
 Teléfono: https://<túnel>/?k=<clave>   ·   Mapa para proyectar: http://localhost:8000/mapa
+El mapa filtra por comuna, distrito (barrio H3 res 7) o una zona dibujada, mueve presupuesto y pesos del
+corredor, y muestra la serie histórica satelital (data/historico_h3.parquet). Si existe data/live_h3.parquet
+(sensores en vivo, Rol 2) entra al calor de la urgencia; se relee cuando cambia.
 Si TERRENO_CLAVE (o --clave) está definida, subir fotos exige ?k=<clave>, porque la URL del túnel es pública.
 Solo cuentan las fotos que Claude valida como exteriores de calle; sin Claude quedan «sin validar» y no cambian
 el corredor, salvo con --aceptar-sin-validar (demo sin red).
@@ -23,8 +26,9 @@ from pathlib import Path
 
 import h3
 import pandas as pd
-from fastapi import Body, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from optimizer import solve_corridor
 from terreno.almacen import Almacen, cuenta, estado_validacion
@@ -82,6 +86,30 @@ def elegir_cuadros(cuadros: list[dict], maximo: int = MAX_CUADROS_ANALIZADOS) ->
     return sorted(elegidos)
 
 
+class Seleccion(BaseModel):
+    """Cambio de análisis desde el mapa. Lo que no viene se mantiene; zona=null o [] la borra."""
+    comunas: list[str] | None = None
+    distritos: list[str] | None = None   # nombres «Comuna - Distrito N» de las comunas elegidas; vacío = todos
+    zona: list[str] | None = None        # hexágonos encerrados con el mouse
+    km: float | None = None
+    w_calor: float | None = None
+    w_arbol: float | None = None
+    w_personas: float | None = None
+
+
+def distritos(df: pd.DataFrame) -> dict[tuple[str, str], str]:
+    """Nombre «Comuna - Distrito N» por (comuna, h3_padre): de norte a sur y de oeste a este dentro de cada
+    comuna. Un barrio res 7 puede cruzar el límite comunal: cada comuna nombra su parte."""
+    padres = (df[["comuna", "h3_padre", "lat", "lon"]].groupby(["comuna", "h3_padre"], as_index=False).mean()
+              .sort_values(["comuna", "lat", "lon"], ascending=[True, False, True]))
+    padres["num"] = padres.groupby("comuna").cumcount() + 1
+    return dict(zip(zip(padres["comuna"], padres["h3_padre"]), padres["comuna"] + " - Distrito " + padres["num"].astype(str)))
+
+
+def _r(x, n=2):
+    return None if x is None or x != x else round(float(x), n)
+
+
 def _comunas_geo(df: pd.DataFrame) -> dict:
     """Contorno de cada comuna (unión de sus hexágonos) como anillos [[lat, lon], ...] para Leaflet."""
     geo = {}
@@ -108,37 +136,97 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
               km: float = 3.0, clave: str | None = None, usar_claude: bool = True,
               aceptar_sin_validar: bool = False, comunas: list[str] | None = None) -> FastAPI:
     df = pd.read_parquet(datos)
+    nombres = distritos(df)
+    df["distrito"] = [nombres[k] for k in zip(df["comuna"], df["h3_padre"])]
     alm = Almacen(data_dir, aceptar_sin_validar)
+    ruta_live, ruta_hist = Path(data_dir) / "live_h3.parquet", Path(data_dir) / "historico_h3.parquet"
+    ruta_meta = Path(data_dir) / "historico_meta.json"
+    hist: dict = {}
     hex_area = set(df["h3_index"])
     comuna_de = dict(zip(df["h3_index"], df["comuna"]))
     todas = sorted(df["comuna"].unique())
     vecinas = _vecinas(df)
     geo = _comunas_geo(df)
     poligonos = {h: [[round(la, 6), round(lo, 6)] for la, lo in h3.cell_to_boundary(h)] for h in df["h3_index"]}
+    distritos_de = {c: set(v) for c, v in df.groupby("comuna")["distrito"].unique().items()}
+    lst_hoy = df["lst_c_ultima"].fillna(df["lst_c"]) if "lst_c_ultima" in df else df["lst_c"]
+    copa = df["copa_modelo_pct"] if "copa_modelo_pct" in df else df["arbol_pct"]
     lock = threading.Lock()
-    estado: dict = {}
+    estado: dict = {"version": 0, "sel_id": 0, "live_mtime": None, "live": None,
+                    "p": {"comunas": [], "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2)}}
 
-    def elegir(sel: list[str]):
-        """Fija las comunas donde se calcula el corredor y su línea base sin terreno («antes»)."""
-        sel = [c for c in todas if c in set(sel)]
-        if not sel:
-            raise HTTPException(422, "Elige al menos una comuna")
-        estado["sel"] = sel
-        estado["sub"] = df[df["comuna"].isin(sel)].reset_index(drop=True)
-        estado["antes"] = solve_corridor(estado["sub"], km)
+    def leer_live() -> bool:
+        """Relee data/live_h3.parquet si cambió. Devuelve si cambió."""
+        mt = ruta_live.stat().st_mtime if ruta_live.exists() else None
+        if mt == estado["live_mtime"]:
+            return False
+        try:
+            estado["live"] = pd.read_parquet(ruta_live) if mt else None
+        except Exception:
+            log.warning("No se pudo leer %s", ruta_live)
+            estado["live"] = None
+        estado["live_mtime"] = mt
+        return True
+
+    def resolver(terreno=None):
+        p = estado["p"]
+        return solve_corridor(estado["sub"], p["km"], *p["w"], live=estado["live"], terreno=terreno)
+
+    def elegir(cambio: Seleccion):
+        """Fija el área (comunas → distritos → zona), presupuesto y pesos, y la línea base sin terreno («antes»)."""
+        p = dict(estado["p"])
+        if cambio.comunas is not None:
+            if set(cambio.comunas) - set(todas):
+                raise HTTPException(422, "Comuna desconocida")
+            p["comunas"] = [c for c in todas if c in set(cambio.comunas)]
+        validos = set().union(*(distritos_de[c] for c in p["comunas"]))
+        if cambio.distritos is not None:
+            p["distritos"] = sorted(set(cambio.distritos) & validos)
+        else:
+            p["distritos"] = [d for d in p["distritos"] if d in validos]
+        if "zona" in cambio.model_fields_set:
+            p["zona"] = sorted(set(cambio.zona) & hex_area) if cambio.zona else None
+        if cambio.km is not None:
+            if not 0.5 <= cambio.km <= 30:
+                raise HTTPException(422, "Presupuesto entre 0,5 y 30 km")
+            p["km"] = cambio.km
+        w = [x if x is not None else old for x, old in zip((cambio.w_calor, cambio.w_arbol, cambio.w_personas), p["w"])]
+        if min(w) < 0 or sum(w) <= 0:
+            raise HTTPException(422, "Pesos >= 0 y no todos 0")
+        p["w"] = tuple(w)
+        sub = df[df["comuna"].isin(p["comunas"])]
+        if p["distritos"]:
+            sub = sub[sub["distrito"].isin(p["distritos"])]
+        if p["zona"]:
+            en_zona = sub[sub["h3_index"].isin(p["zona"])]
+            if len(en_zona):  # como en la app de Rol 3: una zona fuera del área no la vacía
+                sub = en_zona
+        anterior = estado.get("area")
+        estado["p"], estado["sub"] = p, sub
+        estado["area"] = tuple(sub.index)
+        if estado["area"] != anterior:
+            estado["sel_id"] += 1
+        estado["antes"] = resolver()
 
     def recalcular():
         terreno = alm.escribir_h3() if alm.capturas() else None
         estado["terreno"] = terreno
-        estado["ahora"] = solve_corridor(estado["sub"], km, terreno=terreno)
+        estado["ahora"] = resolver(terreno)
+        estado["version"] += 1
+
+    def revisar_live():
+        if leer_live():
+            estado["antes"] = resolver()
+            recalcular()
 
     inicial = comunas or (["Cerro Navia"] if "Cerro Navia" in todas else todas[:1])
     faltan = set(inicial) - set(todas)
     if faltan:
         raise ValueError(f"Comunas que no están en {datos}: {sorted(faltan)}")
-    elegir(inicial)
+    leer_live()
+    elegir(Seleccion(comunas=inicial))
     recalcular()
-    app = FastAPI(title="VerdeH3 · captura en terreno")
+    app = FastAPI(title="VerdeH3")
 
     def revisar_clave(k: str | None):
         if clave and k != clave:
@@ -177,7 +265,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             "cuenta": cuenta(cap, aceptar_sin_validar),
             "fuera_de_area": cap["h3_index"] not in hex_area,
             "comuna": comuna_de.get(cap["h3_index"]),
-            "fuera_de_seleccion": comuna_de.get(cap["h3_index"]) not in estado["sel"],
+            "fuera_de_seleccion": cap["h3_index"] not in set(estado["sub"]["h3_index"]),
             "en_corredor": cap["h3_index"] in ahora["hexes"],
             "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
             "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
@@ -238,7 +326,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             "sin_validar": estados.count("sin_validar"),
             "hexagonos": sorted({c["h3_index"] for c in caps if cuenta(c, aceptar_sin_validar)}),
             "fuera_de_area": sum(c["h3_index"] not in hex_area for c in caps),
-            "fuera_de_seleccion": sum(comuna_de.get(c["h3_index"]) not in estado["sel"] for c in caps),
+            "fuera_de_seleccion": sum(c["h3_index"] not in set(estado["sub"]["h3_index"]) for c in caps),
             "motivos_descarte": sorted({c.get("motivo_rechazo", "") for c in caps if c.get("valida") is False} - {""}),
             "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
             "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
@@ -249,38 +337,100 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         return (request.client is not None and request.client.host in ("127.0.0.1", "::1", "testclient")
                 and "cf-connecting-ip" not in request.headers)
 
+    def _parametros() -> dict:
+        p = estado["p"]
+        return {"comunas": p["comunas"], "distritos": p["distritos"], "zona": len(p["zona"] or []),
+                "km": p["km"], "w_calor": p["w"][0], "w_arbol": p["w"][1], "w_personas": p["w"][2]}
+
+    dist_por_comuna = {c: sorted(v, key=lambda n: int(n.rsplit(" ", 1)[1])) for c, v in distritos_de.items()}
+
+    @app.get("/api/salud")
+    def salud():
+        return {"ok": True}
+
     @app.get("/api/comunas")
     def api_comunas():
-        return {"comunas": todas, "vecinas": vecinas, "geo": geo, "seleccion": estado["sel"]}
+        return {"comunas": todas, "vecinas": vecinas, "geo": geo, "distritos": dist_por_comuna,
+                "seleccion": estado["p"]["comunas"], "parametros": _parametros()}
 
     @app.post("/api/seleccion")
-    def api_seleccion(request: Request, comunas: list[str] = Body(..., embed=True), k: str | None = Query(None)):
-        """Cambia las comunas del corredor. Desde el mismo computador no pide clave; por el túnel sí."""
+    def api_seleccion(request: Request, cambio: Seleccion, k: str | None = Query(None)):
+        """Cambia área, presupuesto o pesos. Desde el mismo computador no pide clave; por el túnel sí."""
         if not es_local(request):
             revisar_clave(k)
         with lock:
-            elegir(comunas)
+            elegir(cambio)
             recalcular()
-            return {"seleccion": estado["sel"], "antes": _resumen(estado["antes"]),
-                    "ahora": _resumen(estado["ahora"])}
+            return {"seleccion": estado["p"]["comunas"], "parametros": _parametros(),
+                    "antes": _resumen(estado["antes"]), "ahora": _resumen(estado["ahora"])}
+
+    @app.get("/api/version")
+    def api_version():
+        """Sondeo barato del mapa: cambia con cada captura, video, selección o lectura en vivo nueva."""
+        with lock:
+            revisar_live()
+            return {"version": estado["version"], "sel_id": estado["sel_id"]}
 
     @app.get("/api/estado")
-    def api_estado():
+    def api_estado(sel_id: int | None = Query(None)):
+        """Hexágonos del área en columnas. Los polígonos solo van si el mapa no tiene los de esta área (sel_id)."""
         with lock:
-            ahora, terreno, antes, sub, sel = (estado[x] for x in ("ahora", "terreno", "antes", "sub", "sel"))
+            revisar_live()
+            ahora, terreno, antes, sub, live = (estado[x] for x in ("ahora", "terreno", "antes", "sub", "live"))
+            version, sid, params = estado["version"], estado["sel_id"], _parametros()
             caps = [{**c, "validacion": estado_validacion(c), "cuenta": cuenta(c, aceptar_sin_validar)}
                     for c in alm.capturas()]
         verif = set(terreno["h3_index"]) if terreno is not None else set()
         en_antes, en_ahora = set(antes["hexes"]), set(ahora["hexes"])
-        U = ahora["urgencia"]
-        hexes = [{"h": h, "pol": poligonos[h], "u": round(float(u), 3), "parque": bool(p),
-                  "antes": h in en_antes, "ahora": h in en_ahora, "verificado": h in verif}
-                 for h, u, p in zip(sub["h3_index"], U, sub["es_parque"])]
+        vivo = pd.Series(float("nan"), index=sub.index)
+        if live is not None and len(live):
+            ok = live[live["confianza"].isin(["alta", "media"]) & live["temp_aire_c"].notna()]
+            vivo = sub["h3_padre"].map(ok.groupby("h3_padre")["temp_aire_c"].last())
+        hs = sub["h3_index"].tolist()
+        col = {
+            "h": hs, "comuna": sub["comuna"].tolist(), "distrito": sub["distrito"].tolist(),
+            "u": [_r(u, 3) for u in ahora["urgencia"]],
+            "lst": [_r(x, 1) for x in lst_hoy.loc[sub.index]], "vivo": [_r(x, 1) for x in vivo],
+            "ndvi": [_r(x, 3) for x in sub["ndvi"]], "copa": [_r(x, 1) for x in copa.loc[sub.index]],
+            "pob": sub["poblacion"].astype(int).tolist(), "social": [_r(x, 3) for x in sub["social"]],
+            "parque": sub["es_parque"].astype(bool).tolist(),
+            "antes": [h in en_antes for h in hs], "ahora": [h in en_ahora for h in hs],
+            "verificado": [h in verif for h in hs],
+        }
+        if sel_id != sid:
+            col["pol"] = [poligonos[h] for h in hs]
         recorridos = [{"id": r["id"], "inicio": r.get("inicio"), "duracion_s": r.get("duracion_s"),
                        "archivo": r.get("archivo"), "linea": [[p["lat"], p["lon"]] for p in r.get("track", [])]}
                       for r in alm.recorridos()]
-        return {"seleccion": sel, "hexes": hexes, "capturas": caps, "recorridos": recorridos,
-                "antes": _resumen(antes), "ahora": _resumen(ahora)}
+        return {"version": version, "sel_id": sid, "seleccion": params["comunas"], "parametros": params,
+                "hex": col, "capturas": caps, "recorridos": recorridos, "en_vivo": live is not None,
+                "antes": {**_resumen(antes), "personas_azar": antes["personas_azar"]},
+                "ahora": {**_resumen(ahora), "personas_azar": ahora["personas_azar"]}}
+
+    @app.get("/api/historico")
+    def api_historico(desde: str = Query(...), hasta: str = Query(...)):
+        """Promedio por hexágono de LST y NDVI de las escenas entre dos fechas (YYYY-MM-DD), para el área actual."""
+        try:
+            d0, d1 = pd.Timestamp(desde), pd.Timestamp(hasta)
+        except ValueError:
+            raise HTTPException(422, "Fechas YYYY-MM-DD")
+        if d0 > d1:
+            raise HTTPException(422, "«Desde» debe ser anterior o igual a «Hasta»")
+        if "df" not in hist:
+            if not ruta_hist.exists():
+                raise HTTPException(404, "No hay data/historico_h3.parquet")
+            hist["df"] = pd.read_parquet(ruta_hist)
+            hist["meta"] = json.loads(ruta_meta.read_text(encoding="utf-8")) if ruta_meta.exists() else {}
+        with lock:
+            hs = set(estado["sub"]["h3_index"])
+        h = hist["df"]
+        sub_h = h[(h["fecha"] >= d0) & (h["fecha"] < d1 + pd.Timedelta(days=1)) & h["h3_index"].isin(hs)]
+        prom = sub_h.groupby("h3_index")[["lst_c", "ndvi"]].mean()
+        m = hist["meta"]
+        return {"meses": int(sub_h["mes"].nunique()), "h": prom.index.tolist(),
+                "lst": [_r(x, 1) for x in prom["lst_c"]], "ndvi": [_r(x, 3) for x in prom["ndvi"]],
+                "meta": {k2: m.get(k2) for k2 in ("meses_totales", "mes_min", "mes_max", "escenas_landsat",
+                                                   "escenas_sentinel2")}}
 
     @app.get("/videos/{nombre}")
     def videos(nombre: str):
@@ -315,7 +465,7 @@ def main():
     p.add_argument("--comunas", nargs="+", help="comunas iniciales del corredor (luego se eligen en el mapa)")
     p.add_argument("--data", type=Path, default=Path("data"), help="dónde guardar capturas y terreno_h3.parquet")
     p.add_argument("--km", type=float, default=3.0)
-    p.add_argument("--puerto", type=int, default=8000)
+    p.add_argument("--puerto", type=int, default=int(os.environ.get("PORT", 8000)))
     p.add_argument("--host", default="127.0.0.1", help="127.0.0.1 basta para cloudflared; 0.0.0.0 abre la red local")
     p.add_argument("--clave", default=os.environ.get("TERRENO_CLAVE"))
     p.add_argument("--sin-claude", action="store_true", help="solo índice de verde, sin llamar a Claude")

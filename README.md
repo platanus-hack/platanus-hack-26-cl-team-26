@@ -81,6 +81,24 @@ python -m tests.test_contrato
 `optimizer.solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None)` devuelve el
 corredor continuo entre parques que más urgencia cubre dentro del presupuesto.
 
+## App web: mapa + captura en terreno (un solo servidor)
+
+`python -m terreno.servidor` sirve todo (FastAPI, sin Streamlit):
+
+- `/mapa` (laptop o jurado): tres vistas sobre la grilla H3.
+  - *Tiempo real*: capas de calor (LST más reciente, o temperatura del aire en vivo por barrio si hay
+    `data/live_h3.parquet`), verde (copa + NDVI) y social/densidad; con varias capas el color es el promedio RGB.
+  - *Corredor*: Dijkstra con presupuesto (km) y pesos calor / árboles / personas, métricas contra caminatas al
+    azar y el efecto de las fotos de terreno.
+  - *Histórico*: promedio de LST y NDVI de las escenas entre dos fechas (`data/historico_h3.parquet`, 2023–2026).
+  - Área: comunas (toque en el mapa, «Piloto», «Todas (34)»), distritos (barrios H3 res 7) y «Encerrar zona»
+    para dibujar un polígono. Presupuesto, pesos y área son compartidos: la captura del teléfono responde con
+    los mismos números que muestra el mapa.
+- `/?k=<clave>` (teléfono): captura en terreno, abajo.
+- Despliegue: `Dockerfile` y `render.yaml` corren este servidor (`/api/salud` como health check);
+  `TERRENO_CLAVE` y `ANTHROPIC_API_KEY` van en el panel de Render. En Render el disco es efímero: para la demo
+  la captura corre local con el túnel (`compartir_publico.sh`).
+
 ## Captura en terreno (teléfono → corredor en vivo)
 
 El equipo recorre el corredor con un teléfono: cada foto lleva GPS, se analiza (índice de verde siempre;
@@ -97,10 +115,12 @@ cloudflared tunnel --url http://localhost:8000     # entrega https://<algo>.tryc
 
 - Teléfono: `https://<algo>.trycloudflare.com/?k=una-clave` (el GPS del navegador exige HTTPS). Aceptar la
   ubicación, esperar precisión ≤ 30 m, «Tomar foto», «Subir captura».
-- Mapa para proyectar: `http://localhost:8000/mapa` (se actualiza cada 3 s).
+- Mapa para proyectar: `http://localhost:8000/mapa` (consulta cada 3 s y redibuja solo si algo cambió).
+  Por el túnel o en Render, abrir `/mapa?k=una-clave` para poder cambiar comunas y pesos.
 - Comunas: el servidor carga las 34 comunas (`data/santiago_h3_gs.parquet`) y calcula el corredor solo en las
   elegidas (al inicio Cerro Navia, o `--comunas ...`). En el mapa, tocar una comuna vecina (borde punteado) la
-  suma; tocar otra comuna empieza de nuevo ahí; la × de cada comuna la quita. Las fotos de cualquier comuna se
+  suma; tocar otra comuna empieza de nuevo ahí; tocar dentro de una elegida muestra el hexágono con un botón
+  para quitarla; la × de cada comuna también la quita. Las fotos de cualquier comuna se
   guardan y cuentan cuando esa comuna está elegida.
 - Video: «Abrir cámara de video» abre la cámara a pantalla completa; el botón rojo graba dentro de la página (máx. 3 min) mientras registra el trazado GPS; cada 3 s
   guarda un cuadro con su posición y hora. Al subirlo se analizan hasta 12 cuadros (2 por hexágono como máximo),
@@ -118,8 +138,8 @@ cloudflared tunnel --url http://localhost:8000     # entrega https://<algo>.tryc
   para repetir la demo con datos reales grabados.
 - Prueba offline: `python -m tests.test_terreno`.
 
-Honestidad: una foto de calle muestra parte de un hexágono de ~0,1 km²; complementa al satélite (promedio
-50/50) y no lo reemplaza. Los porcentajes de Claude son estimaciones visuales.
+Honestidad: una foto de calle muestra parte de un hexágono de ~0,1 km²; complementa al satélite (el déficit de
+árboles del hexágono es el promedio 50/50 entre el de `copa_modelo_pct` y el de la foto) y no lo reemplaza. Los porcentajes de Claude son estimaciones visuales.
 
 # Corredores Verdes · Bloque 1
 
