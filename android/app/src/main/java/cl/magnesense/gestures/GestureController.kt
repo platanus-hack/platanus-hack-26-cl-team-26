@@ -61,7 +61,7 @@ class GestureController(
     var teaching = false
         set(value) {
             field = value
-            access.suppressMagnetActivation = value || _status.value.gesturesActive
+            updateSuppress()
         }
 
     private val lastFire = HashMap<String, Long>()
@@ -92,11 +92,17 @@ class GestureController(
         }
         if (next == previous) return
         _status.value = next
-        access.suppressMagnetActivation = next.gesturesActive || teaching
+        updateSuppress()
         if (previous.chosen == chosen && chosen == ActivationMode.GESTURES) {
             if (next.fallback && previous.gesturesActive) speaker.speak("Sin gestos, vuelvo al escaneo", queue = true)
             if (next.gesturesActive && previous.fallback) speaker.speak("Gestos aprendidos activos", queue = true)
         }
+    }
+
+    /** El iman local arma el escaneo solo en modo escaneo, y nunca mientras se ensena un gesto. */
+    private fun updateSuppress() {
+        access.suppressMagnetActivation =
+            teaching || _status.value.gesturesActive || settings.value.activationMode == ActivationMode.PULSES
     }
 
     private fun onServerEvent(e: ServerEvent) {

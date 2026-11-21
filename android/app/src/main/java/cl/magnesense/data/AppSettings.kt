@@ -17,7 +17,7 @@ data class AppSettings(
     val startOnBoot: Boolean = false,
     val voiceEnabled: Boolean = true,
     val tuning: DetectionTuning = DetectionTuning(),
-    val activationMode: ActivationMode = ActivationMode.SCANNING,
+    val activationMode: ActivationMode = ActivationMode.PULSES,
     /** Gesto aprendido -> id de dispositivo, [BIND_SCAN], [BIND_SONG], [BIND_QUACK] o [BIND_NONE]. */
     val gestureBindings: Map<String, String> = emptyMap(),
     /** Ya se hizo (o se salto) el asistente de inicio. */
@@ -34,6 +34,7 @@ data class AppSettings(
 
 /** Como se activan las opciones. */
 enum class ActivationMode(val label: String, val description: String) {
+    PULSES("Pulsos", "Puntos y rayas con el imán: comandos por perfil, Morse o directo. Todo en el celular."),
     SCANNING("Escaneo con un gesto", "Funciona sin internet: un gesto inicia el escaneo y otro elige."),
     GESTURES("Gestos aprendidos", "Cada gesto enseñado hace una acción directa. Todo corre en el celular, sin servidor."),
 }

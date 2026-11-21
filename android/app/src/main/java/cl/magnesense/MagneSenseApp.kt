@@ -18,6 +18,8 @@ import cl.magnesense.feedback.SoundPlayer
 import cl.magnesense.feedback.Speaker
 import cl.magnesense.gestures.GestureController
 import cl.magnesense.gestures.LocalGestures
+import cl.magnesense.pulses.PulseController
+import cl.magnesense.data.ActivationMode
 import cl.magnesense.remote.ServerApi
 import cl.magnesense.remote.ServerSocket
 import cl.magnesense.sensor.SensorHub
@@ -61,6 +63,9 @@ class MagneSenseApp : Application() {
         private set
     lateinit var sounds: SoundPlayer
         private set
+    /** Modo Pulsos (por defecto): puntos y rayas con el iman. */
+    lateinit var pulses: PulseController
+        private set
     lateinit var speaker: Speaker
         private set
 
@@ -76,7 +81,15 @@ class MagneSenseApp : Application() {
         telemetry = TelemetryClient(scope)
         localGestures = LocalGestures(this, diag::add, history::add)
         sounds = SoundPlayer()
-        engine.rawListener = Tee(telemetry, localGestures)
+        pulses = PulseController(
+            this,
+            speaker,
+            sounds,
+            enabled = { settings.settings.value.activationMode == ActivationMode.PULSES && !(::gestures.isInitialized && gestures.teaching) },
+            diag = diag::add,
+            history = history::add,
+        )
+        engine.rawListener = Tee(telemetry, localGestures, pulses)
         server = ServerSocket(scope)
         serverApi = ServerApi { settings.settings.value.serverUrl.trim().trimEnd('/') }
         settings.loadCalibration()?.let(engine.detector::restore)

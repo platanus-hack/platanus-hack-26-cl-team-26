@@ -97,9 +97,12 @@ class EventGestureDetector(
         return minOf(thr, maxOf(0.6 * d.peak, 3 * noise, floor))
     }
 
+    /** Tope anti-golpe cuando no hay direccion aprendida (p. ej. del ritmo de los pulsos); 0 = sin tope. */
+    var fixedCap = 0.0
+
     /** Senal maxima aceptada antes de activar (0 = sin tope). */
     fun cap(noise: Double): Double {
-        val d = direction ?: return 0.0
+        val d = direction ?: return fixedCap
         if (maxRatio <= 0) return 0.0
         return maxOf(maxRatio * d.peak, d.peak + 10 * noise)
     }

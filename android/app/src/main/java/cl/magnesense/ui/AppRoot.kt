@@ -34,11 +34,14 @@ import cl.magnesense.ui.control.PauseOverlay
 import cl.magnesense.ui.debug.DebugScreen
 import cl.magnesense.ui.gestures.GesturesScreen
 import cl.magnesense.ui.history.HistoryScreen
+import cl.magnesense.ui.pulses.PulsesScreen
 import cl.magnesense.ui.settings.SettingsScreen
+import cl.magnesense.data.ActivationMode
 import cl.magnesense.ui.setup.SetupWizard
 import cl.magnesense.ui.theme.Palette
 
 enum class Screen(val label: String) {
+    PULSES("Pulsos"),
     CONTROL("Control"),
     GESTURES("Gestos"),
     CALIBRATION("Calibrar"),
@@ -52,12 +55,16 @@ enum class Screen(val label: String) {
 fun AppRoot(app: MagneSenseApp) {
     val engine = app.engine
     val access = app.access
-    var screen by rememberSaveable { mutableStateOf(Screen.CONTROL) }
+    var screen by rememberSaveable {
+        mutableStateOf(if (app.settings.settings.value.activationMode == ActivationMode.PULSES) Screen.PULSES else Screen.CONTROL)
+    }
     val detector by engine.detector.status.collectAsState()
     val scan by access.scanning.state.collectAsState()
     // La primera vez se abre el asistente de inicio (imán, calibrar, gestos).
     var teachRequest by rememberSaveable { mutableStateOf(false) }
-    var setup by rememberSaveable { mutableStateOf(!app.settings.settings.value.setupDone) }
+    var setup by rememberSaveable {
+        mutableStateOf(!app.settings.settings.value.setupDone && app.settings.settings.value.activationMode == ActivationMode.GESTURES)
+    }
 
     if (setup) {
         SetupWizard(app, onDone = {
@@ -73,6 +80,7 @@ fun AppRoot(app: MagneSenseApp) {
             Tabs(screen) { screen = it }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (screen) {
+                    Screen.PULSES -> PulsesScreen(app)
                     Screen.CONTROL -> ControlScreen(app, onCalibrate = { screen = Screen.CALIBRATION }, onTeachGesture = {
                         teachRequest = true
                         screen = Screen.GESTURES

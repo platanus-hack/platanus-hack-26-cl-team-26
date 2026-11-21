@@ -56,10 +56,32 @@ class SoundPlayer {
         songTrack = null
     }
 
-    fun quack() {
-        val track = staticTrack(quack) ?: return
+    fun quack() = playOnce(quack)
+
+    /** Beep sintetizado: [hz] y [ms] (punto, raya, error). */
+    fun beep(hz: Double, ms: Int, volume: Double = 0.5) {
+        val n = RATE * ms / 1000
+        playOnce(ShortArray(n) { i ->
+            val env = min(1.0, min(i, n - i) / (RATE * 0.005))
+            (sin(2 * PI * hz * i / RATE) * env * volume * 30_000).toInt().toShort()
+        })
+    }
+
+    /** Sirena de alarma de [seconds] segundos (dos tonos alternados). */
+    fun alarm(seconds: Double = 3.0) {
+        val n = (RATE * seconds).toInt()
+        var phase = 0.0
+        playOnce(ShortArray(n) { i ->
+            val f = if ((i / (RATE / 4)) % 2 == 0) 960.0 else 760.0
+            phase += 2 * PI * f / RATE
+            (sin(phase) * 0.9 * 30_000).toInt().toShort()
+        })
+    }
+
+    private fun playOnce(pcm: ShortArray) {
+        val track = staticTrack(pcm) ?: return
         runCatching {
-            track.setNotificationMarkerPosition(quack.size - 1)
+            track.setNotificationMarkerPosition(pcm.size - 1)
             track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
                 override fun onMarkerReached(t: AudioTrack) = t.release()
                 override fun onPeriodicNotification(t: AudioTrack) = Unit
