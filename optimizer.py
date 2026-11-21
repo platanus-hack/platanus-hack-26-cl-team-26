@@ -7,7 +7,8 @@
 Urgencia por hexágono (cada término 0 a 1):
   calor    = 0,6·lst_c_norm + 0,4·vivo_norm   (vivo = temp_aire_c del barrio res 7, confianza alta o media;
              donde no hay dato en vivo, o hay menos de dos barrios con dato, solo lst_c_norm)
-  falta    = 1 − arbol_pct/100
+  falta    = 1 − copa_norm   (copa_modelo_pct: % de copa de árboles que predice nuestro modelo con
+             Sentinel-2 de 2026, ver verdeh3.modelo_copa; sin esa columna, 1 − arbol_pct/100 de WorldCover)
   personas = 0,7·poblacion_norm + 0,3·social
   U        = (w_calor·calor + w_arbol·falta + w_personas·personas) / (w_calor + w_arbol + w_personas)
   Los pesos se pueden mover libremente: se reescalan para sumar 1 (0,4/0,4/0,2 queda igual).
@@ -53,7 +54,10 @@ def urgencia(df, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None) -> pd.Seri
         vivo = padre.map(ok.groupby("h3_padre")["temp_aire_c"].last())
         if ok["h3_padre"].nunique() >= 2:  # con un solo barrio no hay contra qué normalizar
             calor = (0.6 * calor + 0.4 * _norm(vivo)).where(vivo.notna(), calor)
-    falta = 1 - df["arbol_pct"].clip(0, 100) / 100
+    if "copa_modelo_pct" in df:  # la copa urbana va de 0 a ~40%: se normaliza como los demás términos
+        falta = 1 - _norm(df["copa_modelo_pct"])
+    else:
+        falta = 1 - df["arbol_pct"].clip(0, 100) / 100
     personas = 0.7 * _norm(df["poblacion"]) + 0.3 * df["social"].clip(0, 1)
     return ((w_calor * calor + w_arbol * falta + w_personas * personas) / sum(w)).rename("urgencia")
 

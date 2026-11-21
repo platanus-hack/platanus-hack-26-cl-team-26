@@ -2,6 +2,7 @@
 
 Uso: python -m tests.test_contrato
 """
+import json
 import time
 from pathlib import Path
 
@@ -29,9 +30,13 @@ def revisar_parquet(ruta: Path):
     assert all(h3.is_valid_cell(h) and h3.get_resolution(h) == 9 for h in df["h3_index"])
     assert (df["h3_padre"] == [h3.cell_to_parent(h, 7) for h in df["h3_index"]]).all()
     assert df["ndvi"].between(0, 1).all() and df["social"].between(0, 1).all()
-    for c in ("arbol_pct", "pasto_pct", "construido_pct"):
+    for c in ("copa_modelo_pct", "arbol_pct", "pasto_pct", "construido_pct"):
         assert df[c].between(0, 100).all(), c
     assert (df["poblacion"] >= 0).all()
+    if "copa_modelo_pct" in df:
+        assert df["copa_modelo_pct"].dropna().between(0, 100).all()
+    if "lst_fecha" in df:
+        assert pd.to_datetime(df["lst_fecha"]).dt.month.isin([12, 1, 2]).all(), "lst_c debe ser de verano"
     return df
 
 
@@ -84,6 +89,11 @@ def main():
     r, ms = revisar_corredor(gs, 3.0)
     assert ms < 300, ms
 
+    # El término de árboles usa la copa del modelo: más copa, menos urgencia.
+    from optimizer import urgencia
+    mas_copa = demo.assign(copa_modelo_pct=demo["copa_modelo_pct"].where(demo.index != demo.index[5], 100.0))
+    assert urgencia(mas_copa).iloc[5] < urgencia(demo).iloc[5] or demo["copa_modelo_pct"].iloc[5] >= 30
+
     # Pesos: se reescalan.
     from optimizer import urgencia
     pd.testing.assert_series_equal(urgencia(demo), urgencia(demo, 4, 4, 2))
@@ -101,6 +111,11 @@ def main():
     t = time.perf_counter()
     assert len(solve_corridor(demo, live=live)["hexes"]) > 0
     assert time.perf_counter() - t < 0.1
+
+    # Modelo de copa: en comunas no vistas debe seguir a Meta mejor que WorldCover.
+    m = json.loads((DATA / "modelo_copa.json").read_text())["hexagono_urbano"]
+    assert m["modelo_2020_comunas_no_vistas_vs_meta_2019"]["r"] > max(0.85, m["worldcover_2021_vs_meta_2019"]["r"])
+    assert abs(m["modelo_2020_comunas_no_vistas_vs_meta_2019"]["sesgo"]) < 1
 
     print(f"OK test_contrato (demo 3 km: {len(r['hexes'])} hex en 34 comunas, {ms:.0f} ms)")
 

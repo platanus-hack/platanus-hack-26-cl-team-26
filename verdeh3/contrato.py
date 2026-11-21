@@ -3,7 +3,8 @@
 python -m verdeh3.contrato          # data/santiago_h3.parquet (par de la demo),
                                          # data/santiago_h3_gs.parquet (34 comunas) y data/santiago_h3_mock.parquet
 
-Requiere antes: verdeh3.pipeline, verdeh3.marcar_gs y verdeh3.worldcover sobre datos/salida_h3_gs.
+Requiere antes: verdeh3.pipeline, verdeh3.marcar_gs, verdeh3.worldcover y verdeh3.censo sobre datos/salida_h3_gs.
+Población: Censo 2024 por manzana (poblacion_censo); si no está, WorldPop (poblacion).
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ PCT_VERDE_PARQUE = 25   # es_parque: toca parque consolidado (>= 5.000 m²) y >=
 RADIO_SOCIAL_M = 1000   # social: promedio de max(0, 1 − distancia/1 km) a colegio, salud, metro y paradero
 CATEGORIAS_SOCIAL = ["educacion", "salud", "metro", "paradero"]
 TIPOS = {"h3_index": "str", "h3_padre": "str", "comuna": "str", "lat": "float64", "lon": "float64", "lst_c": "float64",
-         "ndvi": "float64", "arbol_pct": "float64", "pasto_pct": "float64", "construido_pct": "float64",
+         "ndvi": "float64", "copa_modelo_pct": "float64", "arbol_pct": "float64", "pasto_pct": "float64", "construido_pct": "float64",
          "poblacion": "int64", "social": "float64", "es_parque": "bool"}
 
 
@@ -33,15 +34,26 @@ def armar(origen: Path, comunas: list[str] | None = None) -> pd.DataFrame:
     df = pd.DataFrame({
         "h3_index": t["h3"], "h3_padre": [h3.cell_to_parent(h, 7) for h in t["h3"]], "comuna": t["comuna"], "lat": t["lat"], "lon": t["lng"],
         "lst_c": t["lst_c"], "ndvi": t["ndvi"].clip(0, 1),
-        "arbol_pct": 100 * t["frac_arboles"], "pasto_pct": 100 * t["frac_pasto"],
+        "copa_modelo_pct": t["copa_modelo_pct"], "arbol_pct": 100 * t["frac_arboles"], "pasto_pct": 100 * t["frac_pasto"],
         "construido_pct": 100 * t["frac_construido"],
-        "poblacion": t["poblacion"].fillna(0).round(),
+        "poblacion": t["poblacion_censo" if "poblacion_censo" in t else "poblacion"].fillna(0).round(),
         "social": sum(cerca) / len(cerca),
         "es_parque": (t["n_parques_consolidados"] > 0) & (t["pct_area_verde"] >= PCT_VERDE_PARQUE),
     }).reset_index(drop=True)
+    for c in ("lst_fecha", "lst_c_ultima", "lst_fecha_ultima"):  # extras de verdeh3.landsat, para el mapa
+        if c in t:
+            df[c] = t[c].to_numpy()
     for c in df.columns[df.isna().any()]:  # pocos hexágonos sin píxel válido: mediana de su comuna
         df[c] = df[c].fillna(df.groupby("comuna")[c].transform("median"))
-    return df.round(4).astype(TIPOS)
+    # Extras de árboles, sin rellenar: NaN donde la fuente no se calculó.
+    #   arboles_meta, altura_copa_m, copa_pct_meta: verdeh3.arboles (Meta/WRI, 1 m, imágenes 2019)
+    #   arbol_pct_io_<año>: verdeh3.impact (Impact Observatory/Esri, 10 m)
+    extras = {"n_arboles": "arboles_meta", "altura_copa_m": "altura_copa_m", "copa_pct": "copa_pct_meta"}
+    extras |= {c: c for c in t if c.startswith(("arbol_pct_io_", "copa_modelo_"))}  # verdeh3.modelo_copa
+    for origen, destino in extras.items():
+        if origen in t:
+            df[destino] = t[origen].to_numpy()
+    return df.round(4).astype({**TIPOS, **{c: "str" for c in df if c.startswith("lst_fecha")}})
 
 
 def con_corredor(df: pd.DataFrame, km: float) -> tuple[pd.DataFrame, dict]:
@@ -60,7 +72,7 @@ def mock(df: pd.DataFrame, n: int = 30, semilla: int = 0) -> pd.DataFrame:
     return pd.DataFrame({
         "h3_index": celdas, "h3_padre": [h3.cell_to_parent(c, 7) for c in celdas], "comuna": "Mock", "lat": lat, "lon": lon,
         "lst_c": rng.uniform(30, 45, n), "ndvi": rng.uniform(0.05, 0.6, n),
-        "arbol_pct": arbol, "pasto_pct": rng.uniform(0, 100 - arbol), "construido_pct": rng.uniform(20, 90, n),
+        "copa_modelo_pct": arbol * 0.7, "arbol_pct": arbol, "pasto_pct": rng.uniform(0, 100 - arbol), "construido_pct": rng.uniform(20, 90, n),
         "poblacion": rng.integers(100, 2000, n), "social": rng.uniform(0, 1, n),
         "es_parque": np.isin(np.arange(n), [0, 20, 27]),
     }).round(4).astype(TIPOS)
@@ -85,16 +97,17 @@ def main():
     por = demo.groupby("comuna")
 
     def poca_sombra(d):  # verde para el satélite, pero casi sin árboles
-        return (d["ndvi"] >= 0.3) & (d["arbol_pct"] < 10) & ~d["es_parque"]
+        return (d["ndvi"] >= 0.3) & (d["copa_modelo_pct"] < 5) & ~d["es_parque"]
 
     cifras = {
         "comunas": comunas,
         "lst_c_media": por["lst_c"].mean().round(1).to_dict(),
-        "arbol_pct_medio": por["arbol_pct"].mean().round(1).to_dict(),
+        "copa_modelo_pct_medio": por["copa_modelo_pct"].mean().round(1).to_dict(),
+        "arbol_pct_worldcover_medio": por["arbol_pct"].mean().round(1).to_dict(),
         "pasto_pct_medio": por["pasto_pct"].mean().round(1).to_dict(),
         "urgencia_media": por["urgencia"].mean().round(3).to_dict(),
         "verde_satelite_poca_sombra": {
-            "criterio": "ndvi >= 0,3 y arbol_pct < 10, sin parques",
+            "criterio": "ndvi >= 0,3 y copa_modelo_pct < 5, sin parques",
             "demo": poca_sombra(demo).groupby(demo["comuna"]).sum().to_dict(),
             "gran_santiago": int(poca_sombra(gs).sum()),
             "gran_santiago_pct_de_los_ndvi_alto": round(100 * poca_sombra(gs).sum()

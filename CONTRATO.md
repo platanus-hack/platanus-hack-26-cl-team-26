@@ -16,16 +16,24 @@ Sin nulos y de menos de 5 MB. También existen:
 | `h3_padre` | str | barrio: `h3.cell_to_parent(h3_index, 7)`, llave para unir `live_h3.parquet` | `h3` v4 |
 | `comuna` | str | comuna del centroide | límites comunales |
 | `lat`, `lon` | float | centroide | `h3.cell_to_latlng` |
-| `lst_c` | float | temperatura superficial, °C | Landsat 8/9 C2 L2, verano 2025-26 |
+| `lst_c` | float | temperatura superficial, °C | Landsat 8/9 C2 L2, última escena de verano (dic–feb) con < 10% de nubes |
 | `ndvi` | float 0–1 | vegetación | Sentinel-2 L2A (B08, B04) |
-| `arbol_pct` | float 0–100 | % del hexágono con árboles | ESA WorldCover 2021 v200, clase 10 |
+| `copa_modelo_pct` | float 0–100 | % del hexágono con copa de árboles (≥ 3 m); es el que usa el índice | modelo propio: Sentinel-2 del 6-feb-2026, entrenado con la altura de copa de Meta y WRI (`verdeh3.modelo_copa`) |
+| `arbol_pct` | float 0–100 | % con árboles según WorldCover (referencia, ya no entra al índice) | ESA WorldCover 2021 v200, clase 10 |
 | `pasto_pct` | float 0–100 | % con pastizal | ESA WorldCover, clase 30 |
 | `construido_pct` | float 0–100 | % construido | ESA WorldCover, clase 50 |
-| `poblacion` | int | personas en el hexágono | WorldPop 2020 constrained (el Censo 2024 por manzana aún no está integrado) |
+| `poblacion` | int | personas en el hexágono | Censo 2024 (INE), personas por manzana repartidas por área |
 | `social` | float 0–1 | cercanía a colegios, salud, metro y paraderos: promedio de max(0, 1 − distancia/1 km) | OpenStreetMap |
 | `es_parque` | bool | toca un parque consolidado (≥ 5.000 m²) y ≥ 25% del hexágono es área verde | OpenStreetMap |
 
-Columnas extra (pueden ignorarse): `urgencia` y `en_corredor`, calculadas con los pesos por defecto y 3 km.
+Columnas extra (pueden ignorarse): `urgencia` y `en_corredor`, calculadas con los pesos por defecto y 3 km;
+`lst_fecha` (fecha de la escena de `lst_c`) y `lst_c_ultima` / `lst_fecha_ultima` (escena más reciente
+disponible, solo para mostrar; el índice usa la de verano). Árboles, para mostrar y validar (pueden traer
+NaN donde no se calcularon): `arboles_meta` (árboles estimados), `altura_copa_m` y `copa_pct_meta` del mapa
+de altura de copa de Meta y WRI (1 m, imágenes de oct–nov 2019), y `arbol_pct_io_<año>` de Impact Observatory.
+`copa_modelo_2020_pct` es el % de copa que el modelo predice para 2020 en comunas que no vio al entrenar (validación). Las métricas
+están en `data/modelo_copa.json`: por hexágono urbano, r = 0,92 y error medio de 1,8 puntos contra Meta 2019.
+El mapa 2026 no tiene verdad de terreno de 2026; no usarlo para afirmar que una cuadra ganó o perdió árboles.
 
 ## `optimizer.py` (Rol 1)
 
@@ -45,7 +53,7 @@ Fórmula, con cada término normalizado de 0 a 1 (min-max entre los percentiles 
 ```
 calor    = 0,6·lst_c_norm + 0,4·vivo_norm     (vivo = temp_aire_c del barrio, confianza alta o media)
            sin dato en vivo en esa cuadra, o con menos de dos barrios con dato: calor = lst_c_norm
-falta    = 1 − arbol_pct/100
+falta    = 1 − copa_norm                       (copa_modelo_pct normalizado como los demás términos)
 personas = 0,7·poblacion_norm + 0,3·social
 U        = (w_calor·calor + w_arbol·falta + w_personas·personas) / (w_calor + w_arbol + w_personas)
 ```
@@ -84,6 +92,12 @@ Una fila por barrio (H3 resolución 7), no por cuadra.
 ```bash
 python -m verdeh3.pipeline ...           # grilla, OSM, NDVI, LST y población (ver README)
 python -m verdeh3.marcar_gs              # elevación y marcas
+python -m verdeh3.landsat                # lst_c con la última escena de verano (dic–feb) y lst_fecha
+python -m verdeh3.landsat --modo ultima  # lst_c_ultima con la escena más reciente disponible
 python -m verdeh3.worldcover             # árboles, pasto y construido
+python -m verdeh3.arboles                # árboles estimados con la altura de copa de Meta (baja 332 MB)
+python -m verdeh3.modelo_copa            # modelo propio de copa: entrena con Meta 2019 y predice 2026 (~3 min)
+python -m verdeh3.impact                 # % de árboles Impact Observatory, año más reciente y 2021
+python -m verdeh3.censo                  # población Censo 2024 (zip del INE descomprimido en cache/censo2024/)
 python -m verdeh3.contrato               # los tres parquet y data/cifras_pitch.json
 ```

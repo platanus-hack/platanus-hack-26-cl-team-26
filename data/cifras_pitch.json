@@ -4,10 +4,14 @@
     "Cerro Navia"
   ],
   "lst_c_media": {
-    "Cerro Navia": 37.0,
-    "Providencia": 33.8
+    "Cerro Navia": 38.9,
+    "Providencia": 35.1
   },
-  "arbol_pct_medio": {
+  "copa_modelo_pct_medio": {
+    "Cerro Navia": 5.0,
+    "Providencia": 13.0
+  },
+  "arbol_pct_worldcover_medio": {
     "Cerro Navia": 5.6,
     "Providencia": 21.9
   },
@@ -16,44 +20,44 @@
     "Providencia": 1.7
   },
   "urgencia_media": {
-    "Cerro Navia": 0.735,
-    "Providencia": 0.541
+    "Cerro Navia": 0.716,
+    "Providencia": 0.484
   },
   "verde_satelite_poca_sombra": {
-    "criterio": "ndvi >= 0,3 y arbol_pct < 10, sin parques",
+    "criterio": "ndvi >= 0,3 y copa_modelo_pct < 5, sin parques",
     "demo": {
       "Cerro Navia": 0,
-      "Providencia": 2
+      "Providencia": 0
     },
-    "gran_santiago": 1063,
-    "gran_santiago_pct_de_los_ndvi_alto": 29.9,
+    "gran_santiago": 330,
+    "gran_santiago_pct_de_los_ndvi_alto": 9.3,
     "gran_santiago_top": {
-      "Lo Barnechea": 221,
-      "Maipú": 185,
-      "San Bernardo": 159,
-      "Pudahuel": 112,
-      "La Florida": 73
+      "Maipú": 127,
+      "San Bernardo": 88,
+      "Pudahuel": 48,
+      "La Pintana": 24,
+      "Huechuraba": 10
     }
   },
   "corredor": {
     "km": 2.78,
     "hexagonos": 8,
-    "tramos": 5,
+    "tramos": 4,
     "por_comuna": {
       "Cerro Navia": 8
     },
-    "urgencia_cubierta": 0.775,
-    "urgencia_azar": 0.671,
-    "personas_cubiertas": 9735,
-    "personas_azar": 7506
+    "urgencia_cubierta": 0.754,
+    "urgencia_azar": 0.635,
+    "personas_cubiertas": 13295,
+    "personas_azar": 8334
   },
   "corredor_gran_santiago": {
     "por_comuna": {
-      "Maipú": 8
+      "Pudahuel": 8
     },
-    "urgencia_cubierta": 0.791,
-    "urgencia_azar": 0.594,
-    "personas_cubiertas": 18379,
-    "personas_azar": 5579
+    "urgencia_cubierta": 0.726,
+    "urgencia_azar": 0.566,
+    "personas_cubiertas": 10023,
+    "personas_azar": 7002
   }
 }

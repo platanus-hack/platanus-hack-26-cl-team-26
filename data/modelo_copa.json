@@ -1,0 +1,91 @@
+{
+  "pasadas": {
+    "entrena": "2020-02-08",
+    "actual": "2026-02-06"
+  },
+  "variables": [
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B8A",
+    "B11",
+    "B12",
+    "ndvi",
+    "ndmi",
+    "ndre",
+    "textura_nir_3x3",
+    "ndvi_vecindad_5x5"
+  ],
+  "muestra_entrenamiento": 600000,
+  "pixel_10m_comunas_no_vistas": {
+    "n": 11984150,
+    "r": 0.699,
+    "r2": 0.489,
+    "mae": 7.35,
+    "sesgo": 0.08
+  },
+  "hexagono_urbano": {
+    "modelo_2020_comunas_no_vistas_vs_meta_2019": {
+      "n": 10720,
+      "r": 0.923,
+      "r2": 0.851,
+      "mae": 1.78,
+      "sesgo": 0.04
+    },
+    "worldcover_2021_vs_meta_2019": {
+      "n": 10720,
+      "r": 0.836,
+      "r2": -1.727,
+      "mae": 7.06,
+      "sesgo": 4.62
+    },
+    "modelo_2026_vs_meta_2019": {
+      "n": 10720,
+      "r": 0.838,
+      "r2": 0.7,
+      "mae": 2.49,
+      "sesgo": 0.34
+    },
+    "modelo_2026_vs_modelo_2020": {
+      "n": 10720,
+      "r": 0.912,
+      "r2": 0.829,
+      "mae": 1.61,
+      "sesgo": 0.3
+    }
+  },
+  "control_etiqueta_10m_vs_1m_por_hexagono_r": 1.0,
+  "mediana_2026_sobre_2020_por_banda": {
+    "B02": 0.947,
+    "B03": 0.978,
+    "B04": 0.965,
+    "B05": 1.003,
+    "B06": 1.056,
+    "B07": 1.058,
+    "B08": 1.03,
+    "B8A": 1.068,
+    "B11": 1.011,
+    "B12": 0.962
+  },
+  "demo_por_comuna_pct": {
+    "Cerro Navia": {
+      "copa_pct": 5.93,
+      "copa_modelo_2020_pct": 5.58,
+      "copa_modelo_pct": 5.0
+    },
+    "Providencia": {
+      "copa_pct": 15.6,
+      "copa_modelo_2020_pct": 14.5,
+      "copa_modelo_pct": 12.96
+    }
+  },
+  "copa_media_urbana_pct": {
+    "meta_2019": 6.04,
+    "modelo_2020": 6.08,
+    "modelo_2026": 6.38
+  }
+}

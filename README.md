@@ -60,15 +60,20 @@ NDVI: mosaico de `S2A_MSIL2A_20260206T144901_R096_T19HCD` y `..._T19HCC` (2026-0
 Advertencias:
 
 - Para sacar el cerro usa `precordillera`; `baja_poblacion` también atrapa parques, aeropuerto e industrias.
-- WorldPop 2020 constrained reparte mal la población entre comunas (Maipú 1,58 M, Puente Alto 1,13 M,
+- El contrato v3 usa el Censo 2024 (`poblacion_censo`). WorldPop 2020 constrained (`poblacion`) reparte mal la población entre comunas (Maipú 1,58 M, Puente Alto 1,13 M,
   Santiago 135 k; total 7,6 M). Sirve para comparar densidades, no para cifras por comuna.
 
 ## Contrato v3 y optimizador (Rol 1)
 
-Ver `CONTRATO.md`. Comunas de la demo: Providencia y Cerro Navia.
+Ver `CONTRATO.md` y `NOTAS PITCH.md` (cifras verificadas y límites del modelo). Comunas de la demo: Providencia y Cerro Navia.
 
 ```bash
+python -m verdeh3.landsat       # lst_c con la última escena de verano (dic-feb); --modo ultima agrega la más reciente
 python -m verdeh3.worldcover    # árboles, pasto y construido (ESA WorldCover 2021) en datos/salida_h3_gs
+python -m verdeh3.censo         # población Censo 2024 por manzana (zip del INE en cache/censo2024/, no versionado)
+python -m verdeh3.arboles       # árboles estimados con la altura de copa de Meta y WRI (baja 332 MB a cache/)
+python -m verdeh3.modelo_copa   # modelo propio de copa: Sentinel-2 entrenado con Meta; el índice usa su copa_modelo_pct
+python -m verdeh3.impact        # % de árboles de Impact Observatory (solo comparación)
 python -m verdeh3.contrato      # data/santiago_h3.parquet, _mock, _gs (34 comunas) y data/cifras_pitch.json
 python -m tests.test_contrato
 ```
