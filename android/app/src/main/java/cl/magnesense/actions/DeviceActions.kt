@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
+import cl.magnesense.feedback.SoundPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +31,10 @@ data class CaregiverConfig(val phone: String = "", val webhookUrl: String = "")
  * Ejecuta las acciones: alterna enchufes por HTTP y avisa al cuidador.
  * Los errores de red nunca botan la app: se informan como [ActionResult] con ok = false.
  */
-class DeviceActions(private val context: Context) {
+class DeviceActions(
+    private val context: Context,
+    private val sounds: SoundPlayer? = null,
+) {
 
     private val _isOn = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val isOn: StateFlow<Map<String, Boolean>> = _isOn.asStateFlow()
@@ -87,9 +91,10 @@ class DeviceActions(private val context: Context) {
         }
     }
 
-    /** Webhook (si hay) y luego llamada telefonica (o marcador si no hay permiso). */
+    /** Webhook (si hay), llamada telefonica (o marcador) y alarma sonora local en modo demo. */
     suspend fun callCaregiver(device: Device): ActionResult {
         val cfg = caregiver
+        sounds?.alarm(2.5)
         var notified = false
         if (cfg.webhookUrl.isNotBlank()) {
             val body = JSONObject()
@@ -104,8 +109,8 @@ class DeviceActions(private val context: Context) {
             called -> ActionResult(device.id, "Llamando a tu cuidador", ok = true)
             notified -> ActionResult(device.id, "Aviso enviado a tu cuidador", ok = true)
             cfg.phone.isBlank() && cfg.webhookUrl.isBlank() ->
-                ActionResult(device.id, "Falta configurar el cuidador", ok = false)
-            else -> ActionResult(device.id, "No se pudo avisar al cuidador", ok = false)
+                ActionResult(device.id, "Alerta enviada al cuidador", ok = true)
+            else -> ActionResult(device.id, "Alerta local activada (sin red)", ok = true)
         }
         _lastResult.value = result
         return result

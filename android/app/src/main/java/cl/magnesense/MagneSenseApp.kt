@@ -103,7 +103,7 @@ class MagneSenseApp : Application() {
         access = AccessController(
             scope = scope,
             detectorEvents = engine.events,
-            actions = DeviceActions(this),
+            actions = DeviceActions(this, sounds),
             speaker = speaker,
             haptics = Haptics(this),
         )

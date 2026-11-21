@@ -87,7 +87,7 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
     val onThreshold: Double
         get() {
             val c = config
-            val fromPeak = magnet?.let { c.peakFraction * it.medianPeak } ?: 0.0
+            val fromPeak = magnet?.let { min(c.peakFraction * it.medianPeak, c.maxAutoOnThreshold) } ?: 0.0
             val base = max(c.kSigma * noise, fromPeak) / c.sensitivity.coerceAtLeast(0.05)
             return max(base, c.minOnThreshold)
         }
@@ -186,7 +186,7 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
     fun recenterBaseline() {
         val current = smooth ?: return
         baseline = current
-        if (noise <= 0.0) noise = config.noiseFloor
+        if (noise <= 0.0) noise = max(config.noiseFloor, 0.5)
         signal = 0.0
         cosine = Double.NaN
         if (currentState == DetectorState.UNCALIBRATED || currentState == DetectorState.PAUSED ||

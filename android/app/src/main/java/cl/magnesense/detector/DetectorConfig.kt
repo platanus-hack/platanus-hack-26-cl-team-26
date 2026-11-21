@@ -20,9 +20,10 @@ data class DetectorConfig(
     val magnetPeakMinSigma: Double = 8.0,
     val magnetPeakMin: Double = 3.0,
 
-    // --- Umbrales: on = max(kSigma·σ, peakFraction·pico mediano, minOn) / sensibilidad ---
+    // --- Umbrales: on = max(kSigma·σ, min(peakFraction·pico mediano, maxAutoOnThreshold), minOn) / sensibilidad ---
     val kSigma: Double = 6.0,
     val peakFraction: Double = 0.5,
+    val maxAutoOnThreshold: Double = 18.0,
     val minOnThreshold: Double = 1.0,
     val offRatio: Double = 0.5,
     /** > 1 baja el umbral (mas sensible), < 1 lo sube. Nunca baja de [minOnThreshold]. */
