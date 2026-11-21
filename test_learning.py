@@ -157,3 +157,74 @@ def test_plan_receives_the_analysis():
     sent = json.loads(fake.calls[0][0]["content"])
     g = sent["analisis"]["etiquetas"]["girar_der"]
     assert g["vistos"] == 0 and "acerca el iman" in g["problema"].lower()
+
+
+# --- "girar" contra acercar o mover recto: contraejemplos "otros" -------------
+
+def twist(sign, deg=None):
+    """Girar la muñeca: el iman se inclina y vuelve, en el mismo lugar."""
+    deg = deg if deg is not None else rng.uniform(45, 70)
+    pos = np.array([0.008, 0.0, 0.035]) + rng.normal(0, 0.001, 3)
+    n = int(rng.uniform(0.6, 0.9) * FS)
+    th = np.radians(sign * deg) * np.concatenate([np.linspace(0, 1, n // 2), np.linspace(1, 0, n - n // 2)])
+    m0 = 0.01
+    base = dipole(pos, np.array([0, 0, m0]))
+    return [dipole(pos, m0 * np.array([np.sin(a), 0.0, np.cos(a)])) - base for a in th]
+
+
+def approach():
+    """Acercar el iman al celular y alejarlo, sin girarlo."""
+    n = int(rng.uniform(0.6, 0.9) * FS)
+    z = 0.035 + 0.02 * np.concatenate([np.linspace(1, 0, n // 2), np.linspace(0, 1, n - n // 2)])
+    base = dipole(np.array([0.008, 0, 0.035]), np.array([0, 0, 0.01]))
+    return [dipole(np.array([0.008, 0, zz]), np.array([0, 0, 0.01])) - base for zz in z]
+
+
+def straight(sign):
+    """Mover el iman recto hacia un lado y volver, sin girarlo."""
+    n = int(rng.uniform(0.6, 0.9) * FS)
+    x = sign * 0.012 * np.concatenate([np.linspace(0, 1, n // 2), np.linspace(1, 0, n - n // 2)])
+    base = dipole(np.array([0.008, 0, 0.035]), np.array([0, 0, 0.01]))
+    return [dipole(np.array([0.008 + xx, 0, 0.035]), np.array([0, 0, 0.01])) - base for xx in x]
+
+
+def live_fires(ph, name, moves):
+    before = hits(name)
+    out = []
+    for mv in moves:
+        ph.rest(0.4)
+        ph.send(mv)
+        ph.rest(2.0)
+        now = hits(name)
+        out.append(now - before)
+        before = now
+    return out
+
+
+def test_otros_stop_false_activations_of_a_twist():
+    distractors = [approach, lambda: straight(-1), lambda: straight(+1), lambda: twist(-1)]
+    # 1) Solo el gesto: se activa con movimientos que no son el gesto (el problema reportado)
+    ph = Phone()
+    ph.rest(3)
+    for _ in range(5):
+        ph.record("girar_izq", twist(+1))
+    r = train(ph, "girar_izq").json()
+    assert r["ok"], r
+    assert any("otros" in a for a in r["info"]["avisos"])           # el analisis lo advierte
+    alone = live_fires(ph, "girar_izq", [d() for d in distractors for _ in range(2)])
+    assert sum(alone) >= 2, alone
+
+    # 2) Con contraejemplos "otros": ya no se activa con ellos y sigue reconociendo el giro
+    ph = Phone()
+    ph.rest(3)
+    for _ in range(5):
+        ph.record("girar_izq", twist(+1))
+    for mv in (approach(), straight(-1), straight(+1), twist(-1), approach()):
+        ph.record("otros", mv)
+    assert train(ph, "otros").status_code == 400                  # "otros" no es un gesto
+    r = train(ph, "girar_izq").json()
+    assert r["ok"], r                       # el modelo lo elige el servidor; importa el resultado
+    false_fires = live_fires(ph, "girar_izq", [d() for d in distractors for _ in range(2)])
+    true_fires = live_fires(ph, "girar_izq", [twist(+1) for _ in range(5)])
+    assert sum(false_fires) <= 1, false_fires
+    assert sum(true_fires) >= 3, true_fires          # prefiere no activarse si duda

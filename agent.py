@@ -46,6 +46,10 @@ una instruccion que muestre el movimiento de forma visual y corta, con flechas, 
 "Mueve el iman IZQUIERDA ➜ DERECHA" o "Mueve el iman DERECHA ➜ IZQUIERDA". Antes de grabar, \
 pide dejar el telefono quieto y apoyado. Si un intento no se vio, repitelo o pide acercar el \
 iman. (Los ejemplos tambien se pueden grabar desde la app o el panel.)
+   Graba tambien, una vez, 4 intentos con la etiqueta "otros": movimientos que NO deben activar \
+nada (instruccion: "Haz algo que NO sea el gesto: acerca el iman, muevelo recto, toca el \
+celular"). Sin eso el gesto se puede activar con cualquier movimiento. Nunca crees un detector \
+para "otros" ni lo conectes a una accion.
 2. Elige el tipo de detector segun lo que importa del movimiento y crealo con crear_detector:
    - trayectoria: cuando importa el sentido u orden del movimiento (izquierda/derecha, subir/\
 bajar, girar, un trazo). Una etiqueta por movimiento, grabadas por separado. Calidad buena: \
@@ -241,6 +245,16 @@ mencionalos en una frase.
 - Si "pares" muestra que dos movimientos se confunden, dilo y pide regrabarlos mas distintos.
 - Si una etiqueta no aparece en el analisis, todavia no tiene ejemplos: empieza por record.
 
+Contraejemplos "otros" (MUY importante para que el gesto no se active con cualquier cosa):
+- Si analisis.hay_otros no es true, agrega SIEMPRE un paso record con label "otros", count 4 y \
+detector_type "event", antes de los pasos train. En reply pide grabar 4 movimientos que NO deben \
+activar nada, parecidos a lo que puede pasar sin querer: acercar el iman, moverlo recto a un \
+lado y al otro, rascarse, tocar el celular.
+- Nunca propongas train ni bind para "otros": el servidor los usa solo para comparar.
+- Para cada intento del gesto pide: el celular apoyado sin tocarlo, siempre la misma distancia, \
+y terminar volviendo a la posicion inicial. Si el analisis avisa "no volvio a su lugar" o "la \
+fuerza cambia mucho", dilo en reply y propone regrabar.
+
 reply: espanol de Chile, 1 a 3 frases cortas (se lee en voz alta), sin markdown. Explica que \
 hacer: por ejemplo "Graba 5 veces el giro a la derecha y despues toca Hacer en cada paso."
 Llena con null los campos que un paso no usa."""
@@ -285,6 +299,9 @@ def clean_steps(steps: list, context: dict) -> list[dict]:
             continue
         s = {k: v for k, v in s.items() if v is not None}
         t = s.get("type")
+        target = s.get("label") or s.get("name") or s.get("detector") or ""
+        if t in ("train", "bind") and analysis_mod.is_negative(target):
+            continue                  # "otros" son contraejemplos: nunca se entrenan ni enlazan
         if t == "record":
             if not s.get("label"):
                 continue

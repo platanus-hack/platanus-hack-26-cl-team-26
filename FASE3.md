@@ -22,6 +22,24 @@ El usuario solo pide algo ("girar hacia la derecha prende y apaga la luz") y gra
    - **patrón** (`trajectory.py`): compara la forma completa del movimiento contra **todos** los movimientos grabados. Sirve cuando dos movimientos empujan parecido pero en otro orden: girar a un lado u otro, o barrer de izquierda a derecha o al revés.
 3. **Hacia la app, todo es un detector `event` normal.** La app Android no necesita cambios: manda `/train` con `type: "event"` y el servidor elige.
 
+### Contraejemplos "otros" y giro
+
+- **Contraejemplos:** la etiqueta **`otros`** son movimientos que **no** deben activar nada: acercar el imán, moverlo recto, tocar el celular. Nunca se entrenan como gesto (`/train` los rechaza). El detector de patrón los usa para comparar: si un movimiento se parece más a "otros" que al gesto, no se activa. Cuando hay contraejemplos, el servidor usa siempre *patrón*, porque el modelo de dirección no puede aprender de ellos. El agente pide grabar 4 contraejemplos automáticamente si faltan.
+- **Rasgo de giro:** además de la forma, el detector mide **cuánto gira el vector del campo** (eje × ángulo). Girar el imán lo hace rotar; acercarlo o moverlo recto, mucho menos.
+- **Ventana fija:** se decide en una ventana desde el inicio del movimiento, aprendida de los ejemplos (0,4 a 1,6 s). La misma ventana se usa al entrenar y en vivo, así que funciona aunque el imán no vuelva a su lugar. Si queda desplazado, esa posición pasa a ser el reposo.
+- **Frecuencia por ejemplo:** cada ejemplo guarda su propia frecuencia de muestreo, para que la ventana no se distorsione si el reloj del teléfono salta.
+- **Revisiones nuevas del análisis:**
+  - si el imán no volvió a su lugar (↩ en el panel),
+  - si la fuerza cambia más de 4 veces entre intentos (distinta distancia),
+  - el giro de cada ejemplo (↻ en el panel).
+
+**Medir con sesiones reales:**
+```
+python replay_learning.py data/session_X.csv
+python replay_learning.py data/session_X.csv --otros derecha
+```
+El primero reproduce la sesión por el pipeline del servidor, entrena como `/train` y cuenta las activaciones dentro y fuera de cada grabación. El segundo trata una etiqueta grabada como "otros".
+
 El agente recibe este análisis (en el modo de la app, en el campo `analisis`). Así explica en palabras simples qué vio el sensor y propone regrabar en vez de crear un detector que no sirve.
 
 - `GET /examples/analysis`: el diagnóstico completo.

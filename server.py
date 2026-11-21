@@ -33,7 +33,7 @@ from actions import ActionError, Engine
 from agent import Agent, Context
 from detectors import Bank, DirectionModel, EventDetector, RhythmDetector, StateDetector
 import analysis
-from trajectory import PatternDetector, TrajectoryDetector
+from trajectory import PatternDetector, TrajectoryDetector, is_negative
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 SOUNDS_DIR = Path(__file__).resolve().parent / "sounds"
@@ -325,7 +325,7 @@ app = FastAPI(title="MagneSense")
 det = Detector()
 bank = Bank()                       # detectores fase 2 (vacio = manda la fase 1)
 examples: dict[str, list[dict]] = {}   # etiqueta -> [{"delta": arr, "smooth": arr}]
-rec = {"label": "", "base": None, "delta": [], "smooth": [], "moving": []}
+rec = {"label": "", "base": None, "delta": [], "smooth": [], "moving": [], "t": []}
 clients: set[WebSocket] = set()
 recent_times: deque[float] = deque(maxlen=2000)   # para frecuencia de muestreo
 app_events: deque[dict] = deque(maxlen=200)       # eventos recibidos de la app Android
@@ -446,6 +446,7 @@ async def data(request: Request):
         if rec["label"] and p.smooth is not None:
             rec["smooth"].append(p.smooth.tolist())
             rec["moving"].append(bool(moving))
+            rec["t"].append(s["t"])
             base = rec["base"] if rec["base"] is not None else p.smooth
             rec["delta"].append((vr - base).tolist())
         recent_times.append(s["t"])
@@ -493,7 +494,7 @@ def _record_start(label: str):
     p = bank.pipeline
     base = p.baseline if p.baseline is not None else (det.baseline and np.array(det.baseline))
     rec.update(label=label, base=None if base is None else np.array(base, float), delta=[], smooth=[],
-               moving=[])
+               moving=[], t=[])
 
 
 async def _record_stop() -> dict:
@@ -505,8 +506,11 @@ async def _record_stop() -> dict:
     if len(rec["smooth"]) >= 3:
         ex = {"delta": np.array(rec["delta"]), "smooth": np.array(rec["smooth"]),
               "moving": np.array(rec["moving"], bool)}
+        ts = rec["t"]
+        if len(ts) >= 2 and ts[-1] > ts[0]:
+            ex["rate"] = (len(ts) - 1) / (ts[-1] - ts[0])   # medida en el propio ejemplo
         examples.setdefault(label, []).append(ex)
-    rec.update(label="", base=None, delta=[], smooth=[], moving=[])
+    rec.update(label="", base=None, delta=[], smooth=[], moving=[], t=[])
     n = len(examples.get(label, []))
     await broadcast(dict(_panel_state(), type="state"))
     return {"ok": True, "label": label, "examples": n, "example": ex}
@@ -573,7 +577,7 @@ async def _train(cfg: dict) -> dict:
             raise ValueError(f"no hay ejemplos de: {', '.join(missing) or 'ninguna etiqueta'}")
         d = TrajectoryDetector(cfg.get("name", "movimiento")).fit(
             {lab: [e["delta"] for e in examples[lab]] for lab in labels},
-            noise=bank.pipeline.noise or 0.2)
+            noise=bank.pipeline.noise or 0.2, rate=_examples_rate())
         bank.add(d, action=action)
         info = d.quality()
     else:
@@ -582,9 +586,16 @@ async def _train(cfg: dict) -> dict:
     return {"ok": True, "detector": d.name, "info": info}
 
 
+def _examples_rate() -> float:
+    """Frecuencia de muestreo de los ejemplos, medida en ellos mismos. No depende de la
+    frecuencia global, que se distorsiona si el reloj del telefono salta (reconexion)."""
+    rates = [e["rate"] for exs in examples.values() for e in exs if e.get("rate")]
+    return float(np.median(rates)) if rates else (sample_rate() or 50.0)
+
+
 def _analysis() -> dict:
     noise = bank.pipeline.noise or det.noise or 0.2
-    return analysis.analyze(examples, noise, sample_rate() or 50.0)
+    return analysis.analyze(examples, noise, _examples_rate())
 
 
 def _train_event(cfg: dict):
@@ -596,6 +607,9 @@ def _train_event(cfg: dict):
     forma completa del movimiento contra todos los grabados.
     """
     label = cfg["label"]
+    if is_negative(label):
+        raise ValueError(f"'{label}' son contraejemplos (movimientos que NO deben activar): no se "
+                         "entrenan como gesto, se usan para que los demas gestos no se confundan")
     if not examples.get(label):
         raise ValueError(f"no hay ejemplos de '{label}'")
     an = _analysis()
@@ -612,7 +626,8 @@ def _train_event(cfg: dict):
         d = EventDetector(name, direction=dm, min_on=float(cfg.get("min_on_ms", 150)) / 1000)
         info = {"consistency": round(dm.consistency(exs), 3), **dm.to_dict()}
     else:
-        d = PatternDetector(name, target=label).fit(seen, noise=bank.pipeline.noise or 0.2)
+        d = PatternDetector(name, target=label).fit(seen, noise=bank.pipeline.noise or 0.2,
+                                                    rate=_examples_rate())
         q = d.quality()
         info = {"consistency": q.get("acierto_dejando_uno_fuera"), "separation": q.get("separacion"),
                 "rivales": [lab for lab in seen if lab != label]}
@@ -1044,10 +1059,10 @@ const MODELN={direccion:'direccion del empuje',patron:'patron (forma del movimie
 function renderDiag(a){const E=Object.entries(a.etiquetas||{});
  if(!E.length){$('diag').innerHTML='<div class="muted">Sin ejemplos grabados.</div>';return}
  $('diag').innerHTML='<div class="muted">Umbral '+a.umbral_uT+' µT (6 x ruido '+a.ruido_uT+' µT) · '+a.muestreo_hz+' Hz</div>'+
-  E.map(([k,i])=>'<div class="diag'+(i.problema?' bad':'')+'"><b>'+esc(k)+'</b> · se vieron '+i.vistos+' de '+i.ejemplos+
+  E.map(([k,i])=>'<div class="diag'+(i.problema?' bad':'')+'"><b>'+esc(k)+'</b>'+(i.contraejemplos?' <span class="tag">contraejemplos</span>':'')+' · se vieron '+i.vistos+' de '+i.ejemplos+
    (i.modelo_sugerido?' · modelo: '+esc(MODELN[i.modelo_sugerido]||i.modelo_sugerido):'')+
    (i.parecido_direccion!=null?' · parecido '+i.parecido_direccion:'')+'<br>'+
-   i.detalle.map(e=>'<span class="pk '+(e.se_vio?'ok':'no')+'" title="'+(e.cortado_al_final?'cortado al final ':'')+(e.celular_movido>0.2?'celular movido':'')+'">'+e.pico_uT+' µT'+(e.cortado_al_final?' ✂':'')+(e.celular_movido>0.2?' 📱':'')+'</span>').join('')+
+   i.detalle.map(e=>'<span class="pk '+(e.se_vio?'ok':'no')+'" title="'+(e.cortado_al_final?'cortado al final ':'')+(e.celular_movido>0.2?'celular movido':'')+'">'+e.pico_uT+' µT'+(e.cortado_al_final?' ✂':'')+(e.se_vio&&e.volvio_al_reposo===false?' ↩':'')+(e.celular_movido>0.2?' 📱':'')+(e.giro_grados?' ↻'+e.giro_grados+'°':'')+'</span>').join('')+
    (i.problema?'<div class="warn">'+esc(i.problema)+'</div>':'')+
    (i.avisos||[]).map(w=>'<div class="warn">'+esc(w)+'</div>').join('')+'</div>').join('')+
   (a.pares||[]).map(p=>'<div class="muted">'+esc(p.a)+' vs '+esc(p.b)+': direcciones '+(p.coseno_direcciones>=0.6?'parecidas':'distintas')+' ('+p.coseno_direcciones+')'+
