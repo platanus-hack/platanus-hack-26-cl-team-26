@@ -1,0 +1,71 @@
+package cl.magnesense.data
+
+import cl.magnesense.actions.Device
+import cl.magnesense.detector.DetectorConfig
+
+/** Todo lo que el cuidador puede configurar. */
+data class AppSettings(
+    val devices: List<Device> = Device.DEFAULTS,
+    val scanStepMs: Long = 2_000,
+    /** 0.5 (menos sensible) .. 2.0 (mas sensible). */
+    val sensitivity: Double = 1.0,
+    val holdMs: Long = 300,
+    val caregiverPhone: String = "",
+    val caregiverWebhook: String = "",
+    /** Base del servidor (p. ej. http://192.168.1.20:8000); vacio = sin telemetria. */
+    val serverUrl: String = "",
+    val startOnBoot: Boolean = false,
+    val voiceEnabled: Boolean = true,
+    val tuning: DetectionTuning = DetectionTuning(),
+    val activationMode: ActivationMode = ActivationMode.SCANNING,
+    /** Gesto aprendido (nombre del detector en el servidor) -> id de dispositivo, [BIND_SCAN] o [BIND_NONE]. */
+    val gestureBindings: Map<String, String> = emptyMap(),
+) {
+    companion object {
+        const val BIND_SCAN = "scan"
+        const val BIND_NONE = "none"
+    }
+}
+
+/** Como se activan las opciones. */
+enum class ActivationMode(val label: String, val description: String) {
+    SCANNING("Escaneo con un gesto", "Funciona sin internet: un gesto inicia el escaneo y otro elige."),
+    GESTURES("Gestos aprendidos", "Cada gesto enseñado hace una acción directa. Necesita el servidor; sin él vuelve al escaneo."),
+}
+
+/**
+ * Ajuste fino del detector (pantalla Debug). Los valores por defecto son los de [DetectorConfig].
+ */
+data class DetectionTuning(
+    /** Minimo absoluto (µT) que debe superar cada acercamiento al calibrar el iman. */
+    val peakMin: Double = DEFAULTS.magnetPeakMin,
+    /** ...y en multiplos del ruido σ. Se usa el mayor de los dos. */
+    val peakMinSigma: Double = DEFAULTS.magnetPeakMinSigma,
+    /** Umbral de activacion en multiplos de σ. */
+    val kSigma: Double = DEFAULTS.kSigma,
+    /** Umbral de activacion como fraccion del pico calibrado. */
+    val peakFraction: Double = DEFAULTS.peakFraction,
+    /** Piso del umbral de activacion (µT). */
+    val minOn: Double = DEFAULTS.minOnThreshold,
+    /** Coseno minimo con la direccion calibrada. */
+    val minCosine: Double = DEFAULTS.minCosine,
+    /** false = cualquier campo fuerte activa, sin revisar la direccion. */
+    val directionCheck: Boolean = DEFAULTS.directionCheck,
+    /** true = el iman dado vuelta tambien activa. */
+    val acceptReversed: Boolean = DEFAULTS.acceptReversed,
+) {
+    fun applyTo(c: DetectorConfig) = c.copy(
+        magnetPeakMin = peakMin,
+        magnetPeakMinSigma = peakMinSigma,
+        kSigma = kSigma,
+        peakFraction = peakFraction,
+        minOnThreshold = minOn,
+        minCosine = minCosine,
+        directionCheck = directionCheck,
+        acceptReversed = acceptReversed,
+    )
+
+    private companion object {
+        val DEFAULTS = DetectorConfig()
+    }
+}
