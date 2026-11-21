@@ -21,8 +21,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -49,6 +47,7 @@ import cl.magnesense.ui.components.BigOutlineButton
 import cl.magnesense.ui.components.Panel
 import cl.magnesense.ui.components.ScreenColumn
 import cl.magnesense.ui.components.SectionTitle
+import cl.magnesense.ui.components.Toggle
 import cl.magnesense.ui.theme.Palette
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -232,18 +231,6 @@ private fun Field(label: String, value: String, keyboard: KeyboardType = Keyboar
         ),
         modifier = Modifier.fillMaxWidth(),
     )
-}
-
-@Composable
-private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = Palette.Text, modifier = Modifier.weight(1f))
-        Switch(
-            checked = checked,
-            onCheckedChange = onChange,
-            colors = SwitchDefaults.colors(checkedTrackColor = Palette.Highlight, checkedThumbColor = Palette.OnHighlight),
-        )
-    }
 }
 
 @Composable

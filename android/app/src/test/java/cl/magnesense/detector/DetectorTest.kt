@@ -142,6 +142,66 @@ class DetectorTest {
     }
 
     @Test
+    fun approachFromSlightlyDifferentAngleStillActivates() {
+        calibrate()
+        sim.run(1.0)
+        // Dedo 1 cm al lado o iman algo girado: el campo llega rotado 40° (cos ≈ 0,77).
+        sim.run(1.0) { rotZ(magnetDir, 40.0) * 30.0 }
+        sim.run(1.0)
+        assertEquals(1, sim.count(EventType.ACTIVATED))
+        assertEquals(0, sim.count(EventType.IGNORED))
+    }
+
+    @Test
+    fun reversedMagnetNeedsOptIn() {
+        calibrate()
+        sim.run(1.0)
+        sim.run(1.0) { magnetDir * -30.0 }
+        sim.run(1.0)
+        assertEquals(0, sim.count(EventType.ACTIVATED))
+        assertEquals(1, sim.count(EventType.IGNORED))
+        sim.detector.config = sim.detector.config.copy(acceptReversed = true)
+        sim.run(1.0) { magnetDir * -30.0 }
+        sim.run(1.0)
+        assertEquals(1, sim.count(EventType.ACTIVATED))
+    }
+
+    @Test
+    fun directionCheckCanBeDisabled() {
+        calibrate()
+        sim.detector.config = sim.detector.config.copy(directionCheck = false)
+        sim.run(1.0)
+        sim.run(1.0) { Vec3(-0.3, 0.2, 1.0).normalized() * 40.0 }
+        sim.run(1.0)
+        assertEquals(1, sim.count(EventType.ACTIVATED))
+        assertEquals(0, sim.count(EventType.IGNORED))
+    }
+
+    @Test
+    fun widelyVaryingCalibrationLoosensTheCone() {
+        sim.detector.startRestCalibration()
+        sim.run(10.5)
+        sim.detector.startMagnetCalibration()
+        for (angle in listOf(55.0, -55.0, 55.0, -55.0, 55.0)) {
+            sim.run(0.6) { rotZ(magnetDir, angle) * 30.0 }
+            sim.run(0.8)
+        }
+        assertEquals(DetectorState.REST, sim.detector.state)
+        assertTrue("cono ${sim.detector.effectiveMinCosine}", sim.detector.effectiveMinCosine < 0.3)
+        sim.events.clear()
+        // 76° respecto de la direccion media: fuera del cono por defecto, dentro del aprendido.
+        sim.run(1.0)
+        sim.run(1.0) { rotZ(magnetDir, -60.0) * 30.0 }
+        sim.run(1.0)
+        assertEquals(1, sim.count(EventType.ACTIVATED))
+    }
+
+    private fun rotZ(v: Vec3, degrees: Double): Vec3 {
+        val a = Math.toRadians(degrees)
+        return Vec3(v.x * kotlin.math.cos(a) - v.y * kotlin.math.sin(a), v.x * kotlin.math.sin(a) + v.y * kotlin.math.cos(a), v.z)
+    }
+
+    @Test
     fun weakMagnetCalibratesWhenPeakThresholdIsLowered() {
         sim.detector.startRestCalibration()
         sim.run(10.5)

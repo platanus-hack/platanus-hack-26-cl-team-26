@@ -42,6 +42,8 @@ data class MagnetCalibration(
     /** Coseno medio entre cada pico y la direccion media: 1 = siempre igual. */
     val consistency: Double,
     val peaks: List<Double>,
+    /** Coseno del acercamiento mas desviado respecto de la direccion media. */
+    val minPeakCosine: Double = consistency,
 )
 
 /** Lo que se guarda para no recalibrar cada vez que se abre la app. */
@@ -57,6 +59,10 @@ data class DetectorStatus(
     val signal: Double = 0.0,
     /** Coseno con la direccion calibrada, NaN si no hay iman calibrado. */
     val cosine: Double = Double.NaN,
+    /** Coseno minimo exigido ahora (ver Detector.effectiveMinCosine). */
+    val minCosine: Double = 0.0,
+    /** Si la direccion se esta revisando (hay iman calibrado y no se desactivo). */
+    val directionCheck: Boolean = false,
     val onThreshold: Double = 0.0,
     val offThreshold: Double = 0.0,
     /** Lo que debe superar cada acercamiento al calibrar el iman (µT). */

@@ -22,8 +22,10 @@ import cl.magnesense.ui.components.AppSlider
 import cl.magnesense.ui.components.BigOutlineButton
 import cl.magnesense.ui.components.Panel
 import cl.magnesense.ui.components.SectionTitle
+import cl.magnesense.ui.components.Toggle
 import cl.magnesense.ui.theme.Palette
 import java.util.Locale
+import kotlin.math.acos
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -62,9 +64,26 @@ fun TuningPanel(d: DetectorStatus, store: SettingsStore) {
             AppSlider(t.kSigma.toFloat(), 2f..10f, steps = 15) { v -> set { it.copy(kSigma = snap(v, 0.5)) } }
             Line("Piso del umbral: %.1f µT".format(Locale.US, t.minOn))
             AppSlider(t.minOn.toFloat(), 0.2f..5f, steps = 23) { v -> set { it.copy(minOn = snap(v, 0.2)) } }
-            Line("Dirección mínima (coseno): %.2f".format(Locale.US, t.minCosine))
-            AppSlider(t.minCosine.toFloat(), 0.5f..0.95f, steps = 8) { v -> set { it.copy(minCosine = snap(v, 0.05)) } }
-            Hint("Más bajo = acepta el imán desde ángulos más distintos, pero también otros metales.")
+            Header("Dirección")
+            Toggle("Comprobar dirección", t.directionCheck) { v -> set { it.copy(directionCheck = v) } }
+            if (t.directionCheck) {
+                Line(
+                    if (d.directionCheck) {
+                        "Se exige cos ≥ %.2f (±%.0f°) · ahora %s".format(
+                            Locale.US, d.minCosine, Math.toDegrees(acos(d.minCosine.coerceIn(-1.0, 1.0))),
+                            if (d.cosine.isNaN()) "-" else "%.2f".format(Locale.US, d.cosine),
+                        )
+                    } else {
+                        "Sin imán calibrado: no se revisa"
+                    },
+                )
+                Line("Dirección mínima (coseno): %.2f".format(Locale.US, t.minCosine))
+                AppSlider(t.minCosine.toFloat(), 0f..0.95f, steps = 18) { v -> set { it.copy(minCosine = snap(v, 0.05)) } }
+                Hint("Si los acercamientos de la calibración variaron más, se usa un cono más ancho automáticamente.")
+                Toggle("Aceptar el imán dado vuelta", t.acceptReversed) { v -> set { it.copy(acceptReversed = v) } }
+            } else {
+                Hint("Cualquier campo fuerte activa, también otros metales o imanes.")
+            }
 
             Row { BigOutlineButton("Restablecer valores", { set { DetectionTuning() } }, Modifier.fillMaxWidth()) }
         }

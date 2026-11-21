@@ -162,9 +162,9 @@ private fun ResultStep(
         else -> "Señal débil: acerca más el imán o usa uno más fuerte" to false
     }
     val (consistencyText, consistencyOk) = when {
-        magnet.consistency >= 0.95 -> "Muy consistente: siempre acercaste el imán igual" to true
-        magnet.consistency >= 0.85 -> "Consistente" to true
-        else -> "Poco consistente: intenta mover el dedo siempre del mismo modo" to false
+        magnet.consistency >= 0.9 -> "Muy consistente: siempre acercaste el imán igual" to true
+        magnet.consistency >= 0.6 -> "Consistente" to true
+        else -> "Movimiento variable: aceptaremos más ángulos, pero también es más fácil activar sin querer" to false
     }
     Title("Resultado")
     Panel {

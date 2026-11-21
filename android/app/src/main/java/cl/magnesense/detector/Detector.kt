@@ -98,6 +98,26 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
     val magnetPeakThreshold: Double
         get() = max(config.magnetPeakMinSigma * noise, config.magnetPeakMin)
 
+    /**
+     * Coseno minimo que se exige de verdad: el configurado, pero nunca mas estricto que el peor
+     * acercamiento de la calibracion (menos un margen). Asi se adapta a como se mueve cada persona.
+     */
+    val effectiveMinCosine: Double
+        get() {
+            val c = config
+            val m = magnet ?: return c.minCosine
+            return min(c.minCosine, m.minPeakCosine - c.cosineMargin).coerceAtLeast(-1.0)
+        }
+
+    /** Si [cosine] (de una lectura fuerte) cuenta como "la direccion del iman". */
+    private fun directionMatches(): Boolean {
+        val c = config
+        if (magnet == null || !c.directionCheck) return true
+        if (cosine.isNaN()) return false
+        val cos = if (c.acceptReversed) kotlin.math.abs(cosine) else cosine
+        return cos >= effectiveMinCosine
+    }
+
     // ------------------------------------------------------------------
     // Comandos
     // ------------------------------------------------------------------
@@ -322,7 +342,8 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
         for ((_, d) in peaks) sum += d
         val mean = sum.normalized()
         val consistency = peaks.sumOf { it.second dot mean } / n
-        magnet = MagnetCalibration(median, mean, consistency, peaks.map { it.first })
+        val worst = peaks.minOf { it.second dot mean }
+        magnet = MagnetCalibration(median, mean, consistency, peaks.map { it.first }, minPeakCosine = worst)
         peaks.clear()
         currentState = DetectorState.REST
         resetDetection()
@@ -333,7 +354,7 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
         val c = config
         val on = onThreshold
         val off = offThreshold
-        val dirOk = magnet == null || cosine >= c.minCosine
+        val dirOk = directionMatches()
         when (currentState) {
             DetectorState.REST -> {
                 if (signal > on && raw > off) {
@@ -477,6 +498,8 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
             state = currentState,
             signal = signal,
             cosine = cosine,
+            minCosine = effectiveMinCosine,
+            directionCheck = config.directionCheck && magnet != null,
             onThreshold = onThreshold,
             offThreshold = offThreshold,
             peakThreshold = magnetPeakThreshold,

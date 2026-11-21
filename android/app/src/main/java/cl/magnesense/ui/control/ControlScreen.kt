@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -31,6 +32,7 @@ import cl.magnesense.detector.DetectorState
 import cl.magnesense.detector.DetectorStatus
 import cl.magnesense.engine.AccessController
 import cl.magnesense.engine.Engine
+import cl.magnesense.engine.IgnoredNotice
 import cl.magnesense.scanning.ScanMode
 import cl.magnesense.scanning.ScanState
 import cl.magnesense.sensor.SensorHub
@@ -41,6 +43,8 @@ import cl.magnesense.ui.components.Panel
 import cl.magnesense.ui.components.SignalMeter
 import cl.magnesense.ui.components.StatusPill
 import cl.magnesense.ui.theme.Palette
+import kotlinx.coroutines.delay
+import java.util.Locale
 
 /** Pantalla principal: se lee desde 2 m. La persona no necesita tocarla. */
 @Composable
@@ -51,6 +55,7 @@ fun ControlScreen(engine: Engine, access: AccessController, onCalibrate: () -> U
     val devices by access.devices.collectAsState()
     val isOn by access.actions.isOn.collectAsState()
     val last by access.actions.lastResult.collectAsState()
+    val ignored by access.ignored.collectAsState()
 
     KeepScreenOn()
     Column(
@@ -67,6 +72,7 @@ fun ControlScreen(engine: Engine, access: AccessController, onCalibrate: () -> U
             }
         }
         SignalMeter(d.signal, d.onThreshold)
+        ignored?.let { IgnoredBanner(it, d.minCosine, onDismiss = access::dismissIgnored) }
         DeviceGrid(devices, isOn, highlightedId = scan.highlighted?.id, onTap = access::runByTouch)
         ScanProgress(scan)
         last?.let {
@@ -177,6 +183,27 @@ private fun ScanProgress(scan: ScanState) {
     }
 }
 
+/** Aviso visible cuando un campo fuerte se descarto por direccion; desaparece solo a los 10 s. */
+@Composable
+private fun IgnoredBanner(notice: IgnoredNotice, minCosine: Double, onDismiss: () -> Unit) {
+    LaunchedEffect(notice) {
+        delay(IGNORED_NOTICE_MS)
+        onDismiss()
+    }
+    Panel(Modifier.border(2.dp, Palette.Warning, RoundedCornerShape(16.dp)).clickable(onClick = onDismiss)) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("! Detecté el imán, pero en otra dirección", style = MaterialTheme.typography.titleMedium, color = Palette.WarningSoft)
+            Text(
+                "cos %.2f (se pide ≥ %.2f). Acércalo como al calibrar, recalibra, o ajusta la dirección en Debug.".format(
+                    Locale.US, notice.cosine, minCosine,
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Palette.Text,
+            )
+        }
+    }
+}
+
 /** Mantiene la pantalla encendida mientras se muestra el control. */
 @Composable
 fun KeepScreenOn() {
@@ -189,3 +216,5 @@ fun KeepScreenOn() {
 
 /** Rango razonable del campo terrestre; fuera de el probablemente hay metal o un iman cerca. */
 private val EARTH_FIELD_RANGE = 20.0..90.0
+
+private const val IGNORED_NOTICE_MS = 10_000L

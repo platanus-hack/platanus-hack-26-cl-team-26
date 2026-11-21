@@ -57,7 +57,9 @@ O copiar el APK al celular y abrirlo (permitir "instalar apps desconocidas").
    (Shelly: `http://IP/relay/0?turn=on` / `?turn=off`, con botones para probar), teléfono y webhook del cuidador,
    velocidad del escaneo, sensibilidad, tiempo de sostener, servidor e inicio automático.
    Sin URL, un dispositivo funciona en modo demostración (solo cambia en pantalla).
-6. **Historial** muestra los últimos eventos. **Debug** muestra |ΔB|, coseno, umbrales, giroscopio y frecuencia de muestreo.
+6. Si el imán llega desde otro ángulo, Control muestra "Detecté el imán, pero en otra dirección". En **Debug → Ajuste fino**
+   se puede ampliar el cono de dirección, aceptar el imán dado vuelta o desactivar el chequeo, y bajar la fuerza mínima.
+7. **Historial** muestra los últimos eventos. **Debug** muestra |ΔB|, coseno, umbrales, giroscopio y frecuencia de muestreo.
 
 ## Panel web (server.py)
 
@@ -99,7 +101,7 @@ cl.magnesense
 
 **Detector** (`detector/Detector.kt`): suaviza B, compara |B − base| con umbrales
 `on = max(6σ, 0,5 × pico mediano, 1 µT)` y `off = on / 2`. Exige 300 ms sobre `on`
-con la dirección correcta (cos ≥ 0,85 respecto a la calibrada; si no, evento IGNORED) y tiene
+con la dirección correcta (cos ≥ 0,6 respecto a la calibrada, o más permisivo si los acercamientos de la calibración variaron más; si no, evento IGNORED y aviso en pantalla) y tiene
 1 s de refractario con bajada bajo `off`. El giroscopio (|ω| > 0,3 rad/s) pausa y, tras 1 s quieto,
 vuelve a medir la base durante 0,5 s. Además sigue la deriva lenta solo en reposo y avisa si el sensor se satura.
 

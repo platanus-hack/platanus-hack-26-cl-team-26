@@ -23,6 +23,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+/** Un campo fuerte que no se acepto por venir de otra direccion. */
+data class IgnoredNotice(val cosine: Double, val signal: Double, val atMs: Long)
+
 /**
  * Une detector -> escaneo -> acciones, con voz y vibracion.
  * Una activacion del iman arma o elige; si el celular se mueve, el escaneo se detiene.
@@ -44,6 +47,10 @@ class AccessController(
     private val _selections = MutableSharedFlow<Pair<Device, ActionResult>>(extraBufferCapacity = 16)
     val selections: SharedFlow<Pair<Device, ActionResult>> = _selections.asSharedFlow()
 
+    /** Ultimo campo fuerte descartado por direccion, para avisar en pantalla (no en silencio). */
+    private val _ignored = MutableStateFlow<IgnoredNotice?>(null)
+    val ignored: StateFlow<IgnoredNotice?> = _ignored.asStateFlow()
+
     init {
         scanning.setOptions(_devices.value.map { it.toScanOption() })
         scope.launch { detectorEvents.collect(::onDetectorEvent) }
@@ -53,6 +60,10 @@ class AccessController(
                 delay(TICK_MS)
             }
         }
+    }
+
+    fun dismissIgnored() {
+        _ignored.value = null
     }
 
     fun setDevices(list: List<Device>) {
@@ -65,7 +76,11 @@ class AccessController(
 
     private fun onDetectorEvent(e: DetectorEvent) {
         when (e.type) {
-            EventType.ACTIVATED -> scanning.onActivation(SystemClock.elapsedRealtime())
+            EventType.ACTIVATED -> {
+                _ignored.value = null
+                scanning.onActivation(SystemClock.elapsedRealtime())
+            }
+            EventType.IGNORED -> _ignored.value = IgnoredNotice(e.cosine, e.signal, SystemClock.elapsedRealtime())
             EventType.PAUSED -> scanning.stop()
             else -> Unit
         }

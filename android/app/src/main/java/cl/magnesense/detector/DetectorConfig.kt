@@ -29,8 +29,17 @@ data class DetectorConfig(
     val sensitivity: Double = 1.0,
 
     // --- Direccion ---
-    /** cos minimo entre (B - base) y la direccion calibrada. */
-    val minCosine: Double = 0.85,
+    /**
+     * cos minimo entre (B - base) y la direccion calibrada. 0,6 ≈ ±53°: el campo de un dipolo
+     * gira bastante con un centimetro de desplazamiento lateral o si el iman rota en el dedo.
+     */
+    val minCosine: Double = 0.6,
+    /** Se exige como maximo (peor acercamiento de la calibracion - este margen). */
+    val cosineMargin: Double = 0.15,
+    /** false = no se revisa la direccion (cualquier campo fuerte activa). */
+    val directionCheck: Boolean = true,
+    /** true = el iman dado vuelta (cos ≈ -1) tambien cuenta. */
+    val acceptReversed: Boolean = false,
     /** Intervalo minimo entre eventos IGNORED. */
     val ignoredMinInterval: Double = 2.0,
 
