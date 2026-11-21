@@ -4,6 +4,9 @@ Uso:
   python vivo.py                    # en vivo, graba el crudo en data/grabacion/AAAA-MM-DD.csv
   MODO=reproducir python vivo.py    # rehace los ciclos grabados con su hora original
   UNA_VEZ=1 python vivo.py          # un solo ciclo
+
+El servidor (terreno/servidor.py) llama a una_vez() cuando alguien mira el mapa y live_h3.parquet tiene más
+de REFRESCO_VIVO_MIN minutos: así hay datos en vivo en Render sin dejar este ciclo corriendo.
 """
 import json
 import os
@@ -64,6 +67,17 @@ def leer_grabacion():
     for c in ("medido_en", "leido_en"):
         g[c] = pd.to_datetime(g[c], utc=True, format="ISO8601")
     return g
+
+
+def una_vez():
+    """Un ciclo en vivo con la hora actual: lee, graba, filtra, interpola y escribe los archivos."""
+    ahora = pd.Timestamp.now(tz="UTC")
+    crudo, errores = fuentes.leer_todo()
+    if not len(crudo):
+        print(f"{ahora}: ninguna fuente respondió {errores}")
+        return
+    grabar(crudo, ahora)
+    ciclo(crudo, ahora, interpolar.barrios(pd.read_parquet(DATA / "santiago_h3.parquet")), None, errores)
 
 
 def main():
