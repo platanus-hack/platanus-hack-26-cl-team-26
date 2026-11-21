@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 import pydeck as pdk
 import streamlit as st
 
+from ecologia import PERFILES, calcular_resistencia_ecologica, resolver_corredor_por_perfil
 from optimizer import solve_corridor, _norm
 
 # ==========================================
@@ -183,7 +184,7 @@ def preparar_campos_tooltip(df: pd.DataFrame) -> pd.DataFrame:
     out["poblacion_fmt"] = out["poblacion"].astype(int).map(lambda x: f"{x:,}")
     if "urgencia_calc" in out.columns:
         out["urgencia_fmt"] = out["urgencia_calc"].round(3).astype(str)
-    if "recomendado" in out.columns:
+    if "intervencion_fmt" not in out.columns and "recomendado" in out.columns:
         out["recomendado_fmt"] = np.where(out["recomendado"], "Sí (Corredor Óptimo)", "No")
     return out
 
@@ -408,6 +409,19 @@ with col_izq:
             f_fin = st.date_input("Hasta (fecha x):", value=date(2026, 11, 21), min_value=date(2023, 1, 1), max_value=date(2026, 11, 21))
 
     else:
+        st.markdown("#### Objetivo de la Automatización")
+        perfil_key = st.radio(
+            "Diseñado pensando en:",
+            options=list(PERFILES.keys()),
+            format_func=lambda k: PERFILES[k],
+            index=0,
+            key="perfil_dijkstra",
+        )
+        salto_cp = 2
+        if perfil_key == "fauna_abejas":
+            salto_cp = st.slider("Separación máx. entre Mini Islas (hexágonos):", 1, 4, 2, 1,
+                                 help="1 hexágono ≈ 350 m. Permite saltar entre islas verdes separadas.")
+
         st.markdown("#### Pesos Dijkstra y Presupuesto")
         st.caption("Usa las barras o escribe el número directamente:")
         budget_km = slider_con_numero("Presupuesto (km):", 1.0, 20.0, 3.0, 0.5, "budget")
@@ -487,50 +501,80 @@ with col_der:
             render_mapa_2d(df_t1, tooltip_t1, zoom=zoom_mapa)
 
     # --------------------------------------
-    # MAPA 2: ALGORITMO DIJKSTRA (SIN AZUL)
+    # MAPA 2: ALGORITMO DIJKSTRA (HUMANOS vs FAUNA / MINI ISLAS)
     # --------------------------------------
     elif tipo_actual == MAPA_OPCIONES[1]:
-        res_opt = solve_corridor(
+        res_opt = resolver_corredor_por_perfil(
             df_filtrado,
+            perfil=perfil_key,
             budget_km=budget_km,
             w_calor=w_calor_norm,
             w_arbol=w_arbol_norm,
             w_personas=w_pers_norm,
             live=live_df,
+            salto_checkpoint=salto_cp,
         )
 
         df_t2 = df_filtrado.copy()
-        df_t2["urgencia_calc"] = res_opt["urgencia"].values
-        hexes_corredor = set(res_opt["hexes"])
-        df_t2["recomendado"] = df_t2["h3_index"].isin(hexes_corredor)
+        df_t2["urgencia_calc"] = res_opt["score_mapa"].values
+        hexes_corredor = set(res_opt["hexes_corredor"])
+        hexes_cp = set(res_opt["hexes_checkpoints"])
+        df_t2["recomendado"] = df_t2["h3_index"].isin(hexes_corredor | hexes_cp)
+
+        # Etiqueta clara del tipo de intervención para tooltip
+        df_t2["intervencion_fmt"] = "Matriz urbana"
+        df_t2.loc[df_t2["es_parque"], "intervencion_fmt"] = "Parque / Isla verde existente"
+        df_t2.loc[df_t2["h3_index"].isin(hexes_corredor), "intervencion_fmt"] = (
+            "Ruta de vuelo entre checkpoints" if perfil_key == "fauna_abejas" else "Corredor arbóreo continuo"
+        )
+        if hexes_cp:
+            df_t2.loc[df_t2["h3_index"].isin(hexes_cp), "intervencion_fmt"] = "Mini Isla (Checkpoint ecológico)"
 
         # Paleta sin azul para no confundir con agua:
-        # Gris pizarra claro -> Verde medio -> Verde oscuro para el corredor óptimo
-        # Parques existentes en ámbar/ocre suave para distinguirlos claramente del agua
+        # Gris pizarra claro -> Verde medio -> Verde oscuro (corredor continuo)
+        # Magenta (#c026d3) -> Mini Islas / Checkpoints
+        # Ámbar (#d97706) -> Parques existentes
         u_arr = df_t2["urgencia_calc"].clip(0, 1).to_numpy()
         colors_t2 = interp_rgb(u_arr, (241, 245, 249), (74, 222, 128)).astype(int)
-        alpha_t2 = np.full(len(df_t2), 175, dtype=int)
+        alpha_t2 = np.full(len(df_t2), 165, dtype=int)
 
-        mask_corr = df_t2["recomendado"].to_numpy()
-        colors_t2[mask_corr] = [21, 128, 61]
-        alpha_t2[mask_corr] = 245
+        mask_corr = df_t2["h3_index"].isin(hexes_corredor).to_numpy()
+        if perfil_key == "fauna_abejas":
+            # Ruta de conexión suave para resaltar los checkpoints encima
+            colors_t2[mask_corr] = [134, 239, 172]
+            alpha_t2[mask_corr] = 210
+        else:
+            colors_t2[mask_corr] = [21, 128, 61]
+            alpha_t2[mask_corr] = 245
 
-        mask_parque = df_t2["es_parque"].to_numpy() & (~mask_corr)
+        mask_cp = df_t2["h3_index"].isin(hexes_cp).to_numpy()
+        if mask_cp.any():
+            colors_t2[mask_cp] = [192, 38, 211]
+            alpha_t2[mask_cp] = 250
+
+        mask_parque = df_t2["es_parque"].to_numpy() & (~mask_corr) & (~mask_cp)
         colors_t2[mask_parque] = [217, 119, 6]
-        alpha_t2[mask_parque] = 175
+        alpha_t2[mask_parque] = 185
 
         df_t2["color"] = np.column_stack([colors_t2, alpha_t2]).tolist()
 
+        # Banner de objetivo activo + leyenda
+        leyenda_cp = ' &nbsp;|&nbsp; <b>Mini Islas (Checkpoints):</b> <span style="color:#d946ef;font-weight:700;">Magenta</span>' if hexes_cp else ""
         st.markdown(
-            '<div class="legend-box"><b>Corredor óptimo Dijkstra:</b> <span style="color:#15803d;font-weight:700;">Verde oscuro</span> &nbsp;|&nbsp; <b>Prioridad de plantación:</b> Claro → <span style="color:#4ade80;font-weight:700;">Verde claro</span> &nbsp;|&nbsp; <b>Parques existentes:</b> <span style="color:#d97706;font-weight:700;">Ámbar</span></div>',
+            f'<div class="legend-box"><b>Automatización activa: {PERFILES[perfil_key]}</b><br/>'
+            f'<b>Corredor continuo:</b> <span style="color:#15803d;font-weight:700;">Verde oscuro</span>{leyenda_cp} &nbsp;|&nbsp; '
+            f'<b>Parques existentes:</b> <span style="color:#d97706;font-weight:700;">Ámbar</span></div>',
             unsafe_allow_html=True,
         )
 
-        d1, d2, d3 = st.columns(3)
-        d1.metric("Largo Corredor", f"{res_opt['length_km']:.2f} km", f"{len(res_opt['hexes'])} hexágonos")
-        mejora_u = ((res_opt["urgencia_cubierta"] / max(res_opt["urgencia_azar"], 1e-6)) - 1) * 100 if res_opt["urgencia_azar"] > 0 else 0
-        d2.metric("Urgencia Cubierta", f"{res_opt['urgencia_cubierta']:.3f}", f"{mejora_u:+.1f}% vs azar")
-        d3.metric("Personas Beneficiadas", f"{res_opt['personas_cubiertas']:,}", f"{res_opt['personas_cubiertas'] - res_opt['personas_azar']:+,} vs azar")
+        d1, d2, d3, d4 = st.columns(4)
+        d1.metric("Intervención", f"{res_opt['length_km']:.2f} km", f"{len(hexes_corredor | hexes_cp)} hexágonos")
+        d2.metric("Parques Conectados", f"{res_opt['parques_conectados']}", f"{len(res_opt['tramos'])} tramos")
+        if hexes_cp:
+            d3.metric("Mini Islas (Checkpoints)", f"{len(hexes_cp)}", "Bosques de bolsillo")
+        else:
+            d3.metric("Resistencia Ecológica", f"{res_opt['resistencia_media']:.1f} / 100", "Menor = más fácil cruzar")
+        d4.metric("Personas Cubiertas", f"{res_opt['personas_cubiertas']:,}")
 
         if st.session_state["modo_lazo"]:
             render_selector_lazo(df_t2, zoom=zoom_mapa)
@@ -538,10 +582,10 @@ with col_der:
             tooltip_t2 = """
             <b>Comuna:</b> {comuna}<br/>
             <b>Distrito:</b> {distrito}<br/>
-            <b>En Corredor Dijkstra:</b> {recomendado_fmt}<br/>
-            <b>Urgencia:</b> {urgencia_fmt}<br/>
+            <b>Rol en Diseño:</b> {intervencion_fmt}<br/>
+            <b>Score / Prioridad:</b> {urgencia_fmt}<br/>
             <b>Temp. Superficial:</b> {lst_fmt} °C<br/>
-            <b>Arbolado:</b> {arbol_fmt} %
+            <b>Copa Arbórea:</b> {arbol_fmt} %
             """
             render_mapa_2d(df_t2, tooltip_t2, zoom=zoom_mapa)
 
