@@ -26,6 +26,24 @@ class PulseRulesTest {
     }
 
     @Test
+    fun whileLockedOnlyUnlockAndAlarmPass() {
+        assertTrue(PulseRules.allowedWhileLocked("..."))
+        assertTrue(PulseRules.allowedWhileLocked("---"))
+        assertFalse(PulseRules.allowedWhileLocked("."))
+        assertFalse(PulseRules.allowedWhileLocked("-."))
+    }
+
+    @Test
+    fun lockCodeIsReservedInEveryProfileAndAlarmIsThreeDashes() {
+        for (p in PulseProfile.entries) {
+            assertTrue("${p.name} usa el codigo de pausa", p.commands.none { it.code == PulseRules.LOCK_CODE })
+            p.commands.filter { it.action == PulseAction.ALARM }.forEach {
+                assertTrue("${p.name}: alarma en ${it.code}", it.code == PulseRules.ALARM_CODE)
+            }
+        }
+    }
+
+    @Test
     fun phoneActionsOnlyOutsideMagneSense() {
         assertFalse(PulseRules.phoneActionAllowed(PhoneAction.NEXT, inForeground = true))
         assertFalse(PulseRules.phoneActionAllowed(PhoneAction.CURSOR, inForeground = true))

@@ -32,6 +32,7 @@ import cl.magnesense.data.ActivationMode
 import cl.magnesense.pulses.PulseDecoder
 import cl.magnesense.pulses.PulseInterp
 import cl.magnesense.pulses.PulseProfile
+import cl.magnesense.pulses.PulseRules
 import cl.magnesense.pulses.PulseUiState
 import cl.magnesense.ui.access.PhoneModeCard
 import cl.magnesense.ui.components.BigButton
@@ -191,6 +192,13 @@ private fun PulseBar(s: PulseUiState) {
 private fun Commands(s: PulseUiState, onProfile: (PulseProfile) -> Unit) {
     Panel {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (s.locked) {
+                Text(
+                    "⏸ Comandos en pausa: haz • • • para activarlos (la alarma — — — sigue funcionando)",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Palette.WarningSoft,
+                )
+            }
             Text("Perfil", style = MaterialTheme.typography.titleMedium, color = Palette.Text)
             ChoiceRow(PulseProfile.entries.map { Choice(it.name, it.label) }, s.profile.name) { onProfile(PulseProfile.valueOf(it)) }
             for (c in s.profile.commands) {
@@ -208,6 +216,21 @@ private fun Commands(s: PulseUiState, onProfile: (PulseProfile) -> Unit) {
                     )
                     Text(c.text, color = if (hit) Palette.Highlight else Palette.Text, style = MaterialTheme.typography.bodyLarge)
                 }
+            }
+            // Siempre disponible, en todos los perfiles.
+            Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    PulseDecoder.pretty(PulseRules.LOCK_CODE),
+                    Modifier.width(110.dp),
+                    color = Palette.Muted,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontFamily = FontFamily.Monospace,
+                )
+                Text(
+                    if (s.locked) "Activar los comandos" else "Pausar los comandos",
+                    color = Palette.Muted,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
             }
         }
     }

@@ -7,6 +7,15 @@ import cl.magnesense.access.PhoneAction
  */
 object PulseRules {
 
+    /** "• • •" pausa o reactiva los comandos; siempre se escucha, en todos los perfiles. */
+    const val LOCK_CODE = "..."
+
+    /** "— — —" pide ayuda; funciona incluso con los comandos en pausa. */
+    const val ALARM_CODE = "---"
+
+    /** Con los comandos en pausa solo pasan el codigo de pausa y la alarma. */
+    fun allowedWhileLocked(code: String): Boolean = code == LOCK_CODE || code == ALARM_CODE
+
     /**
      * Pulsos actua si es el modo elegido, no se esta ensenando un gesto y no se esta
      * calibrando: en Calibrar, 3D, Debug o la intro el iman se mueve a proposito y esos

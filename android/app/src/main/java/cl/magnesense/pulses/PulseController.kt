@@ -48,7 +48,7 @@ enum class PulseProfile(val label: String, val commands: List<PulseCommand>) {
             PulseCommand(".", PulseAction.LIGHT, "Alternar la luz"),
             PulseCommand("-", PulseAction.SAY, "Sí"),
             PulseCommand("..", PulseAction.SAY, "No"),
-            PulseCommand("...", PulseAction.ALARM, "Necesito ayuda"),
+            PulseCommand(PulseRules.ALARM_CODE, PulseAction.ALARM, "Necesito ayuda"),
             PulseCommand("--", PulseAction.SAY, "Tengo dolor"),
             PulseCommand(".-", PulseAction.SAY, "Tengo sed"),
         ),
@@ -68,7 +68,7 @@ enum class PulseProfile(val label: String, val commands: List<PulseCommand>) {
             PulseCommand(".", PulseAction.LAP, "Marcar vuelta"),
             PulseCommand("-", PulseAction.MEDIA, "Pausar o reanudar la música", KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE),
             PulseCommand("..", PulseAction.MEDIA, "Canción siguiente", KeyEvent.KEYCODE_MEDIA_NEXT),
-            PulseCommand("...", PulseAction.ALARM, "Necesito ayuda"),
+            PulseCommand(PulseRules.ALARM_CODE, PulseAction.ALARM, "Necesito ayuda"),
         ),
     ),
     PHONE(
@@ -80,7 +80,7 @@ enum class PulseProfile(val label: String, val commands: List<PulseCommand>) {
             PulseCommand("--", PulseAction.HOME, "Inicio"),
             PulseCommand(".-", PulseAction.OPEN_APP, "Volver a MagneSense"),
             PulseCommand("-.", PulseAction.CURSOR, "Cursor: tocar en cualquier parte"),
-            PulseCommand("...", PulseAction.ALARM, "Necesito ayuda"),
+            PulseCommand(PulseRules.ALARM_CODE, PulseAction.ALARM, "Necesito ayuda"),
         ),
     ),
 }
@@ -112,6 +112,8 @@ data class PulseUiState(
     val alarm: Boolean = false,
     val lightOn: Boolean = false,
     val said: String = "",
+    /** Comandos en pausa con "• • •": solo se escucha "• • •" (reactivar) y la alarma. */
+    val locked: Boolean = false,
 )
 
 /**
@@ -167,7 +169,7 @@ class PulseController(
         engine.decoder.dotMax = prefs.getFloat(KEY_DOT, 0.40f).toDouble().coerceIn(0.15, 1.5)
         engine.decoder.letterGap = prefs.getFloat(KEY_GAP, 0.9f).toDouble().coerceIn(0.5, 3.0)
         engine.setCap(prefs.getFloat(KEY_CAP, 0f).toDouble())
-        _state.update { it.copy(interp = interp, profile = profile) }
+        _state.update { it.copy(interp = interp, profile = profile, locked = prefs.getBoolean(KEY_LOCKED, false)) }
         torchId?.let { id ->
             runCatching {
                 camera?.registerTorchCallback(object : CameraManager.TorchCallback() {
@@ -309,6 +311,15 @@ class PulseController(
         val pretty = PulseDecoder.pretty(e.code)
         when (_state.value.interp) {
             PulseInterp.COMMANDS -> {
+                if (e.code == PulseRules.LOCK_CODE) {
+                    setLocked(!_state.value.locked, pretty)
+                    return
+                }
+                if (_state.value.locked && !PulseRules.allowedWhileLocked(e.code)) {
+                    _state.update { it.copy(last = PulseLast(pretty, "en pausa: • • • para activar", false)) }
+                    log("$pretty   en pausa (• • • para activar)")
+                    return
+                }
                 val cmd = _state.value.profile.commands.firstOrNull { it.code == e.code }
                 _state.update { it.copy(last = PulseLast(pretty, cmd?.text ?: "sin comando asignado", cmd != null)) }
                 log("$pretty   ${cmd?.text ?: "sin comando asignado"}")
@@ -374,6 +385,17 @@ class PulseController(
             }
             PhoneResult.DONE, PhoneResult.TOO_SOON -> Unit
         }
+    }
+
+    /** Pausa o reactiva los comandos ("• • •"); se recuerda entre aperturas de la app. */
+    private fun setLocked(locked: Boolean, pretty: String) {
+        prefs.edit().putBoolean(KEY_LOCKED, locked).apply()
+        val text = if (locked) "Comandos en pausa" else "Comandos activos"
+        _state.update { it.copy(locked = locked, last = PulseLast(pretty, text, true)) }
+        log("$pretty   $text")
+        if (locked) sounds.beep(440.0, 300) else sounds.beep(1040.0, 200)
+        say(if (locked) "En pausa" else "Activado")
+        history(HistoryKind.ACTION, "Pulsos: $text")
     }
 
     private fun autoSayMorse(t: Double) {
@@ -467,6 +489,7 @@ class PulseController(
         const val LOG_LINES = 8
         const val KEY_INTERP = "interp"
         const val KEY_PROFILE = "profile"
+        const val KEY_LOCKED = "locked"
         const val KEY_DOT = "dotMax"
         const val KEY_GAP = "letterGap"
         const val KEY_CAP = "cap"

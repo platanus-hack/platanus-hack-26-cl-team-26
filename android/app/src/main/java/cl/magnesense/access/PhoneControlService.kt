@@ -291,7 +291,10 @@ class PhoneControlService : AccessibilityService() {
     }
 
     private fun showIdle(text: TextView, s: PulseUiState) {
-        if (s.symbols.isNotEmpty()) {
+        if (s.locked && s.symbols.isEmpty()) {
+            text.text = LOCKED_HINT
+            text.setTextColor(Palette.Muted.toArgb())
+        } else if (s.symbols.isNotEmpty()) {
             text.text = PulseDecoder.pretty(s.symbols)
             text.setTextColor(Palette.Highlight.toArgb())
         } else {
@@ -308,5 +311,6 @@ class PhoneControlService : AccessibilityService() {
         const val TAP_DELAY_MS = 150L
         const val FLASH_MS = 1_500L
         const val IDLE_HINT = "• ▲   • • ▼   — ◁   — — ⌂   — • ⌖"
+        const val LOCKED_HINT = "⏸ En pausa · • • • para activar"
     }
 }
