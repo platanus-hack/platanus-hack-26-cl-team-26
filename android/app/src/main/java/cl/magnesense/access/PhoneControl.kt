@@ -1,12 +1,16 @@
 package cl.magnesense.access
 
-/** Acciones seguras sobre el celular entero: nunca tocan un punto arbitrario de la pantalla. */
+/**
+ * Acciones sobre el celular entero. Solo el cursor toca un punto de la pantalla, y siempre
+ * despues de una confirmacion explicita.
+ */
 enum class PhoneAction(val label: String) {
     NEXT("▲ Siguiente"),
     PREVIOUS("▼ Anterior"),
     BACK("◁ Atrás"),
     HOME("⌂ Inicio"),
     OPEN_APP("Volver a MagneSense"),
+    CURSOR("⌖ Cursor"),
 }
 
 enum class PhoneResult { DONE, NOT_ENABLED, TOO_SOON, FAILED }
@@ -33,10 +37,22 @@ class PhoneGate(private val minIntervalMs: Long = 600) {
     }
 }
 
+/** El cursor por barrido: mientras esta activo, cada pulso del iman va a el. */
+interface CursorInput {
+    val active: Boolean
+    fun pulse()
+}
+
 /** Punto de encuentro entre Pulsos y el servicio de accesibilidad (mismo proceso). */
 object PhoneControl {
     @Volatile
     var actuator: PhoneActuator? = null
+
+    @Volatile
+    var cursor: CursorInput? = null
+
+    /** Hay un barrido en curso: Pulsos le entrega los pulsos en vez de armar codigos. */
+    val cursorActive: Boolean get() = cursor?.active == true
 
     val isEnabled: Boolean get() = actuator != null
 

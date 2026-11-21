@@ -7,6 +7,9 @@ import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -46,9 +49,24 @@ class PhoneControlService : AccessibilityService() {
     private var flashJob: Job? = null
     private var lastSeen: PulseLast? = null
 
+    // --- Cursor por barrido ---
+    private val main = Handler(Looper.getMainLooper())
+    private val scan = PointScan()
+    private var cursorView: CursorOverlay? = null
+
+    @Volatile
+    private var cursorOn = false
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         PhoneControl.actuator = PhoneActuator(::perform)
+        PhoneControl.cursor = object : CursorInput {
+            override val active: Boolean get() = cursorOn
+            override fun pulse() {
+                main.post(::onCursorPulse)
+            }
+        }
+        showCursorLayer()
         showPill()
         val app = application as MagneSenseApp
         scope = MainScope().also { s ->
@@ -72,8 +90,12 @@ class PhoneControlService : AccessibilityService() {
 
     private fun cleanUp() {
         if (PhoneControl.actuator != null) PhoneControl.actuator = null
+        PhoneControl.cursor = null
+        cursorOn = false
         scope?.cancel()
         scope = null
+        cursorView?.let { runCatching { getSystemService(WindowManager::class.java).removeView(it) } }
+        cursorView = null
         pill?.let { runCatching { getSystemService(WindowManager::class.java).removeView(it) } }
         pill = null
     }
@@ -85,6 +107,7 @@ class PhoneControlService : AccessibilityService() {
         PhoneAction.PREVIOUS -> swipe(up = false)
         PhoneAction.BACK -> performGlobalAction(GLOBAL_ACTION_BACK)
         PhoneAction.HOME -> performGlobalAction(GLOBAL_ACTION_HOME)
+        PhoneAction.CURSOR -> main.post(::startCursor)
         PhoneAction.OPEN_APP -> runCatching {
             startActivity(
                 Intent(this, MainActivity::class.java)
@@ -108,6 +131,93 @@ class PhoneControlService : AccessibilityService() {
             .build()
         return dispatchGesture(gesture, null, null)
     }
+
+    // --- Cursor por barrido -----------------------------------------------------------
+
+    private fun showCursorLayer() {
+        val view = CursorOverlay(this).apply { visibility = View.GONE }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        runCatching { getSystemService(WindowManager::class.java).addView(view, params) }
+            .onSuccess { cursorView = view }
+    }
+
+    private fun startCursor() {
+        val view = cursorView ?: return
+        scan.start(now())
+        cursorOn = true
+        view.visibility = View.VISIBLE
+        speak("Elige la columna")
+        view.postOnAnimation(frameLoop)
+    }
+
+    private val frameLoop: Runnable = object : Runnable {
+        override fun run() {
+            val view = cursorView ?: return
+            if (!cursorOn) return
+            if (scan.tick(now()) == ScanOutcome.Cancelled) {
+                endCursor("Cancelado")
+                return
+            }
+            view.frame = scan.frame(now())
+            view.postOnAnimation(this)
+        }
+    }
+
+    private fun onCursorPulse() {
+        if (!cursorOn) return
+        when (val outcome = scan.pulse(now())) {
+            is ScanOutcome.Tap -> {
+                endCursor(null)
+                // Esperar a que se oculte la capa antes de tocar.
+                main.postDelayed({ tapAt(outcome.x, outcome.y) }, TAP_DELAY_MS)
+            }
+            else -> speak(
+                when (scan.phase) {
+                    ScanPhase.SWEEP_Y -> "Ahora la fila"
+                    ScanPhase.CONFIRM -> "Pulso para tocar"
+                    else -> return
+                },
+            )
+        }
+    }
+
+    private fun endCursor(message: String?) {
+        cursorOn = false
+        scan.cancel()
+        cursorView?.let {
+            it.frame = ScanFrame(ScanPhase.IDLE)
+            it.visibility = View.GONE
+        }
+        message?.let(::speak)
+    }
+
+    /** Toca el punto elegido (fracciones de la capa, que cubre toda la pantalla). */
+    private fun tapAt(fx: Float, fy: Float) {
+        val view = cursorView ?: return
+        val origin = IntArray(2).also(view::getLocationOnScreen)
+        val x = origin[0] + fx * view.width
+        val y = origin[1] + fy * view.height
+        val path = Path().apply { moveTo(x, y) }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, TAP_MS))
+            .build()
+        dispatchGesture(gesture, null, null)
+    }
+
+    private fun speak(text: String) = (application as MagneSenseApp).speaker.speak(text)
+
+    private fun now(): Double = SystemClock.uptimeMillis() / 1000.0
 
     // --- Pastilla flotante ----------------------------------------------------------
 
@@ -193,7 +303,9 @@ class PhoneControlService : AccessibilityService() {
 
     private companion object {
         const val SWIPE_MS = 250L
+        const val TAP_MS = 60L
+        const val TAP_DELAY_MS = 150L
         const val FLASH_MS = 1_500L
-        const val IDLE_HINT = "• ▲   • • ▼   — ◁   — — ⌂"
+        const val IDLE_HINT = "• ▲   • • ▼   — ◁   — — ⌂   — • ⌖"
     }
 }

@@ -38,6 +38,7 @@ class PhoneControlTest {
         assertEquals(PulseAction.BACK, table["-"])
         assertEquals(PulseAction.HOME, table["--"])
         assertEquals(PulseAction.OPEN_APP, table[".-"])
+        assertEquals(PulseAction.CURSOR, table["-."])
         assertEquals(PulseAction.ALARM, table["..."])
     }
 

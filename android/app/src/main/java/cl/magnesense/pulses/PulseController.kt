@@ -35,7 +35,7 @@ enum class PulseAction {
     LIGHT, SAY, ALARM, MEDIA, LAP,
 
     /** Modo celular: acciones sobre cualquier app, via el servicio de accesibilidad. */
-    NEXT, PREVIOUS, BACK, HOME, OPEN_APP,
+    NEXT, PREVIOUS, BACK, HOME, OPEN_APP, CURSOR,
 }
 
 data class PulseCommand(val code: String, val action: PulseAction, val text: String, val mediaKey: Int = 0)
@@ -79,6 +79,7 @@ enum class PulseProfile(val label: String, val commands: List<PulseCommand>) {
             PulseCommand("-", PulseAction.BACK, "Atrás"),
             PulseCommand("--", PulseAction.HOME, "Inicio"),
             PulseCommand(".-", PulseAction.OPEN_APP, "Volver a MagneSense"),
+            PulseCommand("-.", PulseAction.CURSOR, "Cursor: tocar en cualquier parte"),
             PulseCommand("...", PulseAction.ALARM, "Necesito ayuda"),
         ),
     ),
@@ -149,6 +150,9 @@ class PulseController(
     val state: StateFlow<PulseUiState> = _state.asStateFlow()
 
     private var tRise = 0.0
+
+    /** El proximo codigo terminado fue hecho con pulsos del cursor: no ejecutarlo. */
+    private var swallowCode = false
     private var tCode: Double? = null
     private var alarmUntil = 0.0
     private var lastPublish = 0.0
@@ -195,7 +199,18 @@ class PulseController(
                 toggleLight()
                 log("Directo: luz ${if (_state.value.lightOn) "encendida" else "apagada"}")
             }
-            for (e in step.events) handle(e, t)
+            // Cursor por barrido activo: el pulso es para el cursor, no parte de un codigo.
+            if (step.started && PhoneControl.cursorActive) {
+                PhoneControl.cursor?.pulse()
+                swallowCode = true
+            }
+            for (e in step.events) {
+                if (e is PulseEvent.Code && swallowCode) {
+                    swallowCode = false
+                    continue
+                }
+                handle(e, t)
+            }
             autoSayMorse(t)
         }
         watchCalibration(t)
@@ -335,6 +350,7 @@ class PulseController(
             PulseAction.BACK -> phone(PhoneAction.BACK)
             PulseAction.HOME -> phone(PhoneAction.HOME)
             PulseAction.OPEN_APP -> phone(PhoneAction.OPEN_APP)
+            PulseAction.CURSOR -> phone(PhoneAction.CURSOR)
         }
         history(HistoryKind.ACTION, "Pulsos: ${cmd.text}")
     }
