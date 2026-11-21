@@ -140,7 +140,8 @@ private fun MagnetStep(status: DetectorStatus, required: Int, onCancel: () -> Un
                 repeat(required) { i -> Dot(filled = i < done) }
             }
             Body("$done de $required")
-            SignalMeter(status.signal, max(status.noise * 8, 3.0))
+            SignalMeter(status.signal, status.peakThreshold)
+            Muted("Cada acercamiento debe pasar la marca ámbar (%.1f µT). Si no llega, bájala en Debug → Ajuste fino.".format(status.peakThreshold))
         }
     }
     BigOutlineButton("Cancelar", onCancel, Modifier.fillMaxWidth())

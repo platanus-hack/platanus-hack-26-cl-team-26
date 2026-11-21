@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import cl.magnesense.data.SettingsStore
 import cl.magnesense.detector.Detector
 import cl.magnesense.detector.Vec3
 import cl.magnesense.sensor.SensorHub
@@ -19,7 +20,7 @@ import java.util.Locale
 
 /** Valores en vivo para la demo y para ajustar parametros. */
 @Composable
-fun DebugScreen(detector: Detector) {
+fun DebugScreen(detector: Detector, store: SettingsStore) {
     val s by SensorHub.snapshot.collectAsState()
     val d by detector.status.collectAsState()
     Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -43,6 +44,7 @@ fun DebugScreen(detector: Detector) {
                     SignalMeter(d.signal, d.onThreshold)
                 }
             }
+            TuningPanel(d, store)
             Panel {
                 Column {
                     SectionTitle("Últimos eventos")

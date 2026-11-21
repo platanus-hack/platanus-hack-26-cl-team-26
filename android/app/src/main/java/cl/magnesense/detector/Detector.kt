@@ -94,6 +94,10 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
 
     val offThreshold: Double get() = onThreshold * config.offRatio
 
+    /** Lo que debe superar cada acercamiento durante la calibracion del iman. */
+    val magnetPeakThreshold: Double
+        get() = max(config.magnetPeakMinSigma * noise, config.magnetPeakMin)
+
     // ------------------------------------------------------------------
     // Comandos
     // ------------------------------------------------------------------
@@ -240,20 +244,13 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
     private fun restCalibrationStep(t: Double, s: Vec3, events: MutableList<DetectorEvent>) {
         signal = 0.0
         if (calibStart.isNaN()) calibStart = t
-        calibSamples += s
         val c = config
+        // El primer instante incluye el toque en "Empezar": no se usa.
+        if (t - calibStart >= c.restSettleSeconds) calibSamples += s
         progress = ((t - calibStart) / c.restCalibrationSeconds).coerceIn(0.0, 1.0)
         if (t - calibStart >= c.restCalibrationSeconds && calibSamples.size >= 10) {
-            var sum = Vec3.ZERO
-            for (v in calibSamples) sum += v
-            val mean = sum / calibSamples.size.toDouble()
-            var sq = 0.0
-            for (v in calibSamples) {
-                val d = (v - mean).norm
-                sq += d * d
-            }
-            baseline = mean
-            noise = max(sqrt(sq / calibSamples.size), c.noiseFloor)
+            baseline = medianVector(calibSamples)
+            noise = max(robustNoise(calibSamples, rate.rateHz), c.noiseFloor)
             calibSamples.clear()
             progress = 1.0
             currentState = DetectorState.REST
@@ -262,9 +259,42 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
         }
     }
 
+    /** Mediana por eje: un golpe breve durante la calibracion no mueve la base. */
+    private fun medianVector(v: List<Vec3>): Vec3 =
+        Vec3(median(v.map { it.x }), median(v.map { it.y }), median(v.map { it.z }))
+
+    /**
+     * Ruido σ robusto: mediana de |B - promedio movil de ~1 s|, escalada para que con ruido
+     * gaussiano coincida con el RMS (para |N(0,σ²I₃)| el RMS es ≈ 1,13 × la mediana).
+     * Asi ni la deriva lenta ni un golpe aislado inflan el umbral.
+     */
+    private fun robustNoise(v: List<Vec3>, rateHz: Double): Double {
+        val n = v.size
+        val w = (if (rateHz > 0) rateHz else DEFAULT_RATE_HZ).toInt().coerceIn(5, n / 2).let { it - it % 2 }
+        if (n < 2 * w) {
+            val m = medianVector(v)
+            return sqrt(v.sumOf { val d = (it - m).norm; d * d } / n)
+        }
+        val prefix = ArrayList<Vec3>(n + 1).apply { add(Vec3.ZERO) }
+        for (s in v) prefix += prefix.last() + s
+        val half = w / 2
+        val deviations = DoubleArray(n - w) { k ->
+            val i = k + half
+            val mean = (prefix[i + half] - prefix[i - half]) / w.toDouble()
+            (v[i] - mean).norm
+        }
+        return RMS_PER_MEDIAN_3D * median(deviations.toList())
+    }
+
+    private fun median(values: List<Double>): Double {
+        val s = values.sorted()
+        val n = s.size
+        return if (n % 2 == 1) s[n / 2] else (s[n / 2 - 1] + s[n / 2]) / 2
+    }
+
     private fun magnetCalibrationStep(t: Double, delta: Vec3, events: MutableList<DetectorEvent>) {
         val c = config
-        val start = max(c.magnetPeakMinSigma * noise, c.magnetPeakMin)
+        val start = magnetPeakThreshold
         if (!inPeak) {
             if (signal > start) {
                 inPeak = true
@@ -286,9 +316,8 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
     }
 
     private fun finishMagnetCalibration(t: Double, events: MutableList<DetectorEvent>) {
-        val values = peaks.map { it.first }.sorted()
-        val n = values.size
-        val median = if (n % 2 == 1) values[n / 2] else (values[n / 2 - 1] + values[n / 2]) / 2
+        val n = peaks.size
+        val median = median(peaks.map { it.first })
         var sum = Vec3.ZERO
         for ((_, d) in peaks) sum += d
         val mean = sum.normalized()
@@ -450,6 +479,7 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
             cosine = cosine,
             onThreshold = onThreshold,
             offThreshold = offThreshold,
+            peakThreshold = magnetPeakThreshold,
             noise = noise,
             baseline = baseline,
             gyroAvailable = gyroAvailable,
@@ -463,5 +493,12 @@ class Detector(config: DetectorConfig = DetectorConfig()) {
             activations = activations,
             recentEvents = recent.toList(),
         )
+    }
+
+    private companion object {
+        const val DEFAULT_RATE_HZ = 100.0
+
+        /** RMS / mediana de |v| para ruido gaussiano isotropo en 3 ejes (distribucion chi, 3 g.l.). */
+        const val RMS_PER_MEDIAN_3D = 1.13
     }
 }

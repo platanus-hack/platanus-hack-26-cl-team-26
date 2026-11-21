@@ -16,6 +16,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -126,4 +128,19 @@ fun SignalMeter(signal: Double, marker: Double, modifier: Modifier = Modifier) {
             contentAlignment = Alignment.CenterEnd,
         ) { Box(Modifier.size(width = 4.dp, height = 28.dp).background(Palette.Highlight)) }
     }
+}
+
+@Composable
+fun AppSlider(value: Float, range: ClosedFloatingPointRange<Float>, steps: Int, onChange: (Float) -> Unit) {
+    Slider(
+        value = value.coerceIn(range),
+        onValueChange = onChange,
+        valueRange = range,
+        steps = steps,
+        colors = SliderDefaults.colors(
+            thumbColor = Palette.Highlight,
+            activeTrackColor = Palette.Highlight,
+            inactiveTrackColor = Palette.Border,
+        ),
+    )
 }

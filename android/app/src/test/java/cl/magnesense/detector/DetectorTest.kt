@@ -142,6 +142,43 @@ class DetectorTest {
     }
 
     @Test
+    fun weakMagnetCalibratesWhenPeakThresholdIsLowered() {
+        sim.detector.startRestCalibration()
+        sim.run(10.5)
+        // Un iman debil (2 µT) no alcanza el minimo por defecto de 3 µT...
+        sim.detector.startMagnetCalibration()
+        repeat(5) {
+            sim.run(0.6) { magnetDir * 2.0 }
+            sim.run(0.8)
+        }
+        assertEquals(DetectorState.CALIBRATING_MAGNET, sim.detector.state)
+        // ...pero si se baja el minimo desde la pantalla de depuracion, si.
+        sim.detector.config = sim.detector.config.copy(magnetPeakMin = 1.0, magnetPeakMinSigma = 4.0)
+        sim.detector.startMagnetCalibration()
+        repeat(5) {
+            sim.run(0.6) { magnetDir * 2.0 }
+            sim.run(0.8)
+        }
+        assertEquals(DetectorState.REST, sim.detector.state)
+        assertEquals(2.0, sim.detector.status.value.magnet!!.medianPeak, 0.3)
+    }
+
+    @Test
+    fun restNoiseIgnoresBumpsAndSlowDrift() {
+        sim.detector.startRestCalibration()
+        // Toque en "Empezar" (golpe de 15 µT), deriva lenta y otro golpe a la mitad.
+        sim.run(0.3) { Vec3(15.0, 0.0, 0.0) }
+        sim.run(4.0) { Vec3(0.0, 0.0, 0.5 * sim.elapsedInSegment) }
+        sim.run(0.3) { Vec3(0.0, 10.0, 2.0) }
+        sim.run(6.0) { Vec3(0.0, 0.0, 2.0) }
+        assertEquals(DetectorState.REST, sim.detector.state)
+        val noise = sim.detector.status.value.noise
+        // Ruido gaussiano de 0,2 µT por eje, suavizado: σ real ≈ 0,1 µT.
+        assertTrue("ruido $noise", noise < 0.3)
+        assertTrue("umbral de calibracion ${sim.detector.magnetPeakThreshold}", sim.detector.magnetPeakThreshold <= 3.0)
+    }
+
+    @Test
     fun restoredCalibrationRemeasuresBaseline() {
         calibrate()
         val saved = sim.detector.calibration()!!

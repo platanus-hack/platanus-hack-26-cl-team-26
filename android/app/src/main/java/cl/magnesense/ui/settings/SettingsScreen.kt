@@ -21,8 +21,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -45,6 +43,7 @@ import cl.magnesense.actions.DeviceKind
 import cl.magnesense.data.AppSettings
 import cl.magnesense.data.SettingsStore
 import cl.magnesense.telemetry.TelemetryClient
+import cl.magnesense.ui.components.AppSlider
 import cl.magnesense.ui.components.BigButton
 import cl.magnesense.ui.components.BigOutlineButton
 import cl.magnesense.ui.components.Panel
@@ -232,21 +231,6 @@ private fun Field(label: String, value: String, keyboard: KeyboardType = Keyboar
             unfocusedLabelColor = Palette.Muted,
         ),
         modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-private fun AppSlider(value: Float, range: ClosedFloatingPointRange<Float>, steps: Int, onChange: (Float) -> Unit) {
-    Slider(
-        value = value.coerceIn(range),
-        onValueChange = onChange,
-        valueRange = range,
-        steps = steps,
-        colors = SliderDefaults.colors(
-            thumbColor = Palette.Highlight,
-            activeTrackColor = Palette.Highlight,
-            inactiveTrackColor = Palette.Border,
-        ),
     )
 }
 

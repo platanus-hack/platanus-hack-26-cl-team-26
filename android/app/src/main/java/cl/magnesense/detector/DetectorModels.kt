@@ -59,6 +59,8 @@ data class DetectorStatus(
     val cosine: Double = Double.NaN,
     val onThreshold: Double = 0.0,
     val offThreshold: Double = 0.0,
+    /** Lo que debe superar cada acercamiento al calibrar el iman (µT). */
+    val peakThreshold: Double = 0.0,
     val noise: Double = 0.0,
     val baseline: Vec3? = null,
     val gyroAvailable: Boolean = false,

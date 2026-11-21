@@ -9,6 +9,8 @@ data class DetectorConfig(
 
     // --- Calibracion en reposo ---
     val restCalibrationSeconds: Double = 10.0,
+    /** Se descarta el comienzo (el toque en "Empezar" mueve el campo). */
+    val restSettleSeconds: Double = 1.0,
     /** Piso del ruido σ (un sensor "perfecto" no debe dejar el umbral en cero). */
     val noiseFloor: Double = 0.05,
 

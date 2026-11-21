@@ -71,7 +71,8 @@ class MagneSenseApp : Application() {
 
     private fun apply(s: AppSettings) {
         val detector = engine.detector
-        detector.config = detector.config.copy(sensitivity = s.sensitivity, holdSeconds = s.holdMs / 1000.0)
+        detector.config = s.tuning.applyTo(detector.config)
+            .copy(sensitivity = s.sensitivity, holdSeconds = s.holdMs / 1000.0)
         access.scanning.stepMs = s.scanStepMs
         access.setDevices(s.devices)
         access.actions.caregiver = CaregiverConfig(s.caregiverPhone.trim(), s.caregiverWebhook.trim())
