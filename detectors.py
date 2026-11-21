@@ -556,7 +556,7 @@ class Bank:
 
     def add(self, det, action="toggle", trigger=None):
         if trigger is None:
-            trigger = {"event": "any", "rhythm": "pause", "state": ""}[det.kind]
+            trigger = {"event": "any", "rhythm": "pause", "state": "", "trajectory": ""}[det.kind]
         self.detectors[det.name] = Bound(det, action, trigger)
         if isinstance(det, EventDetector) and det.direction is not None:
             self.pipeline.direction = det.direction.u
@@ -592,6 +592,9 @@ class Bank:
                 any_active |= d.active
             elif isinstance(d, RhythmDetector):
                 ev = d.step(t, smooth, p.hf_noise)
+            elif getattr(d, "uses_delta", False):   # trajectory.py: trayectoria y patron (fase 3)
+                ev = d.step(t, delta, p.noise)
+                any_active |= d.active
             else:
                 ev = d.step(t, smooth)
             for e in ev:

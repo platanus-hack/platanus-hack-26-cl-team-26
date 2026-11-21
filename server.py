@@ -29,9 +29,14 @@ from actuators import voice
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from actions import ActionError, Engine
+from agent import Agent, Context
 from detectors import Bank, DirectionModel, EventDetector, RhythmDetector, StateDetector
+import analysis
+from trajectory import PatternDetector, TrajectoryDetector
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
+SOUNDS_DIR = Path(__file__).resolve().parent / "sounds"
 PORT = int(os.environ.get("PORT", "8000"))
 ACTUATOR_ON_URL = os.environ.get("ACTUATOR_ON_URL", "")
 ACTUATOR_OFF_URL = os.environ.get("ACTUATOR_OFF_URL", "")
@@ -320,11 +325,16 @@ app = FastAPI(title="MagneSense")
 det = Detector()
 bank = Bank()                       # detectores fase 2 (vacio = manda la fase 1)
 examples: dict[str, list[dict]] = {}   # etiqueta -> [{"delta": arr, "smooth": arr}]
-rec = {"label": "", "base": None, "delta": [], "smooth": []}
+rec = {"label": "", "base": None, "delta": [], "smooth": [], "moving": []}
 clients: set[WebSocket] = set()
 recent_times: deque[float] = deque(maxlen=2000)   # para frecuencia de muestreo
+app_events: deque[dict] = deque(maxlen=200)       # eventos recibidos de la app Android
 state = {"csv_file": None, "csv_writer": None, "csv_path": None,
          "first_saved": False, "messages": 0, "samples": 0, "last_rx": None}
+# Reglas "gesto -> accion" y acciones personalizables (ver actions.py)
+engine = Engine(DATA_DIR / "acciones.json",
+                lamp=lambda mode: _apply_action({"prender": "on", "apagar": "off"}.get(mode, "toggle")),
+                sounds_dir=SOUNDS_DIR)
 
 
 def _open_csv():
@@ -430,8 +440,12 @@ async def data(request: Request):
         for e in ev2:
             events2.append(e)
             _apply_action(e.get("action"))
+            fired = engine.handle(e)
+            if fired:
+                e["fired"] = fired
         if rec["label"] and p.smooth is not None:
             rec["smooth"].append(p.smooth.tolist())
+            rec["moving"].append(bool(moving))
             base = rec["base"] if rec["base"] is not None else p.smooth
             rec["delta"].append((vr - base).tolist())
         recent_times.append(s["t"])
@@ -471,24 +485,38 @@ async def record_start(request: Request):
     label = str(cfg.get("label", "")).strip()[:40]
     if not label:
         return JSONResponse({"ok": False, "error": "falta la etiqueta"}, status_code=400)
+    _record_start(label)
+    return {"ok": True, "label": label}
+
+
+def _record_start(label: str):
     p = bank.pipeline
     base = p.baseline if p.baseline is not None else (det.baseline and np.array(det.baseline))
-    rec.update(label=label, base=None if base is None else np.array(base, float), delta=[], smooth=[])
-    return {"ok": True, "label": label}
+    rec.update(label=label, base=None if base is None else np.array(base, float), delta=[], smooth=[],
+               moving=[])
+
+
+async def _record_stop() -> dict:
+    """Termina la grabacion. Devuelve el ejemplo guardado (o None si fue muy corto)."""
+    label = rec["label"]
+    if not label:
+        return {"ok": False, "error": "no se estaba grabando"}
+    ex = None
+    if len(rec["smooth"]) >= 3:
+        ex = {"delta": np.array(rec["delta"]), "smooth": np.array(rec["smooth"]),
+              "moving": np.array(rec["moving"], bool)}
+        examples.setdefault(label, []).append(ex)
+    rec.update(label="", base=None, delta=[], smooth=[], moving=[])
+    n = len(examples.get(label, []))
+    await broadcast(dict(_panel_state(), type="state"))
+    return {"ok": True, "label": label, "examples": n, "example": ex}
 
 
 @app.post("/record/stop")
 async def record_stop():
-    label = rec["label"]
-    if not label:
-        return {"ok": False, "error": "no se estaba grabando"}
-    if len(rec["smooth"]) >= 3:
-        examples.setdefault(label, []).append({"delta": np.array(rec["delta"]),
-                                               "smooth": np.array(rec["smooth"])})
-    rec.update(label="", base=None, delta=[], smooth=[])
-    n = len(examples.get(label, []))
-    await broadcast(dict(_panel_state(), type="state"))
-    return {"ok": True, "label": label, "examples": n}
+    out = await _record_stop()
+    out.pop("example", None)
+    return out
 
 
 @app.post("/examples/clear")
@@ -510,44 +538,109 @@ async def train(request: Request):
     {"type": "rhythm", "name": "respiracion", "band": [0.1, 0.7], "pause_s": 10}
     """
     cfg = await request.json()
-    kind = cfg.get("type")
-    action = cfg.get("action", "toggle")
     try:
-        if kind == "event":
-            label = cfg["label"]
-            exs = [e["delta"] for e in examples.get(label, [])]
-            if not exs:
-                raise ValueError(f"no hay ejemplos de '{label}'")
-            dm = DirectionModel.fit(exs)
-            d = EventDetector(cfg.get("name", label), direction=dm,
-                              min_on=float(cfg.get("min_on_ms", 150)) / 1000)
-            bank.add(d, action=action, trigger=cfg.get("trigger", "any"))
-            info = {"consistency": round(dm.consistency(exs), 3), **dm.to_dict()}
-        elif kind == "state":
-            labels = cfg.get("labels") or list(examples)
-            d = StateDetector(cfg.get("name", "estado")).fit(
-                {lab: [e["smooth"] for e in examples.get(lab, [])] for lab in labels})
-            bank.add(d, action=action, trigger=cfg.get("trigger", labels[0]))
-            info = {"separation": round(d.separation(), 2), "labels": d.labels}
-        elif kind == "rhythm":
-            band = tuple(cfg.get("band", (0.1, 0.7)))
-            d = RhythmDetector(cfg.get("name", "ritmo"), band=band,
-                               pause_s=float(cfg.get("pause_s", 10)))
-            bank.add(d, action=cfg.get("action", "on"), trigger="pause")
-            info = {"band": band}
-        else:
-            raise ValueError("type debe ser event, state o rhythm")
+        return await _train(cfg)
     except (KeyError, ValueError) as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
+async def _train(cfg: dict) -> dict:
+    """Crea un detector y lo agrega al banco. Lanza ValueError/KeyError si no se puede."""
+    kind = cfg.get("type")
+    action = cfg.get("action", "toggle")
+    if kind == "event":
+        d, info = _train_event(cfg)
+        bank.add(d, action=action, trigger=cfg.get("trigger", "any"))
+    elif kind == "state":
+        labels = cfg.get("labels") or list(examples)
+        missing = [lab for lab in labels if not examples.get(lab)]
+        if missing:
+            raise ValueError(f"no hay ejemplos de: {', '.join(missing)}")
+        d = StateDetector(cfg.get("name", "estado")).fit(
+            {lab: [e["smooth"] for e in examples.get(lab, [])] for lab in labels})
+        bank.add(d, action=action, trigger=cfg.get("trigger", labels[0]))
+        info = {"separation": round(d.separation(), 2), "labels": d.labels}
+    elif kind == "rhythm":
+        band = tuple(cfg.get("band", (0.1, 0.7)))
+        d = RhythmDetector(cfg.get("name", "ritmo"), band=band,
+                           pause_s=float(cfg.get("pause_s", 10)))
+        bank.add(d, action=cfg.get("action", "on"), trigger="pause")
+        info = {"band": band}
+    elif kind == "trajectory":
+        labels = cfg.get("labels") or []
+        missing = [lab for lab in labels if not examples.get(lab)]
+        if not labels or missing:
+            raise ValueError(f"no hay ejemplos de: {', '.join(missing) or 'ninguna etiqueta'}")
+        d = TrajectoryDetector(cfg.get("name", "movimiento")).fit(
+            {lab: [e["delta"] for e in examples[lab]] for lab in labels},
+            noise=bank.pipeline.noise or 0.2)
+        bank.add(d, action=action)
+        info = d.quality()
+    else:
+        raise ValueError("type debe ser event, state, rhythm o trajectory")
     await broadcast(dict(_panel_state(), type="state"))
     return {"ok": True, "detector": d.name, "info": info}
+
+
+def _analysis() -> dict:
+    noise = bank.pipeline.noise or det.noise or 0.2
+    return analysis.analyze(examples, noise, sample_rate() or 50.0)
+
+
+def _train_event(cfg: dict):
+    """Crea el detector de un movimiento eligiendo solo el modelo (ver analysis.py).
+
+    Descarta los ejemplos sin movimiento y rechaza el entrenamiento si casi
+    ninguno se vio. Usa "direccion" si el gesto empuja siempre hacia un lado
+    distinto de los demas movimientos grabados; si no, "patron", que compara la
+    forma completa del movimiento contra todos los grabados.
+    """
+    label = cfg["label"]
+    if not examples.get(label):
+        raise ValueError(f"no hay ejemplos de '{label}'")
+    an = _analysis()
+    la = an["etiquetas"][label]
+    if la["problema"]:
+        raise ValueError(la["problema"])
+    model = cfg.get("model") if cfg.get("model") in ("direccion", "patron") else la["modelo_sugerido"]
+    seen = {lab: [e["delta"] for e, i in zip(examples[lab], inf["detalle"]) if i["se_vio"]]
+            for lab, inf in an["etiquetas"].items() if not inf["problema"]}
+    name = cfg.get("name", label)
+    if model == "direccion":
+        exs = seen[label]
+        dm = DirectionModel.fit(exs)
+        d = EventDetector(name, direction=dm, min_on=float(cfg.get("min_on_ms", 150)) / 1000)
+        info = {"consistency": round(dm.consistency(exs), 3), **dm.to_dict()}
+    else:
+        d = PatternDetector(name, target=label).fit(seen, noise=bank.pipeline.noise or 0.2)
+        q = d.quality()
+        info = {"consistency": q.get("acierto_dejando_uno_fuera"), "separation": q.get("separacion"),
+                "rivales": [lab for lab in seen if lab != label]}
+    info.update(model=model, vistos=la["vistos"], ejemplos=la["ejemplos"], avisos=la["avisos"])
+    return d, info
+
+
+@app.get("/examples/analysis")
+async def examples_analysis():
+    """Diagnostico de los ejemplos grabados (lo usan el panel, la app y el agente)."""
+    an = _analysis()
+    for inf in an["etiquetas"].values():
+        for e in inf["detalle"]:
+            e.pop("direccion", None)
+    return an
+
+
+async def _remove_detector(name: str):
+    bank.remove(name)
+    engine.remove_rules_for(name)
+    await broadcast(dict(_panel_state(), type="state"))
+    await broadcast({"type": "rules", **engine.status()})
 
 
 @app.post("/detectors/remove")
 async def detectors_remove(request: Request):
     cfg = await request.json()
-    bank.remove(cfg.get("name"))
-    await broadcast(dict(_panel_state(), type="state"))
+    await _remove_detector(cfg.get("name"))
     return {"ok": True}
 
 
@@ -592,9 +685,143 @@ async def lamp(request: Request):
     return {"ok": True, "lamp": det.lamp}
 
 
+@app.post("/app-event")
+async def app_event(request: Request):
+    """Eventos de la app Android (activacion, pausa, opcion elegida...). Se reenvian al panel."""
+    try:
+        body = json.loads(await request.body())
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "JSON invalido"}, status_code=400)
+    if not isinstance(body, dict) or not isinstance(body.get("type"), str):
+        return JSONResponse({"ok": False, "error": "falta type"}, status_code=400)
+    event = {"type": body["type"][:64], "text": str(body.get("text", ""))[:200], "time": body.get("time")}
+    for key in ("signal", "cosine"):
+        if isinstance(body.get(key), (int, float)):
+            event[key] = body[key]
+    app_events.append(event)
+    await broadcast({"type": "app_event", "event": event})
+    return {"ok": True}
+
+
 @app.get("/status")
 async def status():
     return _panel_state()
+
+
+# --- Fase 3: agente, reglas y acciones --------------------------------------
+
+def _sounds() -> list[str]:
+    if not SOUNDS_DIR.is_dir():
+        return []
+    return sorted(p.name for p in SOUNDS_DIR.iterdir()
+                  if p.suffix.lower() in (".mp3", ".wav", ".ogg", ".oga", ".flac", ".m4a"))
+
+
+assistant = Agent(Context(
+    engine=engine,
+    status=lambda: dict(_panel_state(), last_rx=state["last_rx"]),
+    train=_train,
+    remove_detector=_remove_detector,
+    broadcast=lambda msg: broadcast(msg),
+    say=voice.say,
+    sounds=_sounds,
+    record_start=_record_start,
+    record_stop=_record_stop,
+    clear_examples=lambda label: examples.pop(label, None),
+    analysis=lambda: _analysis(),
+))
+
+
+@app.post("/agent")
+async def agent_chat(request: Request):
+    """Un turno de conversacion con el agente: {"text": "..."}."""
+    cfg = await request.json()
+    text = str(cfg.get("text", "")).strip()[:2000]
+    if not text:
+        return JSONResponse({"ok": False, "error": "mensaje vacio"}, status_code=400)
+    if isinstance(cfg.get("context"), dict):
+        # App Android (android/SERVER_API.md): el servidor solo propone pasos y la app
+        # los ejecuta cuando el cuidador toca "Hacer". Responde en menos de 30 s.
+        await broadcast({"type": "agent", "role": "user", "text": f"[app] {text}"})
+        out = await assistant.plan(text, cfg["context"])
+        if "error" in out:
+            await broadcast({"type": "agent", "role": "assistant", "text": out["error"]})
+            return JSONResponse(out, status_code=503)
+        await broadcast({"type": "agent", "role": "assistant",
+                         "text": out["reply"] + "".join(f"\n· {s['type']}: {s.get('label') or s.get('name') or s.get('detector')}"
+                                                       for s in out["steps"])})
+        return out
+    await broadcast({"type": "agent", "role": "user", "text": text})
+    reply = await assistant.chat(text)
+    await broadcast({"type": "agent", "role": "assistant", "text": reply})
+    return {"ok": True, "reply": reply}
+
+
+@app.post("/agent/reset")
+async def agent_reset():
+    assistant.reset()
+    return {"ok": True}
+
+
+@app.get("/agent/status")
+async def agent_status():
+    reason = assistant.unavailable_reason()
+    return {"available": reason is None, "reason": reason}
+
+
+@app.get("/rules")
+async def rules_status():
+    return engine.status()
+
+
+@app.post("/rules")
+async def rules_add(request: Request):
+    cfg = await request.json()
+    try:
+        r = engine.add_rule(str(cfg["detector"]), str(cfg["gesto"]), str(cfg["accion"]))
+    except (KeyError, ActionError) as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    await broadcast({"type": "rules", **engine.status()})
+    return {"ok": True, "regla": r}
+
+
+@app.post("/rules/remove")
+async def rules_remove(request: Request):
+    cfg = await request.json()
+    ok = engine.remove_rule(int(cfg.get("id", -1)))
+    await broadcast({"type": "rules", **engine.status()})
+    return {"ok": ok}
+
+
+@app.post("/actions/approve")
+async def actions_approve(request: Request):
+    """Una persona aprueba una accion http/comando creada por el agente."""
+    cfg = await request.json()
+    try:
+        engine.approve(str(cfg.get("name", "")))
+    except ActionError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    await broadcast({"type": "rules", **engine.status()})
+    return {"ok": True}
+
+
+@app.post("/actions/remove")
+async def actions_remove(request: Request):
+    cfg = await request.json()
+    try:
+        engine.remove_action(str(cfg.get("name", "")))
+    except ActionError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    await broadcast({"type": "rules", **engine.status()})
+    return {"ok": True}
+
+
+@app.post("/actions/run")
+async def actions_run(request: Request):
+    cfg = await request.json()
+    result = await engine.run(str(cfg.get("name", "")))
+    await broadcast({"type": "rules", **engine.status()})
+    return {"ok": True, "resultado": result}
 
 
 @app.websocket("/ws")
@@ -602,6 +829,7 @@ async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     clients.add(ws)
     await ws.send_text(json.dumps(dict(_panel_state(), type="state")))
+    await ws.send_text(json.dumps({"type": "rules", **engine.status()}))
     try:
         while True:
             await ws.receive_text()
@@ -641,6 +869,31 @@ PANEL_HTML = r"""<!DOCTYPE html>
  #rec.on{background:#c33;color:#fff}
  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#c33}
  .dot.ok{background:#3c3}
+ #p3{border-top:1px solid #333;margin-top:8px;padding-bottom:24px}
+ #p3 h2,#p3 h3{font-size:16px;margin:10px 16px}
+ #p3 h3{font-size:14px;color:#aaa}
+ #chat{margin:6px 16px;max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+ .m{padding:8px 10px;border-radius:8px;max-width:80%;white-space:pre-wrap;line-height:1.35}
+ .m.user{align-self:flex-end;background:#244a7a}
+ .m.assistant{align-self:flex-start;background:#262626}
+ .m.tool{align-self:flex-start;color:#999;font-size:12px;padding:2px 10px}
+ #ask{display:flex;gap:8px;margin:6px 16px}
+ #ask input{flex:1;padding:8px}
+ #probe{display:none;margin:8px 16px;padding:22px;border-radius:10px;background:#4a3b00;color:#ffd84a;font-size:28px;font-weight:700;text-align:center}
+ #probe.prep{background:#12324f;color:#9cf}
+ #probe .cd{display:block;font-size:56px;margin-top:6px}
+ .row{margin:4px 16px;padding:6px 10px;background:#1a1a1a;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+ .row.pend{border-left:4px solid #e90}
+ .row code{color:#9cf;word-break:break-all}
+ .muted{color:#888;font-size:13px;margin:4px 16px}
+ #p4{border-top:1px solid #333;margin-top:8px;padding-bottom:16px}
+ #p4 h2{font-size:16px;margin:10px 16px}
+ .diag{margin:6px 16px;padding:8px 10px;background:#1a1a1a;border-left:4px solid #3c3}
+ .diag.bad{border-left-color:#c33}
+ .pk{display:inline-block;margin:2px;padding:1px 6px;border-radius:4px;font-size:12px;font-variant-numeric:tabular-nums}
+ .pk.ok{background:#1f4d2b}.pk.no{background:#5a1d1d}
+ .warn{color:#fc6;font-size:13px}
+ #aev{margin:4px 16px;max-height:160px;overflow-y:auto;font:12px monospace;color:#bbb}
 </style></head><body>
 <header><div id="lamp"></div><h1>MagneSense</h1>
  <span><span id="conn" class="dot"></span> <span id="connt">sin conexion</span></span></header>
@@ -682,6 +935,22 @@ PANEL_HTML = r"""<!DOCTYPE html>
  </div>
  <div id="dets"></div>
 </section>
+<section id="p4">
+ <h2>Diagnostico de ejemplos <span class="tag">que ve el sensor en cada grabacion</span></h2>
+ <div id="diag"><div class="muted">Sin ejemplos grabados.</div></div>
+ <h2>Depuracion del celular <span class="tag">eventos de la app Android</span></h2>
+ <div id="aev"><div class="muted">Sin eventos todavia.</div></div>
+</section>
+<section id="p3">
+ <h2>Agente: gestos y acciones <span id="agst" class="tag">-</span></h2>
+ <div id="probe"></div>
+ <div id="chat"></div>
+ <div id="ask"><input id="q" placeholder="Ej: con un gesto corto de la ceja quiero decir 'tengo sed', y con uno largo pausar la musica">
+  <button id="send">Enviar</button><button id="newc" title="Empezar una conversacion nueva">Nueva</button></div>
+ <h3>Reglas (gesto → accion)</h3><div id="rules"></div>
+ <h3>Acciones creadas</h3><div id="acts2"></div>
+ <h3>Ultimas acciones ejecutadas</h3><div id="alog"></div>
+</section>
 <script>
 const cv=document.getElementById('c'),ctx=cv.getContext('2d');
 let pts=[],thr=1,lastRx=0,lampOn=false;const WIN=10;
@@ -711,7 +980,7 @@ function rmdet(n){post('/detectors/remove',{name:n})}
 function esc(t){return String(t).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';')}
 function apply2(s){
  recording=s.recording||'';$('rec').className=recording?'on':'';$('rec').textContent=recording?'■ Detener ('+recording+')':'● Grabar ejemplo';
- const ex=s.examples||{};const ks=Object.keys(ex);$('exs').textContent=ks.length?ks.map(k=>k+': '+ex[k]).join(' · '):'sin ejemplos';
+ maybeDiag(s); const ex=s.examples||{};const ks=Object.keys(ex);$('exs').textContent=ks.length?ks.map(k=>k+': '+ex[k]).join(' · '):'sin ejemplos';
  const p=s.phase2||{};const g=$('gyro');
  g.textContent=!p.gyro?'sin giroscopio':(p.phone_moving?'telefono moviendose: deteccion en pausa':'giroscopio ok');
  g.className='tag'+(p.phone_moving?' mov':'');
@@ -719,6 +988,7 @@ function apply2(s){
   if(d.type==='event')x='senal '+d.signal.toFixed(2)+' / '+d.threshold.toFixed(2)+' µT · gestos '+d.count+(d.last?' · ultimo: '+esc(d.last):'');
   if(d.type==='rhythm')x=(d.per_min?d.per_min+'/min ('+d.freq_hz+' Hz)':'midiendo...')+' · amplitud '+d.amp.toFixed(2)+' µT'+(d.paused?' · <b>PAUSA</b>':'')+' · pausas '+d.count;
   if(d.type==='state')x='estado: <b>'+esc(d.state||'?')+'</b> · cambios '+d.count;
+  if(d.type==='trajectory')x='movimientos: '+esc((d.labels||[]).join(', '))+' · ultimo: <b>'+esc(d.last||'-')+'</b> · reconocidos '+d.count+(d.active?' · <b>en movimiento</b>':'');
   return '<div class="det'+(d.active?' on':'')+'"><b>'+esc(d.name)+'</b><span>'+d.type+'</span><span>'+x+'</span><button data-n="'+esc(d.name)+'" onclick="rmdet(this.dataset.n)">quitar</button></div>'}).join('');
 }
 function apply(s){
@@ -737,6 +1007,10 @@ function connect(){
  ws.onclose=()=>{$('conn').className='dot';$('connt').textContent='sin conexion';setTimeout(connect,1000)};
  ws.onmessage=e=>{const m=JSON.parse(e.data);
   if(m.type==='info'){$('msg').textContent=m.text;return}
+  if(m.type==='app_event'){$('msg').textContent='Celular: '+(m.event.text||m.event.type);addAppEvent(m.event);return}
+  if(m.type==='agent'){addMsg(m);return}
+  if(m.type==='rules'){renderRules(m);return}
+  if(m.type==='probe'){showProbe(m);return}
   apply(m);
   if(m.type==='data'){lastRx=Date.now();
    for(const p of m.points)pts.push([p[0],p[1],m.threshold]);
@@ -762,6 +1036,64 @@ function draw(){
  }
  requestAnimationFrame(draw);
 }
+// --- Diagnostico ---
+let exKey='';
+function maybeDiag(s){const k=JSON.stringify(s.examples||{});if(k===exKey)return;exKey=k;
+ fetch('/examples/analysis').then(r=>r.json()).then(renderDiag).catch(()=>{});}
+const MODELN={direccion:'direccion del empuje',patron:'patron (forma del movimiento)'};
+function renderDiag(a){const E=Object.entries(a.etiquetas||{});
+ if(!E.length){$('diag').innerHTML='<div class="muted">Sin ejemplos grabados.</div>';return}
+ $('diag').innerHTML='<div class="muted">Umbral '+a.umbral_uT+' µT (6 x ruido '+a.ruido_uT+' µT) · '+a.muestreo_hz+' Hz</div>'+
+  E.map(([k,i])=>'<div class="diag'+(i.problema?' bad':'')+'"><b>'+esc(k)+'</b> · se vieron '+i.vistos+' de '+i.ejemplos+
+   (i.modelo_sugerido?' · modelo: '+esc(MODELN[i.modelo_sugerido]||i.modelo_sugerido):'')+
+   (i.parecido_direccion!=null?' · parecido '+i.parecido_direccion:'')+'<br>'+
+   i.detalle.map(e=>'<span class="pk '+(e.se_vio?'ok':'no')+'" title="'+(e.cortado_al_final?'cortado al final ':'')+(e.celular_movido>0.2?'celular movido':'')+'">'+e.pico_uT+' µT'+(e.cortado_al_final?' ✂':'')+(e.celular_movido>0.2?' 📱':'')+'</span>').join('')+
+   (i.problema?'<div class="warn">'+esc(i.problema)+'</div>':'')+
+   (i.avisos||[]).map(w=>'<div class="warn">'+esc(w)+'</div>').join('')+'</div>').join('')+
+  (a.pares||[]).map(p=>'<div class="muted">'+esc(p.a)+' vs '+esc(p.b)+': direcciones '+(p.coseno_direcciones>=0.6?'parecidas':'distintas')+' ('+p.coseno_direcciones+')'+
+   (p.acierto_patron!=null?' · por forma acierta '+Math.round(p.acierto_patron*100)+'%':'')+'</div>').join('');}
+function addAppEvent(e){const d=$('aev');if(d.querySelector('.muted'))d.innerHTML='';
+ const x=document.createElement('div');x.textContent=new Date().toLocaleTimeString()+'  '+e.type+'  '+(e.text||'')+
+  (e.signal!=null?'  señal '+(+e.signal).toFixed(2)+' µT':'')+(e.cosine!=null?'  coseno '+(+e.cosine).toFixed(2):'');
+ d.prepend(x);while(d.children.length>50)d.lastChild.remove();}
+// --- Agente ---
+const TOOLN={ver_estado:'revisando el estado',grabar_ejemplos:'grabando ejemplos',crear_detector:'creando detector',probar_detector:'probando detector',
+ listar_acciones:'revisando acciones',crear_accion:'creando accion',conectar:'conectando gesto y accion',
+ desconectar:'borrando regla',ejecutar_accion:'probando accion',quitar_detector:'quitando detector'};
+function addMsg(m){const d=document.createElement('div');d.className='m '+m.role;
+ if(m.role==='tool'){const i=m.input||{};const w=i.nombre||i.etiqueta||i.accion||i.detector;d.textContent='· '+(TOOLN[m.name]||m.name)+(w?' ('+w+')':'');}
+ else d.textContent=m.text;
+ $('chat').appendChild(d);$('chat').scrollTop=$('chat').scrollHeight;}
+let busy=false;
+async function ask(){const t=$('q').value.trim();if(!t||busy)return;busy=true;$('send').disabled=true;$('send').textContent='pensando...';$('q').value='';
+ try{await jpost('/agent',{text:t})}catch(e){say('Error al hablar con el agente')}
+ busy=false;$('send').disabled=false;$('send').textContent='Enviar';}
+$('send').onclick=ask;$('q').onkeydown=e=>{if(e.key==='Enter')ask()};
+$('newc').onclick=async()=>{await post('/agent/reset');$('chat').innerHTML=''};
+let probeT=null;
+function showProbe(m){const b=$('probe');clearInterval(probeT);
+ if(!m.seconds){b.style.display='none';return}
+ let left=m.seconds;b.style.display='block';b.className=m.phase==='prep'?'prep':'';
+ b.scrollIntoView({block:'center',behavior:'smooth'});
+ const tick=()=>{b.innerHTML=esc(m.text)+'<span class="cd">'+Math.max(left,0)+'</span>';left--;if(left<0)clearInterval(probeT)};
+ tick();probeT=setInterval(tick,1000);}
+function act(u,n){jpost(u,{name:n})}
+function rmrule(id){post('/rules/remove',{id:+id})}
+function detail(a){if(a.tipo==='http')return a.metodo+' '+a.url;if(a.tipo==='comando')return (a.argv||[]).join(' ');
+ return a.texto||a.mensaje||a.archivo||a.comando||a.modo||''}
+function renderRules(s){
+ const r=s.reglas||[];$('rules').innerHTML=r.length?r.map(x=>'<div class="row"><b>'+esc(x.detector)+'</b> · '+esc(x.gesto)+' → <b>'+esc(x.accion)+'</b>'
+  +((s.acciones[x.accion]||{}).aprobada?'':' <span class="tag mov">pendiente</span>')+' <button data-i="'+x.id+'" onclick="rmrule(this.dataset.i)">quitar</button></div>').join('')
+  :'<div class="muted">Sin reglas. Pidele al agente que conecte un gesto a una accion.</div>';
+ const A=Object.entries(s.acciones||{}).filter(([k,a])=>!a.integrada);
+ $('acts2').innerHTML=A.length?A.map(([k,a])=>'<div class="row'+(a.aprobada?'':' pend')+'"><b>'+esc(k)+'</b><span>'+esc(a.tipo)+'</span><code>'+esc(detail(a))+'</code>'
+  +(a.aprobada?'<button data-n="'+esc(k)+'" onclick="act(\'/actions/run\',this.dataset.n)">probar</button>'
+   :'<span>pendiente de aprobacion</span><button data-n="'+esc(k)+'" onclick="act(\'/actions/approve\',this.dataset.n)">Aprobar</button>')
+  +'<button data-n="'+esc(k)+'" onclick="act(\'/actions/remove\',this.dataset.n)">borrar</button></div>').join('')
+  :'<div class="muted">Solo las integradas (luz, musica, volumen).</div>';
+ const L=(s.log||[]).slice().reverse();$('alog').innerHTML=L.length?L.map(x=>'<div class="row"><span>'+new Date(x.t*1000).toLocaleTimeString()+'</span><b>'+esc(x.accion)+'</b><span>'+esc(x.resultado)+'</span></div>').join(''):'<div class="muted">Nada todavia.</div>';
+}
+fetch('/agent/status').then(r=>r.json()).then(s=>{const t=$('agst');t.textContent=s.available?'listo':'no disponible: '+s.reason;t.className='tag'+(s.available?'':' mov')});
 connect();draw();
 </script></body></html>"""
 

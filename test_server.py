@@ -78,6 +78,7 @@ def test_websocket_and_csv():
     c = fresh()
     with c.websocket_connect("/ws") as ws:
         assert ws.receive_json()["type"] == "state"
+        assert ws.receive_json()["type"] == "rules"     # reglas gesto -> accion (fase 3)
         c.post("/data", json=batch(1_700_000_000.0, 20, lambda t: 0))
         m = ws.receive_json()
         assert m["type"] == "data" and len(m["points"]) == 20
