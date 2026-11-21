@@ -1,4 +1,4 @@
-# VerdeH3 · página web (experimental)
+# Viridis (antes VerdeH3) · página web (experimental)
 
 Concepto B, "página que se recorre": portada con la rama ilustrada, y las secciones El calor ahora,
 Planificar, Histórico y Fuentes, con la paleta Bioentidad (crema, oliva #4F6E31, salvia) y la capa de

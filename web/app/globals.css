@@ -1,4 +1,4 @@
-/* VerdeH3 · concepto B, página que se recorre. Paleta Bioentidad, un solo tema claro a propósito. */
+/* Viridis (antes VerdeH3) · concepto B, página que se recorre. Paleta Bioentidad, un solo tema claro a propósito. */
 :root {
   --crema: #efe9da; --crema2: #f6f1e4; --papel: #fffdf6; --banda: #e8ddbe;
   --oliva: #4f6e31; --oliva-osc: #2f4520; --tinta: #22281a; --texto2: #3f4730; --texto3: #59623f;
@@ -19,8 +19,8 @@ input[type="range"] { accent-color: var(--oliva); width: 100%; height: 28px; mar
 .num { font-variant-numeric: tabular-nums; }
 section[id], footer[id] { scroll-margin-top: 16px; }
 
-.marca { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--f-display); font-weight: 900; font-stretch: 125%; letter-spacing: 0.02em; color: var(--oliva); font-size: 24px; }
-.marca svg { width: 26px; height: 26px; }
+.marca { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--f-display); font-weight: 850; font-stretch: 125%; letter-spacing: 0.02em; color: var(--oliva); font-size: 24px; }
+.marca img { width: 34px; height: 34px; display: block; }
 
 .pill { min-height: 44px; padding: 0 20px; border-radius: 999px; border: 2px solid var(--oliva); background: transparent; color: var(--oliva); font-weight: 700; font-size: 15px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; transition: background-color 0.2s, color 0.2s, transform 0.15s var(--ease-out); }
 .pill:hover { background: rgba(79, 110, 49, 0.08); }
@@ -58,7 +58,9 @@ section[id], footer[id] { scroll-margin-top: 16px; }
   background: linear-gradient(90deg, rgba(239, 233, 218, 0.94) 0%, rgba(239, 233, 218, 0.86) 38%, rgba(239, 233, 218, 0.35) 68%, rgba(239, 233, 218, 0.05) 100%); }
 .b-hero .b-in { width: 100%; }
 .b-hero .b-in { padding-block: 72px 64px; display: flex; flex-direction: column; gap: 26px; position: relative; }
-.b-hero h1 { margin: 0; max-width: 11ch; font-family: var(--f-display); font-weight: 900; font-stretch: 125%; font-size: clamp(48px, 8vw, 112px); line-height: 0.95; color: var(--oliva); text-transform: uppercase; text-wrap: balance; }
+/* Titular en Newsreader (propuesta A): serif editorial, con "el verde" en cursiva. */
+.b-hero h1 { margin: 0; max-width: 12ch; font-family: var(--f-newsreader), Georgia, serif; font-optical-sizing: auto; font-weight: 500; font-size: clamp(54px, 9vw, 128px); line-height: 0.98; letter-spacing: -0.025em; color: var(--oliva); text-wrap: balance; }
+.b-hero h1 em { font-family: inherit; font-style: italic; font-weight: 400; color: var(--oliva-osc); }
 .b-hero p { margin: 0; max-width: 46ch; font-size: 21px; line-height: 1.5; color: var(--texto2); }
 .b-hero em { font-family: var(--f-it); font-style: italic; color: var(--oliva-osc); }
 
