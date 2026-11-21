@@ -219,7 +219,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             estado["antes"] = resolver()
             recalcular()
 
-    inicial = comunas or (["Cerro Navia"] if "Cerro Navia" in todas else todas[:1])
+    inicial = comunas or todas  # al abrir se ven todas; el mapa permite separar por comuna
     faltan = set(inicial) - set(todas)
     if faltan:
         raise ValueError(f"Comunas que no están en {datos}: {sorted(faltan)}")
@@ -462,7 +462,7 @@ def cargar_clave_anthropic(archivo: Path) -> bool:
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--datos", type=Path, default=Path("data/santiago_h3_gs.parquet"))
-    p.add_argument("--comunas", nargs="+", help="comunas iniciales del corredor (luego se eligen en el mapa)")
+    p.add_argument("--comunas", nargs="+", help="comunas iniciales (por defecto todas; luego se eligen en el mapa)")
     p.add_argument("--data", type=Path, default=Path("data"), help="dónde guardar capturas y terreno_h3.parquet")
     p.add_argument("--km", type=float, default=3.0)
     p.add_argument("--puerto", type=int, default=int(os.environ.get("PORT", 8000)))

@@ -26,6 +26,7 @@
   .vistas button { border:0; background:none; padding:7px 4px; border-radius:7px; font:inherit; font-weight:600;
     color:var(--tenue); cursor:pointer; }
   .vistas button[aria-pressed="true"] { background:#fff; color:var(--verde); box-shadow:0 1px 3px #0002; }
+  .modos { grid-template-columns:1fr 1fr; }
   .fila { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
   .boton { border:1px solid var(--borde); background:#fff; border-radius:8px; padding:5px 10px; font:inherit;
     font-size:.85rem; cursor:pointer; color:var(--texto); }
@@ -80,13 +81,15 @@
   </div>
 
   <h2>Área</h2>
-  <div class="fila">
-    <button class="boton" id="piloto">Piloto (Providencia + Cerro Navia)</button>
-    <button class="boton" id="todas">Todas (34)</button>
+  <div class="vistas modos" role="group" aria-label="Comunas">
+    <button data-modo="todas" aria-pressed="true">Todas las comunas</button>
+    <button data-modo="comuna" aria-pressed="false">Separar por comuna</button>
   </div>
   <div class="chips" id="chips"></div>
-  <p class="ayuda">Toca una comuna vecina (borde punteado) para sumarla, u otra para empezar ahí. Dentro de una elegida ves
-    el detalle del hexágono y puedes quitarla.</p>
+  <p class="ayuda" id="ayudaModo"></p>
+  <div class="fila" id="filaPiloto" hidden>
+    <button class="boton" id="piloto">Piloto (Providencia + Cerro Navia)</button>
+  </div>
   <details id="detDistritos">
     <summary>Distritos (barrios H3 res 7) <span id="nDist"></span></summary>
     <div class="chips" id="distritos"></div>
@@ -192,6 +195,7 @@ const capaHex = L.layerGroup().addTo(mapa), capaLineas = L.layerGroup().addTo(ma
 
 let info = null, d = null, H = null, polys = [], selId = null, version = null, vista = "vivo", hist = null;
 let ocupado = false, porEncuadrar = true, dibujando = false, puntosZona = [];
+let modo = null, ultimaPorComuna = [];  // «todas» o «comuna»; se recuerda la última selección por comuna
 
 // ---------- Comunas ----------
 const capasComuna = {};
@@ -211,15 +215,24 @@ async function cargarComunas() {
   armarControles(m);
 }
 function estilarComunas() {
-  const sel = seleccion(), vec = vecinasDe(sel);
+  const sel = seleccion(), vec = modo === "todas" ? new Set() : vecinasDe(sel);
+  if (modo === null) modo = sel.length === info.comunas.length ? "todas" : "comuna";
+  if (modo === "comuna" && sel.length && sel.length < info.comunas.length) ultimaPorComuna = sel;
+  document.querySelectorAll("[data-modo]").forEach(b => b.setAttribute("aria-pressed", b.dataset.modo === modo));
+  $("filaPiloto").hidden = modo !== "comuna";
+  $("ayudaModo").textContent = modo === "todas"
+    ? "Se ven las 34 comunas juntas. Toca una para ver el detalle de su hexágono o para verla sola."
+    : "Toca una comuna vecina (borde punteado) para sumarla, u otra para empezar ahí. Dentro de una elegida ves el detalle del hexágono y puedes quitarla.";
   for (const [c, capa] of Object.entries(capasComuna)) {
-    capa.setStyle(sel.includes(c)
+    capa.setStyle(modo === "todas"
+      ? { color: "#1f6e43", weight: 1, dashArray: null, fill: true, fillColor: "#1f6e43", fillOpacity: .01 }
+      : sel.includes(c)
       ? { color: "#1f6e43", weight: 3, dashArray: null, fill: true, fillColor: "#1f6e43", fillOpacity: .01 }
       : vec.has(c)
         ? { color: "#1f6e43", weight: 2, dashArray: "6 6", fill: true, fillColor: "#1f6e43", fillOpacity: .08 }
         : { color: "#6b7a70", weight: 1, dashArray: null, fill: true, fillColor: "#6b7a70", fillOpacity: .04 });
   }
-  $("chips").innerHTML = sel.map(c =>
+  $("chips").innerHTML = modo === "todas" ? `<span class="chip" style="padding-right:10px">${sel.length} comunas</span>` : sel.map(c =>
     `<span class="chip">${esc(c)}<button aria-label="Quitar ${esc(c)}" data-c="${esc(c)}">×</button></span>`).join("")
     || '<span class="ayuda">Ninguna comuna: toca una en el mapa.</span>';
   $("chips").querySelectorAll("button").forEach(b => b.onclick = () => cambiar({ comunas: sel.filter(x => x !== b.dataset.c) }));
@@ -257,10 +270,16 @@ function mostrarHex(c, latlng) {
   } else {
     html += '<br><small>Fuera del área filtrada (distrito o zona).</small>';
   }
-  html += `<button class="boton" id="quitarComuna">Quitar ${esc(c)}</button></div>`;
+  html += modo === "todas"
+    ? `<button class="boton" id="accionComuna">Ver solo ${esc(c)}</button></div>`
+    : `<button class="boton" id="accionComuna">Quitar ${esc(c)}</button></div>`;
   const pop = L.popup().setLatLng(latlng).setContent(html).openOn(mapa);
-  setTimeout(() => { const b = document.getElementById("quitarComuna");
-    if (b) b.onclick = () => { mapa.closePopup(pop); cambiar({ comunas: seleccion().filter(x => x !== c) }, true); }; });
+  setTimeout(() => { const b = document.getElementById("accionComuna");
+    if (b) b.onclick = () => {
+      mapa.closePopup(pop);
+      if (modo === "todas") { modo = "comuna"; cambiar({ comunas: [c], distritos: [], zona: null }, true); }
+      else cambiar({ comunas: seleccion().filter(x => x !== c) }, true);
+    }; });
 }
 async function cambiar(cuerpo, encuadrar = false) {
   if (ocupado) return;
@@ -271,7 +290,13 @@ async function cambiar(cuerpo, encuadrar = false) {
   await sondear(true);
 }
 $("piloto").onclick = () => cambiar({ comunas: ["Providencia", "Cerro Navia"], distritos: [], zona: null }, true);
-$("todas").onclick = () => cambiar({ comunas: info.comunas, distritos: [], zona: null }, true);
+document.querySelectorAll("[data-modo]").forEach(b => b.onclick = () => {
+  if (b.dataset.modo === modo || ocupado) return;
+  modo = b.dataset.modo;
+  if (modo === "todas") cambiar({ comunas: info.comunas, distritos: [], zona: null }, true);
+  else if (ultimaPorComuna.length) cambiar({ comunas: ultimaPorComuna, distritos: [], zona: null }, true);
+  else cambiar({ comunas: [], distritos: [], zona: null });  // sin elección previa: se toca una comuna
+});
 
 // ---------- Zona dibujada (lazo) ----------
 function pintarZona() {
@@ -344,9 +369,9 @@ function programar() {
 }
 
 // ---------- Vistas ----------
-document.querySelectorAll(".vistas button").forEach(b => b.onclick = () => {
+document.querySelectorAll("[data-vista]").forEach(b => b.onclick = () => {
   vista = b.dataset.vista;
-  document.querySelectorAll(".vistas button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  document.querySelectorAll("[data-vista]").forEach(x => x.setAttribute("aria-pressed", x === b));
   document.querySelectorAll("[data-para]").forEach(s => s.hidden = !s.dataset.para.split(" ").includes(vista));
   if (vista === "historico") cargarHistorico(); else pintar();
 });
@@ -498,7 +523,7 @@ async function sondear(forzar = false) {
   if (areaNueva) {
     selId = d.sel_id; H = d.hex;
     capaHex.clearLayers();
-    polys = H.pol.map(p => L.polygon(p, { stroke: false, interactive: false }).addTo(capaHex));
+    polys = H.pol.map(p => L.polygon(p, { stroke: false, interactive: false, smoothFactor: 0 }).addTo(capaHex));
     if (vista === "historico") { await cargarHistorico(); }
   } else {
     d.hex.pol = H.pol; H = d.hex;

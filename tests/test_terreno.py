@@ -238,7 +238,10 @@ def test_seleccion_comunas():
     with tempfile.TemporaryDirectory() as tmp:
         c = TestClient(crear_app(GS, Path(tmp), clave="secreta", usar_claude=False))
         info = c.get("/api/comunas").json()
-        assert len(info["comunas"]) == 34 and info["seleccion"] == ["Cerro Navia"]
+        assert len(info["comunas"]) == 34 and info["seleccion"] == info["comunas"]  # al abrir, todas
+        df = pd.read_parquet(GS)
+        assert len(c.get("/api/estado").json()["hex"]["h"]) == len(df)
+        c.post("/api/seleccion", json={"comunas": ["Cerro Navia"]})
         assert "Quinta Normal" in info["vecinas"]["Cerro Navia"] and "Maipú" not in info["vecinas"]["Cerro Navia"]
         assert all(a in info["vecinas"][b] for a in info["vecinas"] for b in info["vecinas"][a])  # simétrica
         e = c.get("/api/estado").json()
@@ -322,7 +325,7 @@ def test_vivo_e_historico():
     sub = df[df["comuna"] == "Cerro Navia"]
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        c = TestClient(crear_app(GS, tmp, usar_claude=False))
+        c = TestClient(crear_app(GS, tmp, usar_claude=False, comunas=["Cerro Navia"]))
         sin_vivo = c.get("/api/estado").json()
         assert not sin_vivo["en_vivo"] and all(v is None for v in sin_vivo["hex"]["vivo"])
         v0 = c.get("/api/version").json()["version"]

@@ -118,7 +118,8 @@ cloudflared tunnel --url http://localhost:8000     # entrega https://<algo>.tryc
 - Mapa para proyectar: `http://localhost:8000/mapa` (consulta cada 3 s y redibuja solo si algo cambió).
   Por el túnel o en Render, abrir `/mapa?k=una-clave` para poder cambiar comunas y pesos.
 - Comunas: el servidor carga las 34 comunas (`data/santiago_h3_gs.parquet`) y calcula el corredor solo en las
-  elegidas (al inicio Cerro Navia, o `--comunas ...`). En el mapa, tocar una comuna vecina (borde punteado) la
+  elegidas. Al abrir se ven las 34 («Todas las comunas»); «Por comuna» separa el análisis (o `--comunas ...` al
+  iniciar). En modo por comuna, tocar una comuna vecina (borde punteado) la
   suma; tocar otra comuna empieza de nuevo ahí; tocar dentro de una elegida muestra el hexágono con un botón
   para quitarla; la × de cada comuna también la quita. Las fotos de cualquier comuna se
   guardan y cuentan cuando esa comuna está elegida.
