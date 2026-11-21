@@ -92,18 +92,24 @@ export default function Pagina({ serie }: { serie: Serie }) {
       </section>
 
       {t.info && t.estado ? <Secciones {...t} info={t.info} estado={t.estado} serie={serie} /> : (
-        [["ahora", "El calor ahora"], ["planificar", "Planificar"], ["historico", "Histórico"]].map(([id, titulo], k) => (
-          <section key={id} id={id} className={`b-sec b-pad${k % 2 ? "" : " alt"}`}><div className="b-in">
-            <h2>{titulo}</h2>
-            <p className="aviso" role="status">{t.error
-              ? <>No hay conexión con el servidor del mapa. Desde la raíz del repo, córrelo con <code>python -m terreno.servidor --puerto 8000</code> y recarga.</>
-              : "Cargando las 34 comunas del Gran Santiago…"}</p>
+        [["ahora", "El calor", "ahora"], ["planificar", "Planificar", "el corredor"], ["historico", "El calor", "de antes"]].map(([id, titulo, acento], k) => (
+          <section key={id} id={id} className={`b-sec b-pad${k % 2 ? "" : " alt"}`} aria-busy={!t.error}><div className="b-in">
+            <h2>{titulo}{acento && <> <em>{acento}</em></>}</h2>
+            {t.error ? (
+              <p className="aviso" role="status">No hay conexión con el servidor del mapa. Desde la raíz del repo, córrelo con <code>python -m terreno.servidor --puerto 8000</code> y recarga.</p>
+            ) : (
+              <div className="sk-bloque" role="status" aria-label="Cargando las 34 comunas del Gran Santiago">
+                <div className="sk sk-linea" style={{ width: "38%" }} />
+                <div className="sk sk-mapa" />
+                <div className="sk-fila"><div className="sk sk-linea" /><div className="sk sk-linea" /><div className="sk sk-linea" /></div>
+              </div>
+            )}
           </div></section>
         ))
       )}
 
       <footer className="b-pad" id="fuentes"><div className="b-in">
-        <h2>Fuentes</h2>
+        <h2>De dónde salen <em>los datos</em></h2>
         <p><b>Calor del suelo.</b> Landsat 8 y 9, Collection 2 Level 2 (USGS), vía Microsoft Planetary Computer. Serie mensual: {serie.escenas_landsat} escenas Landsat y {serie.escenas_sentinel2} Sentinel-2, de enero de 2023 a noviembre de 2026.</p>
         <p><b>Copa de árboles.</b> Modelo propio sobre Sentinel-2 de febrero de 2026, entrenado con la altura de copa de Meta y WRI (r = 0,92 por cuadra en comunas que el modelo no vio).</p>
         <p><b>Personas.</b> Censo 2024 del INE por manzana, más cercanía a colegios, salud, metro y paraderos de OpenStreetMap. No es ingreso.</p>
@@ -237,12 +243,14 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
   const total = pesos.calor + pesos.arbol + pesos.pers || 1;
   const a = estado.ahora, b = estado.antes;
   const datosPlan = useMemo(() => coleccion((i) => ({ u: H.u[i], k: H.parque[i] })), [H, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
+  // El corredor solo se rearma si cambian sus cuadras (no cada vez que llega un estado nuevo del servidor).
+  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("");
   const corredor = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
     features: H.h.flatMap((h, i) => [
       ...(H.ahora[i] ? ["ahora"] : []), ...(H.antes[i] ? ["antes"] : []), ...(H.verificado[i] ? ["verificado"] : []),
     ].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: h, comuna: H.comuna[i] }, geometry: { type: "Polygon" as const, coordinates: [anillos[i]] } }))),
-  }), [H, anillos]);
+  }), [firmaCorredor, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
   const enCorredor = H.h.flatMap((_, i) => (H.ahora[i] ? [i] : []));
   const comunasCorredor = [...new Set(enCorredor.map((i) => H.comuna[i]))].sort();
   const claveCorredor = enCorredor.map((i) => H.h[i]).join();
@@ -297,7 +305,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
     <>
       <Seccion id="ahora" alt>
         <div className="b-cab escalon">
-          <h2>El calor ahora</h2>
+          <h2>El calor <em>ahora</em></h2>
           <div className="grupo" role="group" aria-label="Capa del mapa">
             {CAPAS_AHORA.map((c) => <button key={c.id} type="button" className="pill" aria-pressed={capa === c.id} onClick={() => setCapa(c.id)}>{NOMBRE_CAPA[c.id]}</button>)}
           </div>
@@ -349,7 +357,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
       </Seccion>
 
       <Seccion id="planificar">
-        <div className="b-cab escalon"><h2>Planificar</h2><p>Mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes del área elegida.</p></div>
+        <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2><p>Mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes del área elegida.</p></div>
         <div className="b-controles escalon" style={est(2)}>
           {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"]] as const).map(([k, nombre]) => (
             <div className="peso" key={k}>
@@ -412,7 +420,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
       </Seccion>
 
       <Seccion id="historico" alt>
-        <div className="b-cab escalon"><h2>Histórico</h2><p>Elige desde qué mes promediar el calor del suelo del área: {serie.escenas_landsat} escenas Landsat, de enero de 2023 a noviembre de 2026.</p></div>
+        <div className="b-cab escalon"><h2>El calor <em>de antes</em></h2><p>Elige desde qué mes promediar el calor del suelo del área: {serie.escenas_landsat} escenas Landsat, de enero de 2023 a noviembre de 2026.</p></div>
         <div ref={refHist} className="escalon" style={{ ...est(1), display: "flex", flexDirection: "column", gap: 10 }}>
           <div className="b-meses" role="group" aria-label="Mes desde el que se promedia">
             {serie.meses.map((m, j) => {
@@ -432,7 +440,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
         <div className="b-hist">
           <div className="izq escalon" style={est(2)}>
             <MapaHex {...mapaComun} datos={datosHist} capas={CAPAS_HIST} activa="hist" encuadre={encuadreArea} etiqueta="Promedio del calor del suelo por cuadra en el rango elegido">{filtro}</MapaHex>
-            <div className="leyenda" style={{ marginTop: 10 }}><span><i className="barra" style={{ background: grad(OCRE) }} /><span className="num">Suelo medio de {formato(escalaHist[0], 1)} °C a {formato(escalaHist[1], 1)} °C</span></span></div>
+            <div className="leyenda" style={{ marginTop: 10 }}><span><i className="barra" style={{ background: grad(OCRE) }} />{hist ? <span className="num">Suelo medio de {formato(escalaHist[0], 1)} °C a {formato(escalaHist[1], 1)} °C</span> : <span className="sk sk-linea" style={{ display: "inline-block", width: 190, height: 14 }} aria-label="Calculando el promedio" />}</span></div>
           </div>
           <div className="cifras">
             <p style={{ margin: 0, fontSize: 16, color: "var(--oliva-osc)" }}>Rango elegido: <b>{mesCorto(serie.meses[desde])} a nov 2026</b>, {mesesHist} meses con escenas. Las barras altas son los veranos, que son los que usa el índice de calor.</p>

@@ -53,10 +53,16 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
   const nodo = useRef<HTMLDivElement>(null);
   const mapa = useRef<MapaML | null>(null);
   const [listo, setListo] = useState(false);
+  // pintado: el mapa ya dibujó comunas y cuadras (hasta entonces, skeleton). actualizando: llegó un área nueva.
+  const [pintado, setPintado] = useState(false);
+  const [actualizando, setActualizando] = useState(false);
+  const [rueda, setRueda] = useState<"tactil" | "apagada" | "activa">("apagada");
+  const [falla, setFalla] = useState(false);
   const elegido = useRef<number | null>(null);
   const cb = useRef({ alElegir, alComuna, popupCaptura, activa });
   cb.current = { alElegir, alComuna, popupCaptura, activa };
   const inicial = useRef({ datos, capas, activa, encuadre });
+  const hayComunas = useRef(false), hayCuadras = useRef(false), claveCorredor = useRef("");
 
   useEffect(() => {
     if (!visible || !nodo.current) return;
@@ -68,19 +74,31 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
       // El worker de MapLibre 6 se sirve desde public/ (lo copia "npm run worker").
       ml.setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
       const ini = inicial.current;
-      const nuevo = new ml.Map({
+      // En pantallas táctiles se mueve con dos dedos (un dedo sigue bajando la página). Con mouse se arrastra
+      // libre y la rueda acerca solo después de hacer clic en el mapa, para no secuestrar el scroll de la página.
+      const tactil = window.matchMedia("(pointer: coarse)").matches;
+      setRueda(tactil ? "tactil" : "apagada");
+      let nuevo: MapaML;
+      try { nuevo = new ml.Map({
         container: nodo.current, style: ESTILO, bounds: ini.encuadre,
         fitBoundsOptions: { padding: 32 }, attributionControl: { compact: true },
-        cooperativeGestures: true, dragRotate: false, pitchWithRotate: false,
+        cooperativeGestures: tactil, scrollZoom: false, dragRotate: false, pitchWithRotate: false, touchPitch: false,
+        minZoom: 8.5, maxZoom: 16.5, fadeDuration: 0,
         locale: {
           "CooperativeGesturesHandler.WindowsHelpText": "Usa Ctrl + rueda para acercar el mapa",
           "CooperativeGesturesHandler.MacHelpText": "Usa ⌘ + rueda para acercar el mapa",
           "CooperativeGesturesHandler.MobileHelpText": "Usa dos dedos para mover el mapa",
           "NavigationControl.ZoomIn": "Acercar", "NavigationControl.ZoomOut": "Alejar",
         },
-      });
+      }); } catch { setFalla(true); return; }
       m = nuevo;
       nuevo.addControl(new ml.NavigationControl({ showCompass: false }), "top-right");
+      nuevo.touchZoomRotate.disableRotation();
+      if (!tactil) {
+        const activar = () => { nuevo.scrollZoom.enable(); setRueda("activa"); };
+        nuevo.on("mousedown", activar);
+        nuevo.getContainer().addEventListener("mouseleave", () => { nuevo.scrollZoom.disable(); setRueda("apagada"); });
+      }
       nuevo.on("load", () => {
         tenir(nuevo);
         const fundido = { duration: menosMovimiento() ? 0 : 650 };
@@ -96,6 +114,8 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
           paint: {
             "line-color": ["case", ["boolean", ["feature-state", "sel"], false], "#22281A", "#F6F1E4"],
             "line-width": ["case", ["boolean", ["feature-state", "sel"], false], 2.6, 0.35],
+            // Con todo el Gran Santiago a la vista los bordes de 13 mil cuadras solo ensucian; aparecen al acercar.
+            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10.5, ["case", ["boolean", ["feature-state", "sel"], false], 1, 0], 12, 1],
           },
         });
         nuevo.addSource("comunas", { type: "geojson", data: VACIO });
@@ -170,9 +190,16 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
         });
         setListo(true);
       });
+      // Cada vez que el mapa termina de dibujar lo pendiente, se quita el skeleton o el aviso de actualización.
+      nuevo.on("idle", () => {
+        const com = nuevo.getSource("comunas") as GeoJSONSource | undefined;
+        if (!com || !hayComunas.current || !hayCuadras.current) return;
+        setPintado(true);
+        setActualizando(false);
+      });
       mapa.current = nuevo;
     });
-    return () => { vivo = false; popup?.remove(); m?.remove(); mapa.current = null; setListo(false); };
+    return () => { vivo = false; popup?.remove(); m?.remove(); mapa.current = null; setListo(false); setPintado(false); };
   }, [visible]);
 
   useEffect(() => {
@@ -185,11 +212,15 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
     const m = mapa.current;
     if (!listo || !m) return;
     if (elegido.current != null) { m.removeFeatureState({ source: "hex" }); elegido.current = null; }
+    hayCuadras.current = datos.features.length > 0;
+    setActualizando(true);
     (m.getSource("hex") as GeoJSONSource).setData(datos);
   }, [datos, listo]);
 
   useEffect(() => {
-    if (listo) (mapa.current?.getSource("comunas") as GeoJSONSource | undefined)?.setData(comunas ?? VACIO);
+    if (!listo) return;
+    hayComunas.current = (comunas?.features.length ?? 0) > 0;
+    (mapa.current?.getSource("comunas") as GeoJSONSource | undefined)?.setData(comunas ?? VACIO);
   }, [comunas, listo]);
 
   useEffect(() => {
@@ -202,9 +233,11 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
   useEffect(() => {
     const m = mapa.current;
     if (!listo || !m || !corredor) return;
-    // El corredor nuevo aparece desde transparente.
+    // El corredor nuevo aparece desde transparente; si es el mismo trazado no parpadea.
     (m.getSource("corredor") as GeoJSONSource).setData(corredor);
-    if (menosMovimiento()) return;
+    const clave = corredor.features.filter((f) => f.properties?.tipo === "ahora").map((f) => f.properties?.h3).join();
+    if (clave === claveCorredor.current || menosMovimiento()) { claveCorredor.current = clave; return; }
+    claveCorredor.current = clave;
     m.setPaintProperty("corredor", "fill-opacity", 0);
     const t = setTimeout(() => m.getLayer("corredor") && m.setPaintProperty("corredor", "fill-opacity", 0.92), 60);
     return () => clearTimeout(t);
@@ -213,13 +246,15 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
   useEffect(() => {
     const m = mapa.current;
     if (!listo || !m) return;
-    m.fitBounds(encuadre, { padding: 32, duration: menosMovimiento() ? 0 : 1400, essential: false });
+    m.fitBounds(encuadre, { padding: 32, duration: menosMovimiento() ? 0 : 900, essential: false });
   }, [encuadre, listo]);
 
   return (
     <div ref={cont} className="mapa" role="region" aria-label={etiqueta}>
       <div ref={nodo} style={{ position: "absolute", inset: 0 }} />
-      {!listo && <div className="mapa-carga" aria-hidden="true">Cargando mapa…</div>}
+      <div className={`esqueleto${pintado ? " fuera" : ""}`} aria-hidden={!falla}><span>{falla ? "Este navegador no puede dibujar el mapa (necesita WebGL2)." : "Dibujando las comunas…"}</span></div>
+      {pintado && actualizando && <div className="actualiza" role="status">Actualizando el mapa…</div>}
+      {pintado && rueda === "apagada" && <div className="pista" aria-hidden="true">Haz clic en el mapa para acercar con la rueda</div>}
       {children}
     </div>
   );

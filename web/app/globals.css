@@ -5,7 +5,8 @@
   --salvia: #8c9a63; --salvia2: #b7c298; --salvia3: #d6d9bf; --corr: #22301a;
   --f-display: var(--f-archivo), "Arial Black", sans-serif;
   --f-cuerpo: var(--f-archivo), system-ui, sans-serif;
-  --f-it: var(--f-fraunces), Georgia, serif;
+  --f-it: var(--f-titular), Georgia, serif;   /* cursivas: DM Serif Display, la misma del titular */
+  --f-serif: var(--f-titular), Georgia, serif;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: light;
 }
@@ -66,13 +67,29 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 
 .b-sec .b-in { padding-block: 64px; display: flex; flex-direction: column; gap: 26px; }
 .b-sec.alt { background: var(--crema2); }
-.b-sec h2 { margin: 0; font-family: var(--f-display); font-weight: 900; font-stretch: 125%; font-size: clamp(32px, 4vw, 44px); line-height: 1; color: var(--oliva); text-transform: uppercase; }
+/* Titulares de sección como el de portada: DM Serif Display, con la palabra clave en cursiva. */
+.b-sec h2, .b footer h2 { margin: 0; font-family: var(--f-serif); font-weight: 400; font-size: clamp(40px, 5.2vw, 64px); line-height: 1; letter-spacing: -0.01em; color: var(--oliva); text-wrap: balance; }
+.b-sec h2 em, .b footer h2 em { font-style: italic; color: var(--oliva-osc); }
 .b-cab { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 18px; }
 .b-cab p { margin: 0; max-width: 50ch; font-family: var(--f-it); font-style: italic; font-size: 20px; line-height: 1.4; color: var(--oliva-osc); }
 
 .mapa { position: relative; width: 100%; height: clamp(460px, 80vh, 820px); border-radius: 24px; overflow: hidden; background: #e9e3cf; border: 1px solid var(--salvia3); }
 .mapa .maplibregl-ctrl-attrib { font-size: 11px; background: rgba(246, 241, 228, 0.85); }
-.mapa-carga { position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; color: var(--texto3); }
+/* Skeleton del mapa: tapa todo hasta que las comunas y las cuadras están dibujadas, y luego se desvanece. */
+.esqueleto { position: absolute; inset: 0; z-index: 2; display: grid; place-items: end start; padding: 22px; background: linear-gradient(100deg, #e9e3cf 30%, #f3eee0 45%, #e9e3cf 60%) 0 0 / 300% 100%, #e9e3cf; transition: opacity 0.45s var(--ease-out), visibility 0.45s; }
+.esqueleto::before { content: ""; position: absolute; inset: 14% 20% 14% 24%; background: #ddd6bf; opacity: 0.55; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+.esqueleto span { position: relative; font-size: 14px; color: var(--texto3); }
+.esqueleto.fuera { opacity: 0; visibility: hidden; }
+@media (prefers-reduced-motion: no-preference) { .esqueleto { animation: brillo 1.6s linear infinite; } .sk { animation: brillo 1.6s linear infinite; } }
+@keyframes brillo { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.actualiza { position: absolute; z-index: 3; left: 50%; bottom: 16px; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px; background: var(--tinta); color: var(--crema2); font-size: 13px; pointer-events: none; }
+.pista { position: absolute; z-index: 2; left: 12px; bottom: 12px; padding: 6px 12px; border-radius: 999px; background: rgba(255, 253, 246, 0.9); color: var(--texto3); font-size: 12px; pointer-events: none; }
+/* Skeleton de la página mientras llega el servidor del mapa */
+.sk-bloque { display: flex; flex-direction: column; gap: 16px; }
+.sk { border-radius: 14px; background: linear-gradient(100deg, #e4ddc8 30%, #efe9da 45%, #e4ddc8 60%) 0 0 / 300% 100%, #e4ddc8; }
+.sk-linea { height: 18px; }
+.sk-mapa { height: clamp(460px, 80vh, 820px); border-radius: 24px; }
+.sk-fila { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 
 .comunas { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px 36px; }
 .comuna { display: flex; flex-direction: column; gap: 4px; padding-top: 14px; border-top: 2px solid var(--salvia3); font-size: 16px; color: var(--texto2); }
@@ -99,7 +116,7 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 .b-hist .cifras { flex: 1 1 260px; display: flex; flex-direction: column; gap: 20px; }
 
 .b footer .b-in { padding-block: 48px 56px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px 36px; font-size: 15px; line-height: 1.55; color: var(--texto2); }
-.b footer h2 { grid-column: 1 / -1; margin: 0; font-family: var(--f-display); font-weight: 900; font-stretch: 125%; font-size: clamp(32px, 4vw, 44px); line-height: 1; color: var(--oliva); text-transform: uppercase; }
+.b footer h2 { grid-column: 1 / -1; }
 .b footer p { margin: 0; }
 .b footer b { color: var(--oliva-osc); }
 
@@ -166,7 +183,7 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 @media (prefers-reduced-motion: no-preference) { .cajon { animation: cajon-entra 0.25s var(--ease-out); } }
 @keyframes cajon-entra { from { transform: translateX(-100%); } to { transform: none; } }
 .cajon header { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 8px 16px; }
-.cajon h2 { margin: 0; font-size: 18px; color: var(--oliva-osc); }
+.cajon h2 { margin: 0; font-family: var(--f-serif); font-weight: 400; font-size: 26px; line-height: 1; color: var(--oliva); }
 .cajon .cierra { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--crema2); font-size: 20px; cursor: pointer; color: var(--tinta); }
 .cajon .acciones { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 10px; }
 .cajon input[type="search"] { margin: 0 16px 10px; min-height: 44px; border-radius: 999px; border: 2px solid var(--salvia2); background: var(--crema2); padding: 0 16px; font-size: 15px; color: var(--tinta); }
@@ -187,3 +204,5 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 }
 .resumen-mapa .quitar { display: flex; flex-wrap: wrap; gap: 4px; }
 .resumen-mapa .chip { min-height: 30px; font-size: 13px; }
+/* El pie retoma el fondo satelital de la portada, más velado. */
+.b footer { background: linear-gradient(rgba(246, 241, 228, 0.93), rgba(246, 241, 228, 0.86)), url(/img/santiago-s2-1200.webp) 70% 55% / cover; border-top: 1px solid var(--salvia3); }
