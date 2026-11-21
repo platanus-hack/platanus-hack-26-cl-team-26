@@ -13,6 +13,7 @@ import cl.magnesense.engine.AccessController
 import cl.magnesense.engine.Engine
 import cl.magnesense.feedback.Haptics
 import cl.magnesense.feedback.Speaker
+import cl.magnesense.gestures.GestureController
 import cl.magnesense.remote.ServerApi
 import cl.magnesense.remote.ServerSocket
 import cl.magnesense.sensor.SensorHub
@@ -45,6 +46,8 @@ class MagneSenseApp : Application() {
         private set
     lateinit var serverApi: ServerApi
         private set
+    lateinit var gestures: GestureController
+        private set
     private lateinit var speaker: Speaker
 
     override fun onCreate() {
@@ -65,6 +68,15 @@ class MagneSenseApp : Application() {
             actions = DeviceActions(this),
             speaker = speaker,
             haptics = Haptics(this),
+        )
+
+        gestures = GestureController(
+            scope = scope,
+            server = server,
+            access = access,
+            settings = settings.settings,
+            speaker = speaker,
+            log = { history.add(HistoryKind.ACTIVATION, it) },
         )
 
         scope.launch { settings.settings.collect(::apply) }

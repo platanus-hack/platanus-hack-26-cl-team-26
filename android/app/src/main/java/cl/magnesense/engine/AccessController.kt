@@ -47,6 +47,10 @@ class AccessController(
     private val _selections = MutableSharedFlow<Pair<Device, ActionResult>>(extraBufferCapacity = 16)
     val selections: SharedFlow<Pair<Device, ActionResult>> = _selections.asSharedFlow()
 
+    /** En modo gestos aprendidos el iman local no arma el escaneo (lo hacen los gestos). */
+    @Volatile
+    var suppressMagnetActivation = false
+
     /** Ultimo campo fuerte descartado por direccion, para avisar en pantalla (no en silencio). */
     private val _ignored = MutableStateFlow<IgnoredNotice?>(null)
     val ignored: StateFlow<IgnoredNotice?> = _ignored.asStateFlow()
@@ -78,7 +82,7 @@ class AccessController(
         when (e.type) {
             EventType.ACTIVATED -> {
                 _ignored.value = null
-                scanning.onActivation(SystemClock.elapsedRealtime())
+                if (!suppressMagnetActivation) scanning.onActivation(SystemClock.elapsedRealtime())
             }
             EventType.IGNORED -> _ignored.value = IgnoredNotice(e.cosine, e.signal, SystemClock.elapsedRealtime())
             EventType.PAUSED -> scanning.stop()

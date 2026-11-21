@@ -58,7 +58,7 @@ fun AppRoot(app: MagneSenseApp) {
             Tabs(screen) { screen = it }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (screen) {
-                    Screen.CONTROL -> ControlScreen(engine, access, onCalibrate = { screen = Screen.CALIBRATION })
+                    Screen.CONTROL -> ControlScreen(app, onCalibrate = { screen = Screen.CALIBRATION })
                     Screen.CALIBRATION -> CalibrationScreen(engine.detector, onDone = { screen = Screen.CONTROL })
                     Screen.HISTORY -> HistoryScreen(app.history)
                     Screen.SETTINGS -> SettingsScreen(app.settings, access.actions, app.telemetry, app.server)

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import cl.magnesense.actions.Device
 import cl.magnesense.actions.DeviceActions
 import cl.magnesense.actions.DeviceKind
+import cl.magnesense.data.ActivationMode
 import cl.magnesense.data.AppSettings
 import cl.magnesense.data.SettingsStore
 import cl.magnesense.remote.ServerSocket
@@ -98,6 +100,9 @@ fun SettingsScreen(store: SettingsStore, actions: DeviceActions, telemetry: Tele
                 )
             }
 
+            SectionTitle("Activación")
+            Panel { ActivationSettings(s, store, serverConnected = live.connected) }
+
             SectionTitle("Escaneo y detección")
             Panel { DetectionSettings(s, store) }
 
@@ -125,6 +130,42 @@ fun SettingsScreen(store: SettingsStore, actions: DeviceActions, telemetry: Tele
                     Toggle("Hablar las opciones en voz alta", s.voiceEnabled) { v -> store.update { it.copy(voiceEnabled = v) } }
                     Toggle("Iniciar al encender el teléfono", s.startOnBoot) { v -> store.update { it.copy(startOnBoot = v) } }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivationSettings(s: AppSettings, store: SettingsStore, serverConnected: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        for (mode in ActivationMode.entries) {
+            val selected = s.activationMode == mode
+            val shape = RoundedCornerShape(14.dp)
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(if (selected) Palette.Highlight else Palette.Background, shape)
+                    .border(1.dp, Palette.Border, shape)
+                    .clickable { store.update { it.copy(activationMode = mode) } }
+                    .padding(14.dp),
+            ) {
+                Text(
+                    (if (selected) "● " else "○ ") + mode.label,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (selected) Palette.OnHighlight else Palette.Text,
+                )
+                Text(
+                    mode.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (selected) Palette.OnHighlight else Palette.Muted,
+                )
+            }
+        }
+        if (s.activationMode == ActivationMode.GESTURES) {
+            when {
+                s.serverUrl.isBlank() -> Hint("! Falta la URL del servidor (más abajo). Mientras tanto se usa el escaneo.")
+                !serverConnected -> Hint("! El servidor no responde: se usa el escaneo hasta que vuelva.")
+                else -> Hint("✓ Servidor en vivo. Enseña y enlaza gestos en la pestaña Gestos.")
             }
         }
     }

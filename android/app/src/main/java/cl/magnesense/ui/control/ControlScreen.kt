@@ -21,18 +21,23 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import cl.magnesense.MagneSenseApp
 import cl.magnesense.actions.Device
+import cl.magnesense.data.ActivationMode
+import cl.magnesense.data.AppSettings
 import cl.magnesense.detector.DetectorState
 import cl.magnesense.detector.DetectorStatus
-import cl.magnesense.engine.AccessController
-import cl.magnesense.engine.Engine
 import cl.magnesense.engine.IgnoredNotice
+import cl.magnesense.gestures.GestureStatus
 import cl.magnesense.scanning.ScanMode
 import cl.magnesense.scanning.ScanState
 import cl.magnesense.sensor.SensorHub
@@ -49,8 +54,20 @@ import java.util.Locale
 
 /** Pantalla principal: se lee desde 2 m. La persona no necesita tocarla. */
 @Composable
-fun ControlScreen(engine: Engine, access: AccessController, onCalibrate: () -> Unit) {
+fun ControlScreen(app: MagneSenseApp, onCalibrate: () -> Unit) {
+    val engine = app.engine
+    val access = app.access
     val d by engine.detector.status.collectAsState()
+    val gestureStatus by app.gestures.status.collectAsState()
+    val settings by app.settings.settings.collectAsState()
+    var flashingId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        app.gestures.fired.collect { f ->
+            flashingId = f.deviceId
+            delay(FLASH_MS)
+            if (flashingId == f.deviceId) flashingId = null
+        }
+    }
     val sensors by SensorHub.snapshot.collectAsState()
     val scan by access.scanning.state.collectAsState()
     val devices by access.devices.collectAsState()
@@ -63,7 +80,8 @@ fun ControlScreen(engine: Engine, access: AccessController, onCalibrate: () -> U
         Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        StatusHeader(d, scan, sensors, onRecenter = engine.detector::recenterBaseline)
+        StatusHeader(d, scan, sensors, gestureStatus, onRecenter = engine.detector::recenterBaseline)
+        if (settings.activationMode == ActivationMode.GESTURES) GestureBindingsRow(settings.gestureBindings, devices)
         if (d.state == DetectorState.UNCALIBRATED) {
             Panel {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -74,7 +92,7 @@ fun ControlScreen(engine: Engine, access: AccessController, onCalibrate: () -> U
         }
         SignalMeter(d.signal, d.onThreshold)
         ignored?.let { IgnoredBanner(it, d.minCosine, onDismiss = access::dismissIgnored) }
-        DeviceGrid(devices, isOn, highlightedId = scan.highlighted?.id, onTap = access::runByTouch)
+        DeviceGrid(devices, isOn, highlightedId = scan.highlighted?.id ?: flashingId, onTap = access::runByTouch)
         ScanProgress(scan)
         last?.let {
             Panel {
@@ -96,9 +114,17 @@ fun ControlScreen(engine: Engine, access: AccessController, onCalibrate: () -> U
 }
 
 @Composable
-private fun StatusHeader(d: DetectorStatus, scan: ScanState, sensors: SensorSnapshot, onRecenter: () -> Unit) {
+private fun StatusHeader(
+    d: DetectorStatus,
+    scan: ScanState,
+    sensors: SensorSnapshot,
+    gestures: GestureStatus,
+    onRecenter: () -> Unit,
+) {
     val (text, color) = when {
         !sensors.running -> "Detenido" to Palette.Muted
+        gestures.gesturesActive -> "Gestos" to Palette.Ok
+        gestures.fallback && d.state != DetectorState.PAUSED -> "Escaneo (sin servidor)" to Palette.Warning
         d.state == DetectorState.PAUSED -> "En pausa" to Palette.Warning
         d.state == DetectorState.UNCALIBRATED -> "Sin calibrar" to Palette.Warning
         d.state == DetectorState.CALIBRATING_REST || d.state == DetectorState.CALIBRATING_MAGNET -> "Calibrando" to Palette.Muted
@@ -224,6 +250,23 @@ private fun ScanProgress(scan: ScanState) {
     }
 }
 
+/** Que hace cada gesto aprendido, p. ej. "izquierda → 💡 Luz". */
+@Composable
+private fun GestureBindingsRow(bindings: Map<String, String>, devices: List<Device>) {
+    val parts = bindings.mapNotNull { (gesture, target) ->
+        when (target) {
+            AppSettings.BIND_SCAN -> "$gesture → escaneo"
+            AppSettings.BIND_NONE -> null
+            else -> devices.firstOrNull { it.id == target }?.let { "$gesture → ${it.icon} ${it.name}" }
+        }
+    }
+    Text(
+        if (parts.isEmpty()) "Aún no hay gestos enlazados (pestaña Gestos)" else parts.joinToString("   ·   "),
+        style = MaterialTheme.typography.titleMedium,
+        color = Palette.Text,
+    )
+}
+
 /** Aviso visible cuando un campo fuerte se descarto por direccion; desaparece solo a los 10 s. */
 @Composable
 private fun IgnoredBanner(notice: IgnoredNotice, minCosine: Double, onDismiss: () -> Unit) {
@@ -259,3 +302,6 @@ fun KeepScreenOn() {
 private val EARTH_FIELD_RANGE = 20.0..90.0
 
 private const val IGNORED_NOTICE_MS = 10_000L
+
+/** Cuanto se resalta el mosaico cuando un gesto aprendido lo activa. */
+private const val FLASH_MS = 1_000L
