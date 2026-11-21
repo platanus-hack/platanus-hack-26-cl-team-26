@@ -1,0 +1,59 @@
+{
+  "comunas": [
+    "Providencia",
+    "Cerro Navia"
+  ],
+  "lst_c_media": {
+    "Cerro Navia": 37.0,
+    "Providencia": 33.8
+  },
+  "arbol_pct_medio": {
+    "Cerro Navia": 5.6,
+    "Providencia": 21.9
+  },
+  "pasto_pct_medio": {
+    "Cerro Navia": 1.7,
+    "Providencia": 1.7
+  },
+  "urgencia_media": {
+    "Cerro Navia": 0.735,
+    "Providencia": 0.541
+  },
+  "verde_satelite_poca_sombra": {
+    "criterio": "ndvi >= 0,3 y arbol_pct < 10, sin parques",
+    "demo": {
+      "Cerro Navia": 0,
+      "Providencia": 2
+    },
+    "gran_santiago": 1063,
+    "gran_santiago_pct_de_los_ndvi_alto": 29.9,
+    "gran_santiago_top": {
+      "Lo Barnechea": 221,
+      "Maipú": 185,
+      "San Bernardo": 159,
+      "Pudahuel": 112,
+      "La Florida": 73
+    }
+  },
+  "corredor": {
+    "km": 2.78,
+    "hexagonos": 8,
+    "tramos": 5,
+    "por_comuna": {
+      "Cerro Navia": 8
+    },
+    "urgencia_cubierta": 0.775,
+    "urgencia_azar": 0.671,
+    "personas_cubiertas": 9735,
+    "personas_azar": 7506
+  },
+  "corredor_gran_santiago": {
+    "por_comuna": {
+      "Maipú": 8
+    },
+    "urgencia_cubierta": 0.791,
+    "urgencia_azar": 0.594,
+    "personas_cubiertas": 18379,
+    "personas_azar": 5579
+  }
+}

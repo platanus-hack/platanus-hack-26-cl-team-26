@@ -63,6 +63,19 @@ Advertencias:
 - WorldPop 2020 constrained reparte mal la población entre comunas (Maipú 1,58 M, Puente Alto 1,13 M,
   Santiago 135 k; total 7,6 M). Sirve para comparar densidades, no para cifras por comuna.
 
+## Contrato v3 y optimizador (Rol 1)
+
+Ver `CONTRATO.md`. Comunas de la demo: Providencia y Cerro Navia.
+
+```bash
+python -m verdeh3.worldcover    # árboles, pasto y construido (ESA WorldCover 2021) en datos/salida_h3_gs
+python -m verdeh3.contrato      # data/santiago_h3.parquet, _mock, _gs (34 comunas) y data/cifras_pitch.json
+python -m tests.test_contrato
+```
+
+`optimizer.solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None)` devuelve el
+corredor continuo entre parques que más urgencia cubre dentro del presupuesto.
+
 # Corredores Verdes · Bloque 1
 
 Ingesta geoespacial del Gran Santiago: `python -m ingesta.pipeline` (ver `ingesta/pipeline.py`).
