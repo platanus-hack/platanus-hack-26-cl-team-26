@@ -5,9 +5,13 @@ Formatos vistos en data/muestras/ (21-11-2026):
   "AAAA-MM-DD hh:mm:ss", sensordatavalues = [{value_type, value}] con "temperature" y "humidity".
 - SINCA (Ministerio del Medio Ambiente): CSV "AAMMDD;hhmm;valor;" con coma decimal, promedio horario
   en hora local de Santiago; las horas aún sin dato vienen vacías.
-- Dirección Meteorológica: getDatosRecientesRedEma exige usuario y token (DMC_USUARIO, DMC_TOKEN en .env).
-  datosEstaciones = [{estacion: {codigoNacional, latitud, longitud (texto)}, datos: [{momento en UTC
-  "AAAA-MM-DD hh:mm:ss", temperatura "19.3 °C", humedadRelativa "61 %"}]}], cada 10 min, la más nueva primero.
+- Dirección Meteorológica: exige usuario y token (DMC_USUARIO, DMC_TOKEN en .env).
+  getDatosRecientesRedEma (toda la red, última hora) trae datosEstaciones = [{estacion: {codigoNacional,
+  latitud, longitud (texto)}, datos: [{momento en UTC "AAAA-MM-DD hh:mm:ss", temperatura "19.3 °C",
+  humedadRelativa "61 %"}]}], minuto a minuto. getDatosRecientesEma/{codigo} (12 h de una estación)
+  y .../{codigo}/{año}/{mes} traen datosEstaciones como un solo objeto.
+- RedMeteo (red aficionada, redmeteo.cl): lista de estaciones con id_estacion, latitud, longitud,
+  fecha_hora en UTC "AAAA-MM-DDThh:mm:ssZ", temperatura, humedad y QC. Solo con REDMETEO=1.
 """
 import io
 import os
@@ -35,6 +39,12 @@ SINCA_ESTACIONES = {
     "D30": ("Quilicura", -33.3496, -70.7238),
 }
 DMC_URL = "https://climatologia.meteochile.gob.cl/application/servicios/getDatosRecientesRedEma"
+DMC_EMA_URL = "https://climatologia.meteochile.gob.cl/application/servicios/getDatosRecientesEma"
+
+CENTRO = (-33.45, -70.65)
+RM_URL = "https://redmeteo.cl/liveupdate.php"  # el archivo que alimenta su mapa; se actualiza cada 5 min
+RM_RADIO_KM = 25
+RM_QC_MALO = 128 | 64 | 2 | 1  # datos nulos, estación pegada, humedad, temperatura
 
 
 def _tabla(filas):
@@ -107,15 +117,39 @@ def _num(texto):
     return float(texto.split()[0]) if texto else float("nan")
 
 
-def dmc_estaciones(timeout=30):
-    """Todas las lecturas recientes (unas 12 h) de las estaciones DMC de Santiago."""
+def _dmc_pedir(url, timeout):
     _cargar_env()
     usuario, token = os.getenv("DMC_USUARIO"), os.getenv("DMC_TOKEN")
     if not (usuario and token):
         raise RuntimeError("faltan DMC_USUARIO y DMC_TOKEN")
-    r = requests.get(DMC_URL, params={"usuario": usuario, "token": token}, timeout=timeout).json()
+    r = requests.get(url, params={"usuario": usuario, "token": token}, timeout=timeout).json()
+    if "datosEstaciones" not in r:
+        raise RuntimeError(r.get("mensaje", "la DMC no trajo datosEstaciones"))
+    return r
+
+
+def dmc_estaciones(timeout=30):
+    """Lecturas de la última hora (minuto a minuto) de las estaciones DMC de Santiago."""
+    return dmc_tabla(_dmc_pedir(DMC_URL, timeout))
+
+
+def dmc_12h(codigo, timeout=60):
+    """Últimas 12 horas (minuto a minuto) de una estación DMC."""
+    return dmc_tabla(_dmc_pedir(f"{DMC_EMA_URL}/{codigo}", timeout))
+
+
+def dmc_mes(codigo, anio, mes, timeout=120):
+    """Un mes completo de una estación DMC, para tapar huecos de la grabación."""
+    return dmc_tabla(_dmc_pedir(f"{DMC_EMA_URL}/{codigo}/{anio}/{mes:02d}", timeout))
+
+
+def dmc_tabla(r):
+    """Respuesta de la DMC → tabla. datosEstaciones es una lista (red) o un objeto (una estación)."""
+    bloques = r["datosEstaciones"]
+    if isinstance(bloques, dict):
+        bloques = [bloques]
     filas = []
-    for e in r["datosEstaciones"]:
+    for e in bloques:
         x = e["estacion"]
         lat, lon = float(x["latitud"]), float(x["longitud"])
         if not (-33.75 < lat < -33.2 and -71 < lon < -70.4):
@@ -134,7 +168,42 @@ def dmc(timeout=30):
     return h.sort_values("medido_en").groupby("source").tail(1).reset_index(drop=True)
 
 
-FUENTES = {"sensor.community": sensor_community, "SINCA": sinca, "DMC": dmc}
+def redmeteo_activo():
+    """RedMeteo se lee solo con REDMETEO=1 (en el entorno o en .env), mientras confirman el acceso."""
+    _cargar_env()
+    return os.getenv("REDMETEO") == "1"
+
+
+def redmeteo(timeout=30):
+    """Estaciones de RedMeteo a menos de RM_RADIO_KM del centro, con su última lectura.
+
+    Descarta lecturas con alarma de temperatura, humedad, estación pegada o datos nulos según su QC
+    (redmeteo.cl/calidad.html). La alarma de presión (16) no afecta a la temperatura.
+    """
+    if not redmeteo_activo():
+        return _tabla([])
+    r = requests.get(RM_URL, headers={"User-Agent": "VerdeH3"}, timeout=timeout).json()
+    return redmeteo_tabla(r if isinstance(r, list) else next(v for v in r.values() if isinstance(v, list)))
+
+
+def redmeteo_tabla(estaciones):
+    filas = []
+    for x in estaciones:
+        if x.get("temperatura") is None or int(x.get("QC") or 0) & RM_QC_MALO:
+            continue
+        lat, lon = float(x["latitud"]), float(x["longitud"])
+        if ((lat - CENTRO[0]) * 111) ** 2 + ((lon - CENTRO[1]) * 93) ** 2 > RM_RADIO_KM ** 2:
+            continue
+        hum = x.get("humedad")
+        filas.append({"source": f"RM_{x['id_estacion']}", "lat": lat, "lon": lon,
+                      "temp_c": float(x["temperatura"]),
+                      "humedad_pct": float(hum) if hum is not None else float("nan"),
+                      "medido_en": pd.Timestamp(x["fecha_hora"]).tz_convert("UTC"),
+                      "oficial": False, "bajo_techo": False})
+    return _tabla(filas)
+
+
+FUENTES = {"sensor.community": sensor_community, "SINCA": sinca, "DMC": dmc, "RedMeteo": redmeteo}
 
 
 def leer_todo():

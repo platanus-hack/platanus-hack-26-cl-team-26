@@ -6,6 +6,7 @@ import h3
 import pandas as pd
 
 import calidad
+import fuentes
 import interpolar
 
 AHORA = pd.Timestamp("2026-11-21 15:00", tz="UTC")
@@ -82,3 +83,36 @@ def test_union_con_grilla_no_pierde_cuadras():
     unida = grilla.merge(live, left_on=grilla.h3_index.map(lambda h: h3.cell_to_parent(h, 7)),
                          right_on="h3_padre", how="left", suffixes=("", "_vivo"))
     assert len(unida) == len(grilla) and unida.confianza.notna().all()
+
+
+def test_ciudadano_solo_cuenta_a_menos_de_2_km():
+    # a ~3,3 km: la estación oficial cuenta, el sensor ciudadano no
+    s = pd.DataFrame([lectura("RM_x", LAT + 0.03, LON, 30.0), lectura("DMC_y", LAT - 0.03, LON, 20.0, oficial=True)])
+    assert interpolar.idw(LAT, LON, s, "temp_c")[:2] == (20.0, 1)
+    cerca = pd.DataFrame([lectura("RM_x", LAT + 0.01, LON, 30.0)])  # ~1,1 km
+    assert interpolar.idw(LAT, LON, cerca, "temp_c")[:2] == (30.0, 1)
+
+
+def test_redmeteo_filtra_qc_y_distancia():
+    base = {"latitud": -33.45, "longitud": -70.65, "fecha_hora": "2026-11-21T15:37:44Z",
+            "temperatura": 24.6, "humedad": 40.0, "QC": 0}
+    estaciones = [
+        {**base, "id_estacion": "RMCL0001"},
+        {**base, "id_estacion": "RMCL0002", "QC": 16},             # alarma de presión: sirve
+        {**base, "id_estacion": "RMCL0003", "QC": 1},              # alarma de temperatura
+        {**base, "id_estacion": "RMCL0004", "QC": 64},             # estación pegada
+        {**base, "id_estacion": "RMCL0005", "latitud": -18.47},   # Arica
+        {**base, "id_estacion": "RMCL0006", "temperatura": None},
+    ]
+    t = fuentes.redmeteo_tabla(estaciones)
+    assert list(t.source) == ["RM_RMCL0001", "RM_RMCL0002"]
+    assert t.medido_en[0] == pd.Timestamp("2026-11-21 15:37:44", tz="UTC") and not t.oficial.any()
+
+
+def test_dmc_tabla_lista_y_objeto():
+    est = {"codigoNacional": "330020", "latitud": "-33.445", "longitud": "-70.683"}
+    datos = [{"momento": "2026-11-21 15:01:00", "temperatura": "27.5 °C", "humedadRelativa": "21 %"},
+             {"momento": "2026-11-21 15:00:00", "temperatura": None, "humedadRelativa": "22 %"}]
+    red = fuentes.dmc_tabla({"datosEstaciones": [{"estacion": est, "datos": datos}]})
+    una = fuentes.dmc_tabla({"datosEstaciones": {"estacion": est, "datos": datos}})
+    assert len(red) == len(una) == 1 and red.temp_c[0] == 27.5 and red.humedad_pct[0] == 21.0

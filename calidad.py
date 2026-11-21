@@ -4,7 +4,7 @@ import pandas as pd
 
 # Antigüedad máxima por prefijo de source. SINCA publica promedios horarios con 1 a 3 h de retraso:
 # con 30 min no quedaría ninguna estación oficial, así que para esa red se acepta hasta 3 h.
-MAX_EDAD_MIN = {"SC_": 30, "DMC_": 30, "SINCA_": 180}
+MAX_EDAD_MIN = {"SC_": 30, "DMC_": 30, "RM_": 30, "SINCA_": 180}
 
 
 def distancia_km(lat1, lon1, lat2, lon2):
@@ -63,8 +63,8 @@ def filtrar(df, ahora, previo=None):
     quitar("antiguedad", edad > limite)
     quitar("bajo_techo", df.bajo_techo.astype(bool))
     if previo is not None and len(previo):
-        p = previo.set_index("source")[["temp_c", "medido_en"]]
-        m = df.join(p, on="source", rsuffix="_ant")
+        p = previo.set_index("source")[["temp_c", "medido_en"]].add_suffix("_ant")
+        m = df.join(p, on="source")
         dt = (m.medido_en - m.medido_en_ant).dt.total_seconds() / 60
         quitar("salto", ((m.temp_c - m.temp_c_ant).abs() > 4) & dt.between(0.1, 10))
     else:
