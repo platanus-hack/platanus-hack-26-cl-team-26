@@ -25,6 +25,7 @@ import cl.magnesense.remote.ServerSocket
 import cl.magnesense.sensor.SensorHub
 import cl.magnesense.sensor.SensorSink
 import cl.magnesense.telemetry.TelemetryClient
+import cl.magnesense.tracking.LiveTracker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,6 +67,9 @@ class MagneSenseApp : Application() {
     /** Modo Pulsos (por defecto): puntos y rayas con el iman. */
     lateinit var pulses: PulseController
         private set
+    /** Posicion 3D del iman (pestana 3D). */
+    lateinit var tracker: LiveTracker
+        private set
     lateinit var speaker: Speaker
         private set
 
@@ -90,7 +94,8 @@ class MagneSenseApp : Application() {
             diag = diag::add,
             history = history::add,
         )
-        engine.rawListener = Tee(telemetry, localGestures, pulses)
+        tracker = LiveTracker()
+        engine.rawListener = Tee(telemetry, localGestures, pulses, tracker)
         server = ServerSocket(scope)
         serverApi = ServerApi { settings.settings.value.serverUrl.trim().trimEnd('/') }
         settings.loadCalibration()?.let(engine.detector::restore)

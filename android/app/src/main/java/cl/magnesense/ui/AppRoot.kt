@@ -39,11 +39,13 @@ import cl.magnesense.ui.settings.SettingsScreen
 import cl.magnesense.data.ActivationMode
 import cl.magnesense.ui.setup.SetupWizard
 import cl.magnesense.ui.theme.Palette
+import cl.magnesense.ui.tracker.TrackerScreen
 
 enum class Screen(val label: String) {
     PULSES("Pulsos"),
     CONTROL("Control"),
     GESTURES("Gestos"),
+    TRACKER("3D"),
     CALIBRATION("Calibrar"),
     HISTORY("Historial"),
     SETTINGS("Ajustes"),
@@ -92,6 +94,7 @@ fun AppRoot(app: MagneSenseApp) {
                         startTeaching = teachRequest,
                         onTeachStarted = { teachRequest = false },
                     )
+                    Screen.TRACKER -> TrackerScreen(app)
                     Screen.CALIBRATION -> CalibrationScreen(engine.detector, onDone = { screen = Screen.CONTROL })
                     Screen.HISTORY -> HistoryScreen(app.history, app.diag)
                     Screen.SETTINGS -> SettingsScreen(app.settings, access.actions, app.telemetry, app.server)
