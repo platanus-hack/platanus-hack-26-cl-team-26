@@ -93,7 +93,7 @@ cloudflared tunnel --url http://localhost:8000     # entrega https://<algo>.tryc
 - Teléfono: `https://<algo>.trycloudflare.com/?k=una-clave` (el GPS del navegador exige HTTPS). Aceptar la
   ubicación, esperar precisión ≤ 30 m, «Tomar foto», «Subir captura».
 - Mapa para proyectar: `http://localhost:8000/mapa` (se actualiza cada 3 s).
-- Video: «Grabar recorrido» graba dentro de la página (máx. 3 min) mientras registra el trazado GPS; cada 3 s
+- Video: «Abrir cámara de video» abre la cámara a pantalla completa; el botón rojo graba dentro de la página (máx. 3 min) mientras registra el trazado GPS; cada 3 s
   guarda un cuadro con su posición y hora. Al subirlo se analizan hasta 12 cuadros (2 por hexágono como máximo),
   cada uno valida su propio hexágono, y el mapa dibuja el recorrido en morado con enlace al video. No se aceptan
   videos de la galería: sin trazado GPS no se sabe dónde fue cada cuadro.

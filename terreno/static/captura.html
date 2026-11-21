@@ -20,8 +20,21 @@
     font-size:1.1rem; font-weight:600; background:var(--verde); color:#fff; cursor:pointer; }
   button.sec { background:#fff; color:var(--verde); border:2px solid var(--verde); margin-top:8px; padding:12px; }
   button:disabled { opacity:.5; }
-  button.grabando { background:#b3261e; }
-  video.prev { background:#000; }
+  .camara { position:fixed; inset:0; z-index:10; background:#000; color:#fff; }
+  .camara.oculto { display:none; }
+  .camara video { width:100%; height:100%; object-fit:cover; }
+  .cam-arriba, .cam-abajo { position:absolute; left:0; right:0; display:flex; align-items:center; padding:16px;
+    background:linear-gradient(#0009, #0000); }
+  .cam-arriba { top:0; justify-content:space-between; }
+  .cam-abajo { bottom:0; flex-direction:column; gap:12px; padding-bottom:32px; background:linear-gradient(#0000, #0009); }
+  .cam-arriba span { padding:4px 10px; border-radius:99px; background:#0008; font-size:.9rem; }
+  .cam-arriba span.ok { color:#9be0b4; } .cam-arriba span.mal { color:#ffb38a; }
+  #cerrarCam { width:44px; height:44px; padding:0; border-radius:50%; background:#0008; font-size:1.2rem; }
+  #camInfo { font-variant-numeric:tabular-nums; text-shadow:0 1px 3px #000; }
+  #botonRec { width:76px; height:76px; padding:0; border-radius:50%; background:#fff3; border:4px solid #fff;
+    position:relative; }
+  #botonRec::after { content:""; position:absolute; inset:8px; border-radius:50%; background:#e53935; transition:all .2s; }
+  #botonRec.grabando::after { inset:20px; border-radius:6px; }
   input[type=file] { display:none; }
   textarea { width:100%; border:1px solid var(--borde); border-radius:8px; padding:8px; font:inherit; min-height:44px; }
   img.prev { width:100%; border-radius:8px; margin:10px 0; display:none; }
@@ -50,8 +63,7 @@
   </div>
 
   <div class="card">
-    <button id="grabar">🎥 Grabar recorrido</button>
-    <video id="vivo" class="prev" playsinline muted></video>
+    <button id="grabar">🎥 Abrir cámara de video</button>
     <p id="vEstado" class="sub" style="margin:8px 0 0">Graba caminando por el corredor: cada 3 s se guarda un cuadro
       con su posición GPS y su hora. Máximo 3 minutos.</p>
     <button id="subirVideo" class="sec" disabled>Subir video</button>
@@ -59,6 +71,12 @@
 
   <div class="card res oculto" id="res"></div>
 </main>
+
+<div id="camara" class="camara oculto" role="dialog" aria-label="Cámara de video">
+  <video id="vivo" playsinline muted></video>
+  <div class="cam-arriba"><span id="camGps">Buscando GPS…</span><button id="cerrarCam" aria-label="Cerrar cámara">✕</button></div>
+  <div class="cam-abajo"><span id="camInfo"></span><button id="botonRec" aria-label="Grabar"></button></div>
+</div>
 <script>
 const k = new URLSearchParams(location.search).get("k");
 let pos = null, rumbo = null, blob = null, fotoT = null;
@@ -174,13 +192,16 @@ function tipoVideo() {
 }
 
 function puntoTrack() {
+  actualizarCamGps();
   if (rec && pos) track.push({ lat: pos.latitude, lon: pos.longitude, precision_m: pos.accuracy,
     t_s: +seg().toFixed(1), tomado_en: new Date().toISOString() });
 }
 
+let ultimoCuadro = -CADA_MS;
 async function cuadro() {
   const v = $("vivo");
-  if (!pos || !v.videoWidth) return;
+  if (!pos || !v.videoWidth || performance.now() - ultimoCuadro < CADA_MS - 100) return;
+  ultimoCuadro = performance.now();
   const s = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
   const c = document.createElement("canvas");
   c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
@@ -192,20 +213,41 @@ async function cuadro() {
 }
 
 function estadoVideo() {
+  const t = Math.round(seg());
+  $("camInfo").textContent = `● ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")} · ${cuadros.length} cuadros`;
   $("vEstado").textContent = `● Grabando ${Math.round(seg())} s · ${cuadros.length} cuadros · ${track.length} puntos GPS` +
     (pos && pos.accuracy > 30 ? " · GPS impreciso" : "");
 }
 
-async function iniciarVideo() {
-  const tipo = tipoVideo();
-  if (tipo === null || !navigator.mediaDevices?.getUserMedia) {
+async function abrirCamara() {
+  if (tipoVideo() === null || !navigator.mediaDevices?.getUserMedia) {
     $("vEstado").innerHTML = '<span class="error">Este navegador no puede grabar video en la página.</span>'; return;
   }
-  if (!pos) { $("vEstado").innerHTML = '<span class="error">Espera a tener GPS antes de grabar.</span>'; return; }
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false });
   } catch (e) { $("vEstado").innerHTML = `<span class="error">Sin cámara: ${esc(e.message)}</span>`; return; }
-  const v = $("vivo"); v.srcObject = stream; v.style.display = "block"; await v.play();
+  const v = $("vivo"); v.srcObject = stream;
+  $("camara").classList.remove("oculto"); document.body.style.overflow = "hidden";
+  await v.play();
+  $("camInfo").textContent = "Toca el botón para grabar";
+  actualizarCamGps();
+}
+
+function cerrarCamara() {
+  if (rec) detenerGrabacion();
+  stream?.getTracks().forEach(t => t.stop()); stream = null;
+  $("camara").classList.add("oculto"); document.body.style.overflow = "";
+}
+
+function actualizarCamGps() {
+  if (!$("camara") || $("camara").classList.contains("oculto")) return;
+  $("camGps").textContent = pos ? `GPS ±${Math.round(pos.accuracy)} m` : "Buscando GPS…";
+  $("camGps").className = pos && pos.accuracy <= 30 ? "ok" : "mal";
+}
+
+function iniciarGrabacion() {
+  if (!pos) { $("camInfo").textContent = "Espera a tener GPS antes de grabar"; return; }
+  const tipo = tipoVideo();
   partes = []; cuadros = []; track = []; videoBlob = null; t0 = performance.now(); inicio = new Date().toISOString();
   rec = new MediaRecorder(stream, { ...(tipo ? { mimeType: tipo } : {}), videoBitsPerSecond: 1_500_000 });
   rec.ondataavailable = e => { if (e.data.size) partes.push(e.data); };
@@ -221,22 +263,23 @@ async function iniciarVideo() {
   puntoTrack(); cuadro();
   reloj = setInterval(() => {
     cuadro(); estadoVideo();
-    if (seg() >= MAX_S || cuadros.length >= MAX_CUADROS) detenerVideo();
-  }, CADA_MS);
-  $("grabar").textContent = "⏹ Detener"; $("grabar").classList.add("grabando"); $("subirVideo").disabled = true;
+    if (seg() >= MAX_S || cuadros.length >= MAX_CUADROS) cerrarCamara();
+  }, 1000);
+  $("botonRec").classList.add("grabando"); $("botonRec").setAttribute("aria-label", "Detener");
+  $("subirVideo").disabled = true;
   estadoVideo();
 }
 
-function detenerVideo() {
+function detenerGrabacion() {
   clearInterval(reloj);
   puntoTrack();
   if (rec && rec.state !== "inactive") rec.stop();
-  stream?.getTracks().forEach(t => t.stop());
-  $("vivo").style.display = "none";
-  $("grabar").textContent = "🎥 Grabar otro recorrido"; $("grabar").classList.remove("grabando");
+  $("botonRec").classList.remove("grabando"); $("botonRec").setAttribute("aria-label", "Grabar");
 }
 
-$("grabar").addEventListener("click", () => rec ? detenerVideo() : iniciarVideo());
+$("grabar").addEventListener("click", abrirCamara);
+$("cerrarCam").addEventListener("click", cerrarCamara);
+$("botonRec").addEventListener("click", () => rec ? cerrarCamara() : iniciarGrabacion());
 
 $("subirVideo").addEventListener("click", async () => {
   $("subirVideo").disabled = true;
