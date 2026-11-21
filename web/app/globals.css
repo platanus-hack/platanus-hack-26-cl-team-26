@@ -58,8 +58,8 @@ section[id], footer[id] { scroll-margin-top: 16px; }
   background: linear-gradient(90deg, rgba(239, 233, 218, 0.94) 0%, rgba(239, 233, 218, 0.86) 38%, rgba(239, 233, 218, 0.35) 68%, rgba(239, 233, 218, 0.05) 100%); }
 .b-hero .b-in { width: 100%; }
 .b-hero .b-in { padding-block: 72px 64px; display: flex; flex-direction: column; gap: 26px; position: relative; }
-/* Titular en Newsreader (propuesta A): serif editorial, con "el verde" en cursiva. */
-.b-hero h1 { margin: 0; max-width: 12ch; font-family: var(--f-newsreader), Georgia, serif; font-optical-sizing: auto; font-weight: 500; font-size: clamp(54px, 9vw, 128px); line-height: 0.98; letter-spacing: -0.025em; color: var(--oliva); text-wrap: balance; }
+/* Titular en DM Serif Display (propuesta E): serif gruesa y compacta, con "el verde" en cursiva. */
+.b-hero h1 { margin: 0; max-width: 12ch; font-family: var(--f-titular), Georgia, serif; font-weight: 400; font-size: clamp(54px, 9vw, 128px); line-height: 0.98; letter-spacing: -0.01em; color: var(--oliva); text-wrap: balance; }
 .b-hero h1 em { font-family: inherit; font-style: italic; font-weight: 400; color: var(--oliva-osc); }
 .b-hero p { margin: 0; max-width: 46ch; font-size: 21px; line-height: 1.5; color: var(--texto2); }
 .b-hero em { font-family: var(--f-it); font-style: italic; color: var(--oliva-osc); }
