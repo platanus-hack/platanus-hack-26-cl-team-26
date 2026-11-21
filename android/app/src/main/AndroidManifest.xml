@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Llamada directa al cuidador; sin el permiso se abre el marcador. -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <uses-feature android:name="android.hardware.sensor.compass" android:required="true" />
     <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
@@ -48,5 +49,13 @@
             android:name=".sensor.SensorService"
             android:exported="false"
             android:foregroundServiceType="health" />
+
+        <receiver
+            android:name=".sensor.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

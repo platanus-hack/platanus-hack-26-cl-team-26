@@ -24,26 +24,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import cl.magnesense.MagneSenseApp
 import cl.magnesense.detector.DetectorState
-import cl.magnesense.engine.AccessController
-import cl.magnesense.engine.Engine
 import cl.magnesense.scanning.ScanMode
 import cl.magnesense.ui.calibration.CalibrationScreen
 import cl.magnesense.ui.control.ConfirmOverlay
 import cl.magnesense.ui.control.ControlScreen
 import cl.magnesense.ui.control.PauseOverlay
 import cl.magnesense.ui.debug.DebugScreen
+import cl.magnesense.ui.history.HistoryScreen
+import cl.magnesense.ui.settings.SettingsScreen
 import cl.magnesense.ui.theme.Palette
 
 enum class Screen(val label: String) {
     CONTROL("Control"),
     CALIBRATION("Calibrar"),
+    HISTORY("Historial"),
+    SETTINGS("Ajustes"),
     DEBUG("Debug"),
 }
 
 /** Estructura general: pestanas grandes arriba (las usa el cuidador) y la pantalla activa. */
 @Composable
-fun AppRoot(engine: Engine, access: AccessController) {
+fun AppRoot(app: MagneSenseApp) {
+    val engine = app.engine
+    val access = app.access
     var screen by rememberSaveable { mutableStateOf(Screen.CONTROL) }
     val detector by engine.detector.status.collectAsState()
     val scan by access.scanning.state.collectAsState()
@@ -55,6 +60,8 @@ fun AppRoot(engine: Engine, access: AccessController) {
                 when (screen) {
                     Screen.CONTROL -> ControlScreen(engine, access, onCalibrate = { screen = Screen.CALIBRATION })
                     Screen.CALIBRATION -> CalibrationScreen(engine.detector, onDone = { screen = Screen.CONTROL })
+                    Screen.HISTORY -> HistoryScreen(app.history)
+                    Screen.SETTINGS -> SettingsScreen(app.settings, access.actions)
                     Screen.DEBUG -> DebugScreen(engine.detector)
                 }
             }
