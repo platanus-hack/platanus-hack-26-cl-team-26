@@ -191,7 +191,9 @@ def terreno_h3(capturas: list[dict], escuchas: list[dict] = ()) -> pd.DataFrame:
         aves |= {a["nombre"].strip().lower() for a in fauna if a.get("grupo") == "ave" and a.get("nombre", "").strip()}
         if not aves and any(a.get("grupo") == "ave" for a in fauna):
             aves = {"ave sin identificar"}
-        n_pol = sum(int(a.get("cantidad", 1)) for a in fauna if a.get("grupo") in POLINIZADORES)
+        # Varias fotos suelen mostrar los mismos insectos: se cuenta el máximo de una sola foto («al menos N»).
+        n_pol = max((sum(int(a.get("cantidad", 1)) for a in (c.get("fauna") or []) if a.get("grupo") in POLINIZADORES)
+                     for c in cs), default=0)
         fl = [FLORES[c["flores"]] for c in cs if c.get("flores") in FLORES]
         flores = max(fl) if fl else np.nan
         bio = 0.5 * min(len(aves), MAX_ESPECIES) / MAX_ESPECIES + 0.3 * (n_pol > 0) + 0.2 * (0 if np.isnan(flores) else flores)

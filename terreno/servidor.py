@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 import logging
 import os
 import re
@@ -474,9 +475,12 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             revisar_live()
             ahora, terreno, antes, sub, live = (estado[x] for x in ("ahora", "terreno", "antes", "sub", "live"))
             version, sid, params = estado["version"], estado["sel_id"], _parametros()
-            caps = [{**c, "validacion": estado_validacion(c), "cuenta": cuenta(c, aceptar_sin_validar)}
-                    for c in alm.capturas()]
+            caps = alm.capturas()
             escuchas = alm.escuchas()
+        # El mapa recibe solo cuántas fotos y escuchas hay por hexágono; el detalle se pide al tocarlo
+        # (/api/hexagono/{h}), para que miles de capturas no viajen en cada sondeo ni llenen el mapa de puntos.
+        n_fotos = Counter(c["h3_index"] for c in caps if cuenta(c, aceptar_sin_validar))
+        n_escuchas = Counter(e["h3_index"] for e in escuchas if e.get("analizada"))
         verif = set(terreno.loc[terreno["n_capturas"] > 0, "h3_index"]) if terreno is not None else set()
         t_idx = terreno.set_index("h3_index") if terreno is not None and len(terreno) else None
         bio = sub["h3_index"].map(t_idx["biodiversidad_terreno"]) if t_idx is not None else pd.Series(float("nan"), index=sub.index)
@@ -498,6 +502,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             "antes": [h in en_antes for h in hs], "ahora": [h in en_ahora for h in hs],
             "verificado": [h in verif for h in hs],
             "bio": [_r(x, 3) for x in bio], "especies": especies.tolist(), "polinizadores": poli.astype(int).tolist(),
+            "fotos": [n_fotos.get(h, 0) for h in hs], "escuchas": [n_escuchas.get(h, 0) for h in hs],
         }
         if sel_id != sid:
             col["pol"] = [poligonos[h] for h in hs]
@@ -505,10 +510,45 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
                        "archivo": r.get("archivo"), "linea": [[p["lat"], p["lon"]] for p in r.get("track", [])]}
                       for r in alm.recorridos()]
         return {"version": version, "sel_id": sid, "seleccion": params["comunas"], "parametros": params,
-                "hex": col, "capturas": caps, "recorridos": recorridos, "en_vivo": live is not None,
-                "escuchas": escuchas, "fauna_corredor": _fauna(ahora["hexes"], terreno),
+                "hex": col, "recorridos": recorridos, "en_vivo": live is not None,
+                "totales": {"capturas": len(caps), "cuentan": sum(n_fotos.values()),
+                            "escuchas": sum(n_escuchas.values())},
+                "fauna_corredor": _fauna(ahora["hexes"], terreno),
                 "antes": {**_resumen(antes), "personas_azar": antes["personas_azar"]},
                 "ahora": {**_resumen(ahora), "personas_azar": ahora["personas_azar"]}}
+
+    @app.get("/api/hexagono/{h}")
+    def api_hexagono(h: str, n: int = Query(12, ge=1, le=60)):
+        """Lo registrado en terreno en un hexágono, lo más nuevo primero: fotos que cuentan (las descartadas y sin
+        validar no se muestran), escuchas de aves analizadas y el resumen de fauna. Hasta n fotos y 5 escuchas."""
+        if h not in hex_area and not re.fullmatch(r"[0-9a-f]{15}", h):
+            raise HTTPException(404)
+        with lock:
+            terreno = estado["terreno"]
+            fotos = sorted((c for c in alm.capturas() if c["h3_index"] == h and cuenta(c, aceptar_sin_validar)),
+                           key=lambda c: c["medido_en"], reverse=True)
+            escs = sorted((e for e in alm.escuchas() if e["h3_index"] == h and e.get("analizada")),
+                          key=lambda e: e["medido_en"], reverse=True)
+        fila = {}
+        if terreno is not None and h in set(terreno["h3_index"]):
+            r = terreno.set_index("h3_index").loc[h]
+            fila = {"especies": [e for e in str(r["especies_aves"]).split("; ") if e],
+                    "polinizadores": int(r["n_polinizadores"]),
+                    "flores": None if pd.isna(r["flores"]) else float(r["flores"]),
+                    "biodiversidad": float(r["biodiversidad_terreno"]),
+                    "viabilidad": None if pd.isna(r["viabilidad_terreno"]) else float(r["viabilidad_terreno"])}
+        claves = ("id", "medido_en", "tomado_en", "arbol_pct", "espacio_plantable", "obstaculos", "fauna", "flores",
+                  "tipo_foto", "descripcion", "fuente", "precision_m", "video_id")
+        return {"h3_index": h, "comuna": comuna_de.get(h), "n_fotos": len(fotos), "n_escuchas": len(escs),
+                "fotos": [{k2: c.get(k2) for k2 in claves} for c in fotos[:n]], "escuchas": escs[:5], **fila}
+
+    @app.get("/api/capturas")
+    def api_capturas():
+        """Todas las capturas y escuchas con su estado de validación (para revisar o exportar; el mapa no lo usa)."""
+        with lock:
+            caps = [{**c, "validacion": estado_validacion(c), "cuenta": cuenta(c, aceptar_sin_validar)}
+                    for c in alm.capturas()]
+            return {"capturas": caps, "escuchas": alm.escuchas()}
 
     @app.get("/api/historico")
     def api_historico(desde: str = Query(...), hasta: str = Query(...)):

@@ -17,6 +17,7 @@ export type HexCols = {
   ndvi: (number | null)[]; copa: (number | null)[]; pob: number[]; social: (number | null)[];
   parque: boolean[]; antes: boolean[]; ahora: boolean[]; verificado: boolean[];
   bio?: (number | null)[]; especies?: string[]; polinizadores?: number[];
+  fotos?: number[]; escuchas?: number[];  // cuántas fotos que cuentan y escuchas analizadas hay en cada cuadra
 };
 export type ResumenCorredor = {
   hexes: number; km: number; urgencia_cubierta: number; urgencia_azar: number; personas_cubiertas: number;
@@ -39,8 +40,13 @@ export type Escucha = {
 export type Recorrido = { id: string; inicio?: string; duracion_s?: number; archivo?: string; linea: [number, number][] };
 export type Estado = {
   version: number; sel_id: number; seleccion: string[]; parametros: Parametros; hex: HexCols;
-  capturas: Captura[]; recorridos: Recorrido[]; en_vivo: boolean; antes: ResumenCorredor; ahora: ResumenCorredor;
-  escuchas?: Escucha[]; fauna_corredor?: { especies: string[]; polinizadores: number };
+  recorridos: Recorrido[]; en_vivo: boolean; antes: ResumenCorredor; ahora: ResumenCorredor;
+  totales: { capturas: number; cuentan: number; escuchas: number };
+  fauna_corredor?: { especies: string[]; polinizadores: number };
+};
+export type DetalleHex = {
+  h3_index: string; comuna: string | null; n_fotos: number; n_escuchas: number; fotos: Captura[]; escuchas: Escucha[];
+  especies?: string[]; polinizadores?: number; flores?: number | null;
 };
 export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number; w_bio: number }>;
 
@@ -90,6 +96,13 @@ export function useTerreno() {
   }, [sondear]);
 
   return { info, estado, error, ocupado, cambiar };
+}
+
+// Lo registrado en terreno en una cuadra (fotos que cuentan y escuchas de aves), lo más nuevo primero.
+export async function detalleHex(h: string, n = 6) {
+  const r = await fetch(`/api/hexagono/${h}?n=${n}`);
+  if (!r.ok) throw new Error(String(r.status));
+  return r.json() as Promise<DetalleHex>;
 }
 
 export async function historico(desde: string, hasta: string) {

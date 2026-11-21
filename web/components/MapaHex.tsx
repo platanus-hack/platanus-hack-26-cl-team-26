@@ -7,7 +7,8 @@ import { menosMovimiento, useVisible } from "./movimiento";
 // hexágonos (una capa de relleno por vista; al cambiar de vista se cruzan las opacidades),
 // contornos de comuna (del servidor de terreno; se tocan para elegir el área), corredor
 // (relleno del actual, línea punteada del de sin terreno, magenta donde se verificó en terreno),
-// y capturas en terreno con sus recorridos.
+// y los recorridos en terreno. Las fotos y escuchas no van como puntos (no escalan): al tocar una cuadra con
+// datos de terreno se abre su ficha (popupHex), que el servidor arma con lo más nuevo de esa cuadra.
 const ESTILO = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const OPACIDAD = 0.82;
 const VACIO: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -34,7 +35,7 @@ function tenir(mapa: MapaML) {
 }
 
 export default function MapaHex({ datos, capas, activa, corredor, comunas, capturas, recorridos, popupCaptura,
-  encuadre, alElegir, alComuna, etiqueta, children }: {
+  popupHex, encuadre, alElegir, alComuna, etiqueta, children }: {
   datos: GeoJSON.FeatureCollection;
   capas: Capa[];
   activa: string;
@@ -43,6 +44,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
   capturas?: GeoJSON.FeatureCollection;      // puntos con propiedad color
   recorridos?: GeoJSON.FeatureCollection;
   popupCaptura?: (props: Record<string, unknown>) => string;
+  popupHex?: (i: number) => Promise<string> | null;  // ficha de la cuadra; null si no tiene datos de terreno
   encuadre: LngLatBoundsLike;
   alElegir?: (i: number | null) => void;
   alComuna?: (c: string) => void;
@@ -54,8 +56,8 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
   const mapa = useRef<MapaML | null>(null);
   const [listo, setListo] = useState(false);
   const elegido = useRef<number | null>(null);
-  const cb = useRef({ alElegir, alComuna, popupCaptura, activa });
-  cb.current = { alElegir, alComuna, popupCaptura, activa };
+  const cb = useRef({ alElegir, alComuna, popupCaptura, popupHex, activa });
+  cb.current = { alElegir, alComuna, popupCaptura, popupHex, activa };
   const inicial = useRef({ datos, capas, activa, encuadre });
 
   useEffect(() => {
@@ -159,6 +161,14 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
             elegido.current = i === elegido.current ? null : i;
             if (elegido.current != null) nuevo.setFeatureState({ source: "hex", id: elegido.current }, { sel: true });
             cb.current.alElegir?.(elegido.current);
+            popup?.remove();
+            const ficha = elegido.current != null ? cb.current.popupHex?.(i) : null;
+            if (ficha) {
+              const mio = new ml.Popup({ maxWidth: "300px" }).setLngLat(e.lngLat)
+                .setHTML('<div class="pop">Cargando fotos y aves de esta cuadra…</div>').addTo(nuevo);
+              popup = mio;
+              ficha.then((html) => mio.setHTML(html)).catch(() => mio.setHTML('<div class="pop">No se pudo cargar la cuadra.</div>'));
+            }
             return;
           }
           const com = nuevo.queryRenderedFeatures(e.point, { layers: ["comunas-relleno"] })[0];

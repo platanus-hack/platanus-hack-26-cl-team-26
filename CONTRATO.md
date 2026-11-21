@@ -126,7 +126,7 @@ biodiversidad y no tocan `arbol_pct_terreno` ni `plantable`.
 | `n_escuchas` | int | escuchas de aves analizadas en ese hexágono |
 | `especies_aves` | str | especies distintas, separadas por «; »: nombre científico (BirdNET) o común (vistas y nombradas por Claude); «ave sin identificar» si solo se vio un ave sin nombre |
 | `n_especies_aves` | int | cuántas son |
-| `n_polinizadores` | int | abejas, mariposas y otros polinizadores vistos en fotos (suma de individuos) |
+| `n_polinizadores` | int | al menos cuántos polinizadores (abejas, mariposas, otros) se vieron: el máximo en una sola foto, porque varias fotos suelen mostrar los mismos |
 | `flores` | float 0–1 | flores vistas: ninguna 0, pocas 0,5, muchas 1 (la mayor). NaN si ninguna foto lo dice |
 | `biodiversidad_terreno` | float 0–1 | `0,5·min(n_especies_aves, 5)/5 + 0,3·[n_polinizadores > 0] + 0,2·flores` |
 

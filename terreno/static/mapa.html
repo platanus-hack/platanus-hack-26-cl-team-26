@@ -63,6 +63,9 @@
   .leyenda .caja { height:10px; border-radius:2px; }
   .flash { animation:flash 1.5s ease-out; } @keyframes flash { from { background:#d6f0de; } to { background:#fff; } }
   .pop img { width:220px; border-radius:6px; display:block; margin-bottom:6px; }
+  .galeria { display:grid; grid-template-columns:repeat(3, 72px); gap:4px; margin:6px 0 4px; }
+  .galeria img { width:72px; height:72px; object-fit:cover; margin:0; border-radius:5px; }
+  .ficha-terreno { margin-top:8px; padding-top:6px; border-top:1px solid var(--borde); }
   .pop table td, .pop table th { padding:1px 0; } .pop .boton { margin-top:6px; }
   .leaflet-tooltip.nombre { font-weight:600; }
   .aviso { background:#fff7e0; border:1px solid #f0d98a; border-radius:8px; padding:6px 8px; font-size:.82rem; margin:6px 0; }
@@ -271,7 +274,7 @@ function mostrarHex(c, latlng) {
       <tr><th>Población</th><td>${ent(H.pob[i])}</td></tr>
       ${H.bio[i] != null ? `<tr><th>Biodiversidad</th><td>${num(H.bio[i], 2)}</td></tr>` : ""}
       ${H.especies[i] ? `<tr><th>Aves</th><td>${esc(H.especies[i])}</td></tr>` : ""}
-      ${H.polinizadores[i] ? `<tr><th>Polinizadores</th><td>${H.polinizadores[i]}</td></tr>` : ""}
+      ${H.polinizadores[i] ? `<tr><th>Polinizadores</th><td>al menos ${H.polinizadores[i]}</td></tr>` : ""}
       <tr><th>En corredor</th><td>${H.ahora[i] ? "sí" : "no"}${H.parque[i] ? " · parque" : ""}${H.verificado[i] ? " · verificado" : ""}</td></tr></table>`;
   } else {
     html += '<br><small>Fuera del área filtrada (distrito o zona).</small>';
@@ -279,14 +282,50 @@ function mostrarHex(c, latlng) {
   html += modo === "todas"
     ? `<button class="boton" id="accionComuna">Ver solo ${esc(c)}</button></div>`
     : `<button class="boton" id="accionComuna">Quitar ${esc(c)}</button></div>`;
-  const pop = L.popup().setLatLng(latlng).setContent(html).openOn(mapa);
-  setTimeout(() => { const b = document.getElementById("accionComuna");
+  const conTerreno = i >= 0 && (H.fotos[i] || H.escuchas[i]);
+  if (conTerreno) html = html.replace(/<button class="boton" id="accionComuna">/, '<div class="ficha-terreno" id="fichaTerreno">Cargando fotos y aves…</div><button class="boton" id="accionComuna">');
+  const pop = L.popup({ maxWidth: 260 }).setLatLng(latlng).setContent(html).openOn(mapa);
+  const enlazar = () => setTimeout(() => { const b = document.getElementById("accionComuna");
     if (b) b.onclick = () => {
       mapa.closePopup(pop);
       if (modo === "todas") { modo = "comuna"; cambiar({ comunas: [c], distritos: [], zona: null }, true); }
       else cambiar({ comunas: seleccion().filter(x => x !== c) }, true);
     }; });
+  enlazar();
+  // Leaflet vuelve a dibujar el popup desde su contenido: se reemplaza el contenido completo y se re-enlaza el botón.
+  if (conTerreno) fichaTerreno(H.h[i]).then(f => {
+    if (!mapa.hasLayer(pop)) return;
+    pop.setContent(html.replace("Cargando fotos y aves…", f)); enlazar();
+  });
 }
+// Fotos y aves de una cuadra: se piden al tocarla (no van como puntos en el mapa: con miles no se vería nada).
+async function fichaTerreno(h) {
+  let d;
+  try { d = await (await fetch(`/api/hexagono/${h}?n=6`)).json(); } catch { return "No se pudo cargar."; }
+  const fauna = new Map();
+  for (const f of d.fotos) for (const a of f.fauna || []) {
+    const k = `${ICONO[a.grupo] || ""} ${a.nombre || a.grupo.replace("_", " ")}`;
+    fauna.set(k, Math.max(fauna.get(k) || 0, a.cantidad));  // máximo en una foto: varias fotos muestran los mismos
+  }
+  const fotos = d.fotos.map(f => `<a href="/fotos/${esc(f.id)}.jpg" target="_blank" rel="noopener" title="${esc(f.descripcion)}"><img src="/fotos/${esc(f.id)}_min.jpg" alt="Foto de terreno" loading="lazy"></a>`).join("");
+  const e = d.escuchas[0];
+  return `<small>${d.n_fotos} foto${d.n_fotos === 1 ? "" : "s"} · ${d.n_escuchas} escucha${d.n_escuchas === 1 ? "" : "s"} de aves</small>
+    ${fotos ? `<div class="galeria">${fotos}</div>` : ""}${d.n_fotos > d.fotos.length ? `<small>y ${d.n_fotos - d.fotos.length} más</small><br>` : ""}
+    ${fauna.size ? `Fauna vista: ${[...fauna].map(([k, n]) => `${esc(k)} ×${n}`).join(", ")}<br>` : ""}
+    ${d.especies?.length ? `🐦 Aves: ${d.especies.map(x => `<em>${esc(x)}</em>`).join(", ")}<br>` : ""}
+    ${e ? escuchaHTML(e) : ""}`;
+}
+function escuchaHTML(e) {
+  const lista = e.detecciones.length ? e.detecciones.map(x => `🐦 <em>${esc(x.cientifico)}</em> <small>${esc(x.comun)} · ${Math.round(x.confianza * 100)} %</small>`).join("<br>")
+    : e.concluyente === false ? "<strong>No concluyente:</strong> no se oyeron aves, pero había mucho ruido"
+    : "No se identificaron aves <small>(no significa que no haya)</small>";
+  const RUIDO = { bajo: "bajo", medio: "medio", alto: "alto (tráfico)" };
+  const tramo = e.video_id ? `#t=${e.desde_s},${e.hasta_s}` : "";
+  return `<div style="margin-top:6px"><strong>Escucha más reciente</strong> <small>(${Math.round(e.duracion_s)} s)</small><br>${lista}
+    ${e.ruido ? `<br><small>Ruido de la calle: ${RUIDO[e.ruido.nivel]} · ${e.ruido.db} dB relativo</small>` : ""}
+    <br><audio controls preload="none" src="/audios/${esc(e.archivo || e.id + ".wav")}${tramo}" style="width:220px;margin-top:4px"></audio></div>`;
+}
+
 async function cambiar(cuerpo, encuadrar = false) {
   if (ocupado) return;
   ocupado = true; $("sub").textContent = "Calculando…";
@@ -440,7 +479,7 @@ function pintar() {
   if (vista === "corredor") {  // corredor sin terreno punteado; verificados en magenta encima
     H.h.forEach((_, i) => { if (H.antes[i]) L.polygon(H.pol[i], { fill: false, color: "#1b241e", weight: 2, dashArray: "6 5", interactive: false }).addTo(capaLineas); });
   }
-  H.h.forEach((_, i) => { if (H.verificado[i]) L.polygon(H.pol[i], { fill: false, color: "#c026d3", weight: 3, dashArray: H.ahora[i] ? null : "2 4", interactive: false }).addTo(capaLineas); });
+  H.h.forEach((_, i) => { if (H.fotos[i] || H.escuchas[i]) L.polygon(H.pol[i], { fill: false, color: "#c026d3", weight: 3, dashArray: H.ahora[i] ? null : "2 4", interactive: false }).addTo(capaLineas); });
 
   const n = H.h.length, a = d.antes, w = d.ahora;
   let m = "";
@@ -459,7 +498,7 @@ function pintar() {
         metrica("Personas beneficiadas", ent(w.personas_cubiertas), `<span class="delta">${w.personas_cubiertas >= w.personas_azar ? "+" : ""}${ent(w.personas_cubiertas - w.personas_azar)} vs azar</span>`) +
         metrica("Verificados en terreno", w.verificados, "hexágonos del corredor") +
         metrica("Especies de aves en el corredor", d.fauna_corredor.especies.length,
-                (d.fauna_corredor.polinizadores ? `${d.fauna_corredor.polinizadores} polinizadores vistos` : "sin polinizadores registrados") +
+                (d.fauna_corredor.polinizadores ? `al menos ${d.fauna_corredor.polinizadores} polinizadores vistos` : "sin polinizadores registrados") +
                 (d.fauna_corredor.especies.length ? `<br>${d.fauna_corredor.especies.map(esc).join(", ")}` : ""))
       : '<div class="aviso" style="grid-column:1/-1">Sin corredor: el área no tiene un parque consolidado desde donde partir. Suma una comuna vecina o amplía el filtro.</div>';
   } else {
@@ -481,32 +520,17 @@ function pintar() {
       ? L1(caja("#15803d"), "Corredor óptimo") + L1(caja("linear-gradient(90deg,#f1f5f9,#4ade80)"), "Prioridad de plantación: baja → alta") +
         L1(caja("#d97706"), "Parques existentes") + L1("border-top:2px dashed #1b241e", "Corredor sin datos de terreno")
       : '<div>Color: promedio de las capas activas (claro → intenso)</div>') +
-    L1("border-top:3px solid #c026d3", "Verificado en terreno") +
-    '<div>Punto azul: foto válida · gris: descartada o sin validar · 🎧 escucha de aves</div>' + L1("border-top:4px solid #7b2cbf", "Recorrido en video") +
+    L1("border-top:3px solid #c026d3", "Con fotos o aves de terreno: toca la cuadra para verlas") +
+    L1("border-top:4px solid #7b2cbf", "Recorrido en video") +
     ($("cBio").checked && vista !== "corredor" ? L1(caja("linear-gradient(90deg,#fef9c3,#7c3aed)"), "Biodiversidad en terreno: 0 → 1") : "");
-  const nCap = d.capturas.length, nCuenta = d.capturas.filter(c => c.cuenta).length;
+  const nCap = d.totales.capturas, nCuenta = d.totales.cuentan;
   $("sub").textContent = `${n.toLocaleString("es-CL")} hexágonos · ${nCap} captura${nCap === 1 ? "" : "s"} en terreno (${nCuenta} cuenta${nCuenta === 1 ? "" : "n"})` +
     (d.parametros.zona ? ` · zona de ${d.parametros.zona} hex.` : "");
 }
 
 const ICONO = { ave: "🐦", abeja: "🐝", mariposa: "🦋", otro_polinizador: "🪲", otro: "🐾" };
-const iconoEscucha = L.divIcon({ className: "", html: '<div style="font-size:20px;line-height:20px;filter:drop-shadow(0 1px 2px #0008)">🎧</div>', iconSize: [20, 20], iconAnchor: [10, 10] });
 function pintarCapturas() {
   capaCap.clearLayers();
-  for (const e of d.escuchas || []) {
-    const hora = new Date(e.tomado_en || e.medido_en).toLocaleString("es-CL");
-    const lista = !e.analizada ? "<em>Sin analizar (BirdNET no estaba disponible)</em>"
-      : e.detecciones.length ? e.detecciones.map(x => `🐦 <em>${esc(x.cientifico)}</em> <small>${esc(x.comun)} · ${Math.round(x.confianza * 100)} %</small>`).join("<br>")
-      : e.concluyente === false ? "<strong>No concluyente:</strong> no se oyeron aves, pero había mucho ruido"
-      : "No se identificaron aves <small>(no significa que no haya)</small>";
-    const RUIDO = { bajo: "bajo", medio: "medio", alto: "alto (tráfico)" };
-    const ruido = e.ruido ? `<br><small>Ruido de la calle: ${RUIDO[e.ruido.nivel]} · ${e.ruido.db} dB relativo</small>` : "";
-    const tramo = e.video_id ? `#t=${e.desde_s},${e.hasta_s}` : "";
-    L.marker([e.lat, e.lon], { icon: iconoEscucha, pane: "capturas" })
-      .bindPopup(`<div class="pop"><strong>${e.video_id ? "Tramo de recorrido" : "Escucha"} de ${Math.round(e.duracion_s)} s</strong><br>${lista}${ruido}
-        <br><audio controls preload="none" src="/audios/${esc(e.archivo || e.id + ".wav")}${tramo}" style="width:220px;margin-top:6px"></audio>
-        <br><small>${esc(hora)} · GPS ±${Math.round(e.precision_m ?? 0)} m</small></div>`).addTo(capaCap);
-  }
   for (const r of d.recorridos || []) {
     if (r.linea.length < 2) continue;
     const hora = r.inicio ? new Date(r.inicio).toLocaleString("es-CL") : "";
@@ -514,22 +538,6 @@ function pintarCapturas() {
       .bindPopup(`<div class="pop"><strong>Recorrido en video</strong><br>${esc(hora)} · ${Math.round(r.duracion_s)} s` +
         (r.archivo ? `<br><a href="/videos/${esc(r.archivo)}" target="_blank" rel="noopener">Ver video</a>` : "") + "</div>")
       .addTo(capaCap);
-  }
-  for (const c of d.capturas) {
-    const fuente = c.fuente === "claude" ? "Claude" : "índice de verde";
-    if (c.validacion === "descartada") {
-      L.circleMarker([c.lat, c.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#999", fillOpacity: 1, pane: "capturas", renderer: svgCapturas })
-        .bindPopup(`<div class="pop"><strong>Descartada</strong><br>${esc(c.motivo_rechazo)}</div>`).addTo(capaCap);
-      continue;
-    }
-    L.circleMarker([c.lat, c.lon], { radius: 7, color: "#fff", weight: 2, fillColor: c.cuenta ? "#0b5cad" : "#999", fillOpacity: 1, pane: "capturas", renderer: svgCapturas })
-      .bindPopup(`<div class="pop"><img src="/fotos/${esc(c.id)}_min.jpg" alt="Foto de terreno">
-        ${c.arbol_pct == null ? "Foto de cerca (fauna o flores)" : `Árboles ${Math.round(c.arbol_pct)} % (${fuente}) · plantable: ${esc(c.espacio_plantable ?? "sin estimar")}`}<br>
-        ${c.fauna?.length ? "Fauna: " + c.fauna.map(a => `${ICONO[a.grupo] || ""} ${esc(a.nombre || a.grupo.replace("_", " "))} ×${a.cantidad}`).join(", ") + "<br>" : ""}
-        ${c.flores && c.flores !== "ninguna" ? `🌸 Flores: ${esc(c.flores)}<br>` : ""}
-        ${c.obstaculos?.length ? "Obstáculos: " + c.obstaculos.map(esc).join(", ") + "<br>" : ""}
-        <small>${esc(c.descripcion)}</small>${c.cuenta ? "" : "<br><strong>Sin validar: no cuenta</strong>"}
-        <br><small>${esc(new Date(c.tomado_en || c.medido_en).toLocaleString("es-CL"))} · GPS ±${Math.round(c.precision_m ?? 0)} m${c.video_id ? ` · cuadro del video, ${Math.round(c.t_video_s ?? 0)} s` : ""}</small></div>`).addTo(capaCap);
   }
 }
 
