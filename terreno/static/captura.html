@@ -44,12 +44,17 @@
   .cambio.no { background:#f1f1ee; }
   .error { color:var(--alerta); font-weight:600; }
   .oculto { display:none; }
+  .nivel { height:8px; background:var(--fondo); border-radius:4px; overflow:hidden; margin-top:10px; }
+  .nivel i { display:block; height:100%; width:0; background:var(--verde); transition:width .1s; }
+  .especies { margin:8px 0 0; padding-left:18px; } .especies li { margin:2px 0; }
+  .especies small { color:var(--tenue); }
 </style>
 </head>
 <body>
 <main>
   <h1>VerdeH3 · captura en terreno</h1>
-  <p class="sub">Foto de la calle con GPS: verifica el hexágono y recalcula el corredor.</p>
+  <p class="sub">Foto de la calle con GPS: verifica el hexágono y recalcula el corredor. También sirven fotos de
+    cerca de aves, abejas, mariposas o flores, y escuchar aves.</p>
 
   <div class="card gps" id="gps"><span class="punto"></span><span id="gpsTxt" style="flex:1">Buscando GPS…</span></div>
 
@@ -67,6 +72,13 @@
     <p id="vEstado" class="sub" style="margin:8px 0 0">Graba caminando por el corredor: cada 3 s se guarda un cuadro
       con su posición GPS y su hora. Máximo 3 minutos.</p>
     <button id="subirVideo" class="sec" disabled>Subir video</button>
+  </div>
+
+  <div class="card">
+    <button id="escuchar">🎙️ Escuchar aves (15 s)</button>
+    <div class="nivel oculto" id="nivel"><i id="nivelBarra"></i></div>
+    <p id="aEstado" class="sub" style="margin:8px 0 0">Quédate quieto y en silencio: el micrófono graba 15 s y BirdNET
+      identifica las aves que se oyen, con la posición y la hora.</p>
   </div>
 
   <div class="card res oculto" id="res"></div>
@@ -150,6 +162,11 @@ $("enviar").addEventListener("click", async () => {
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+const ICONO = { ave: "🐦", abeja: "🐝", mariposa: "🦋", otro_polinizador: "🪲", otro: "🐾" };
+const fauna = f => f?.length
+  ? f.map(a => `${ICONO[a.grupo] || ""} ${esc(a.nombre || a.grupo.replace("_", " "))} ×${a.cantidad}`).join(", ")
+  : "no se vio";
+
 function mostrar(d) {
   const c = d.captura, a = d.previo, n = d.ahora;
   const fuente = c.fuente === "claude" ? "Claude (visión)" : "índice de verde";
@@ -166,10 +183,12 @@ function mostrar(d) {
     <strong>${d.comuna ? esc(d.comuna) + " · " : ""}hexágono ${esc(c.h3_index.slice(0, 9))}…</strong>${d.fuera_de_area ? ' <span class="error">fuera del Gran Santiago</span>' : ""}
     ${d.fuera_de_seleccion && !d.fuera_de_area ? `<p class="sub" style="margin:6px 0 0">Guardada. Para ver su efecto, elige ${esc(d.comuna)} en el mapa.</p>` : ""}
     <dl>
-      <dt>Árboles</dt><dd>${Math.round(c.arbol_pct)} % <small>(${fuente})</small></dd>
+      <dt>Árboles</dt><dd>${c.arbol_pct == null ? "— <small>(foto de cerca)</small>" : `${Math.round(c.arbol_pct)} % <small>(${fuente})</small>`}</dd>
       <dt>Verde en la foto</dt><dd>${Math.round(c.verde_pct)} %</dd>
       <dt>Espacio para plantar</dt><dd>${esc(c.espacio_plantable ?? "sin estimar")}</dd>
       <dt>Obstáculos</dt><dd>${c.obstaculos?.length ? c.obstaculos.map(esc).join(", ") : "—"}</dd>
+      <dt>Fauna</dt><dd>${fauna(c.fauna)}</dd>
+      <dt>Flores</dt><dd>${esc(c.flores ?? "sin estimar")}</dd>
     </dl>
     ${c.descripcion ? `<p class="sub" style="margin:8px 0 0">${esc(c.descripcion)}</p>` : ""}
     ${aviso}
@@ -326,6 +345,90 @@ function mostrarVideo(d) {
       Urgencia cubierta ${a.urgencia_cubierta} → ${n.urgencia_cubierta} ·
       personas ${a.personas_cubiertas.toLocaleString("es-CL")} → ${n.personas_cubiertas.toLocaleString("es-CL")} ·
       verificados ${n.verificados}
+    </div>`;
+}
+
+// ---------- Escuchar aves: 15 s de micrófono → WAV en el teléfono → BirdNET en el servidor ----------
+const ESCUCHA_S = 15;
+let escuchando = false;
+
+function wavPCM16(muestras, tasa) {
+  const n = muestras.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const txt = (o, t) => [...t].forEach((ch, i) => v.setUint8(o + i, ch.charCodeAt(0)));
+  txt(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); txt(8, "WAVE"); txt(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, tasa, true);
+  v.setUint32(28, tasa * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); txt(36, "data");
+  v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, muestras[i])) * 0x7fff, true);
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+$("escuchar").addEventListener("click", async () => {
+  if (escuchando) return;
+  if (!pos) { $("aEstado").innerHTML = '<span class="error">Espera a tener GPS.</span>'; return; }
+  let mic;
+  try {  // sin cancelación de eco ni supresión de ruido: borran justamente el canto
+    mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch (e) {
+    $("aEstado").innerHTML = `<span class="error">Sin micrófono: ${esc(e.message)}. Permítelo para este sitio.</span>`;
+    return;
+  }
+  escuchando = true; $("escuchar").disabled = true;
+  const lugar = { lat: pos.latitude, lon: pos.longitude, precision: pos.accuracy }, tomado = new Date().toISOString();
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const fuente = ctx.createMediaStreamSource(mic), proc = ctx.createScriptProcessor(4096, 1, 1);
+  const trozos = [];
+  let total = 0;
+  const objetivo = ESCUCHA_S * ctx.sampleRate;
+  $("nivel").classList.remove("oculto");
+  await new Promise(fin => {
+    proc.onaudioprocess = ev => {
+      const x = ev.inputBuffer.getChannelData(0);
+      trozos.push(new Float32Array(x)); total += x.length;
+      let pico = 0; for (const s of x) pico = Math.max(pico, Math.abs(s));
+      $("nivelBarra").style.width = Math.min(100, pico * 200) + "%";
+      $("escuchar").textContent = `🎙️ Escuchando… ${Math.max(0, Math.ceil((objetivo - total) / ctx.sampleRate))} s`;
+      if (total >= objetivo) fin();
+    };
+    fuente.connect(proc); proc.connect(ctx.destination);
+  });
+  proc.disconnect(); fuente.disconnect(); mic.getTracks().forEach(t => t.stop());
+  const tasa = ctx.sampleRate; ctx.close();
+  const todo = new Float32Array(total); let o = 0;
+  for (const t of trozos) { todo.set(t, o); o += t.length; }
+  $("nivel").classList.add("oculto");
+  $("escuchar").textContent = "🎙️ Escuchar aves (15 s)";
+  $("aEstado").textContent = "Identificando aves…";
+  const fd = new FormData();
+  fd.append("audio", wavPCM16(todo.subarray(0, objetivo), tasa), "escucha.wav");
+  fd.append("lat", lugar.lat); fd.append("lon", lugar.lon); fd.append("precision_m", lugar.precision);
+  fd.append("tomado_en", tomado);
+  try {
+    const r = await fetch("/api/audio" + (k ? "?k=" + encodeURIComponent(k) : ""), { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.status);
+    mostrarEscucha(d);
+    $("aEstado").textContent = "Listo. Puedes escuchar de nuevo en otro punto.";
+  } catch (e) {
+    $("aEstado").innerHTML = `<span class="error">Error: ${esc(e.message)}</span>`;
+  }
+  escuchando = false; $("escuchar").disabled = false;
+});
+
+function mostrarEscucha(d) {
+  const e = d.escucha, a = d.previo, n = d.ahora;
+  $("res").classList.remove("oculto");
+  const lista = e.detecciones.length
+    ? `<ul class="especies">${e.detecciones.map(x => `<li>🐦 <em>${esc(x.cientifico)}</em> <small>${esc(x.comun)} · ${Math.round(x.confianza * 100)} %</small></li>`).join("")}</ul>`
+    : `<p style="margin:6px 0 0">No se identificaron aves (no significa que no haya).</p>`;
+  $("res").innerHTML = `
+    <strong>${d.comuna ? esc(d.comuna) + " · " : ""}escucha de ${Math.round(e.duracion_s)} s</strong>${d.fuera_de_area ? ' <span class="error">fuera del Gran Santiago</span>' : ""}
+    ${d.analizada ? lista : '<p class="error" style="margin:6px 0 0">Guardada sin analizar: BirdNET no está disponible en el servidor.</p>'}
+    ${d.fuera_de_seleccion && !d.fuera_de_area ? `<p class="sub" style="margin:6px 0 0">Para ver su efecto, elige ${esc(d.comuna)} en el mapa.</p>` : ""}
+    <div class="cambio ${d.corredor_cambio ? "" : "no"}">
+      ${d.corredor_cambio ? "<strong>El corredor cambió.</strong>" : "El corredor se mantiene."}
+      ${d.en_corredor ? " Este punto está en el corredor." : ""}<br>
+      Urgencia cubierta ${a.urgencia_cubierta} → ${n.urgencia_cubierta}
     </div>`;
 }
 </script>

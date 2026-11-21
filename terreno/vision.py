@@ -10,6 +10,10 @@ Dos capas:
 Validez: el índice de verde no distingue una oficina de una calle, así que sin Claude la captura queda
 «sin validar» (valida=None) y no cambia el corredor salvo que el servidor lo permita (--aceptar-sin-validar).
 
+Fauna y flores: Claude anota aves, abejas, mariposas y otros polinizadores que se vean con claridad, y cuántas
+flores hay (alimento de polinizadores). Un primer plano exterior de un ave, un insecto o una flor es válido como
+tipo_foto «fauna_flora»: cuenta para la biodiversidad pero no para coberturas ni espacio plantable.
+
 Son estimaciones de una vista a nivel de calle: complementan al satélite, no lo reemplazan.
 """
 from __future__ import annotations
@@ -35,23 +39,37 @@ Un equipo en terreno debería tomar esta foto a nivel de calle para verificar un
 Primero decide si la foto sirve (valida):
 - valida = true solo si es una foto exterior de una calle, vereda, plaza, bandejón, sitio eriazo u otro
   espacio público, tomada a nivel de suelo.
+- También es válida (con tipo_foto "fauna_flora") una foto exterior de cerca de un ave, abeja, mariposa u otro
+  insecto, o de flores o plantas en un espacio público. Una foto de calle normal es tipo_foto "calle".
 - valida = false si es un interior (oficina, casa, local), una vista a través de una ventana o desde un piso
-  alto, una pantalla o un documento, un primer plano de personas u objetos, o si está tan oscura o borrosa que
-  no se distingue el entorno. En ese caso explica el motivo en una frase corta y deja los porcentajes en 0,
-  espacio_plantable "ninguno" y obstaculos vacío.
+  alto, una pantalla o un documento, un primer plano de personas, mascotas u objetos, o si está tan oscura o
+  borrosa que no se distingue nada. En ese caso explica el motivo en una frase corta y deja los porcentajes en
+  0, espacio_plantable "ninguno", obstaculos y fauna vacíos y flores "ninguna".
 
 Si es válida, estima para lo que se ve en la foto:
 - porcentaje de la vista cubierto por árboles, arbustos, pasto, suelo desnudo, construcciones y pavimento
   (los seis deberían sumar cerca de 100);
 - cuánto espacio hay para plantar árboles o arbustos nuevos (veredas anchas, bandejones, sitios eriazos,
   platabandas sin árboles): ninguno, poco, medio o mucho;
-- obstáculos concretos para plantar (cables aéreos, vereda angosta, entradas de autos, ductos, etc.).
-Sé conservador: no inventes lo que no se ve. No describas a las personas que aparezcan."""
+- obstáculos concretos para plantar (cables aéreos, vereda angosta, entradas de autos, ductos, etc.);
+- fauna silvestre que se vea con claridad: grupo (ave, abeja, mariposa, otro_polinizador u otro), nombre común
+  en español solo si la especie es reconocible sin dudas (si no, nombre vacío) y cuántos individuos. No
+  cuentes mascotas ni animales en jaulas. Si no se ve fauna, la lista va vacía;
+- flores (alimento de polinizadores): ninguna, pocas o muchas.
+En fotos "fauna_flora" de cerca, las coberturas son solo de lo que se ve y espacio_plantable "ninguno".
+Sé conservador: no inventes lo que no se ve ni adivines especies. No describas a las personas que aparezcan."""
+
+
+class Avistamiento(BaseModel):
+    grupo: Literal["ave", "abeja", "mariposa", "otro_polinizador", "otro"]
+    nombre: str
+    cantidad: int = Field(ge=1, le=500)
 
 
 class Observacion(BaseModel):
     valida: bool
     motivo_rechazo: str
+    tipo_foto: Literal["calle", "fauna_flora"]
     arbol_pct: float = Field(ge=0, le=100)
     arbusto_pct: float = Field(ge=0, le=100)
     pasto_pct: float = Field(ge=0, le=100)
@@ -60,6 +78,8 @@ class Observacion(BaseModel):
     pavimento_pct: float = Field(ge=0, le=100)
     espacio_plantable: Literal["ninguno", "poco", "medio", "mucho"]
     obstaculos: list[str]
+    fauna: list[Avistamiento]
+    flores: Literal["ninguna", "pocas", "muchas"]
     descripcion: str
 
 
@@ -149,9 +169,12 @@ def analizar(jpeg: bytes, usar_claude: bool = True) -> dict:
     if obs is not None:
         out.update(obs.model_dump(), fuente="claude")
         if not obs.valida:
-            out.update(espacio_plantable=None, obstaculos=[])
+            out.update(espacio_plantable=None, obstaculos=[], fauna=[], flores=None)
+        elif obs.tipo_foto == "fauna_flora":  # un primer plano no dice nada del espacio para plantar ni de la copa
+            out.update(espacio_plantable=None, obstaculos=[], arbol_pct=None)
     else:
         out.update(arbol_pct=out["verde_pct"], espacio_plantable=None, obstaculos=[], valida=None,
+                   tipo_foto=None, fauna=[], flores=None,
                    motivo_rechazo="", fuente="indice_verde",
                    descripcion="Sin validar: solo índice de verde, que no distingue una calle de un interior.")
     return out

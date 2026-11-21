@@ -4,6 +4,8 @@
     cloudflared tunnel --url http://localhost:8000      # HTTPS público: el GPS del teléfono lo exige
 
 Teléfono: https://<túnel>/?k=<clave>   ·   Mapa para proyectar: http://localhost:8000/mapa
+Aves por sonido: el teléfono graba 15 s (WAV) y BirdNET identifica especies (terreno/aves.py). Con las fotos
+(fauna y flores según Claude) arman la biodiversidad por hexágono, que entra al corredor con el peso w_bio.
 El mapa filtra por comuna, distrito (barrio H3 res 7) o una zona dibujada, mueve presupuesto y pesos del
 corredor, y muestra la serie histórica satelital (data/historico_h3.parquet). Si existe data/live_h3.parquet
 (sensores en vivo, Rol 2) entra al calor de la urgencia; se relee cuando cambia.
@@ -31,7 +33,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from optimizer import solve_corridor
-from terreno.almacen import Almacen, cuenta, estado_validacion
+from terreno import aves
+from terreno.almacen import Almacen, cuenta, estado_validacion, hora
 from terreno.vision import analizar
 
 ESTATICO = Path(__file__).resolve().parent / "static"
@@ -39,6 +42,9 @@ MAX_FOTO_BYTES = 15 * 1024 * 1024
 FOTO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}(_min)?\.jpg$")
 VIDEO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}\.(webm|mp4|mov)$")
 MAX_VIDEO_BYTES = 80 * 1024 * 1024
+MAX_AUDIO_BYTES = 6 * 1024 * 1024    # 15 s de WAV mono 16 bit a 48 kHz son ~1,4 MB
+AUDIO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}\.wav$")
+W_BIO = 0.1                          # peso inicial de la biodiversidad (los otros: 0,4 / 0,4 / 0,2)
 MAX_CUADROS_RECIBIDOS = 40
 MAX_CUADROS_ANALIZADOS = 12   # cada cuadro analizado es una llamada a Claude
 CUADROS_POR_HEX = 2
@@ -95,6 +101,7 @@ class Seleccion(BaseModel):
     w_calor: float | None = None
     w_arbol: float | None = None
     w_personas: float | None = None
+    w_bio: float | None = None
 
 
 def distritos(df: pd.DataFrame) -> dict[tuple[str, str], str]:
@@ -153,7 +160,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     copa = df["copa_modelo_pct"] if "copa_modelo_pct" in df else df["arbol_pct"]
     lock = threading.Lock()
     estado: dict = {"version": 0, "sel_id": 0, "live_mtime": None, "live": None,
-                    "p": {"comunas": [], "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2)}}
+                    "p": {"comunas": [], "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2, W_BIO)}}
 
     def leer_live() -> bool:
         """Relee data/live_h3.parquet si cambió. Devuelve si cambió."""
@@ -170,7 +177,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
 
     def resolver(terreno=None):
         p = estado["p"]
-        return solve_corridor(estado["sub"], p["km"], *p["w"], live=estado["live"], terreno=terreno)
+        wc, wa, wp, wb = p["w"]
+        return solve_corridor(estado["sub"], p["km"], wc, wa, wp, live=estado["live"], terreno=terreno, w_bio=wb)
 
     def elegir(cambio: Seleccion):
         """Fija el área (comunas → distritos → zona), presupuesto y pesos, y la línea base sin terreno («antes»)."""
@@ -190,7 +198,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             if not 0.5 <= cambio.km <= 30:
                 raise HTTPException(422, "Presupuesto entre 0,5 y 30 km")
             p["km"] = cambio.km
-        w = [x if x is not None else old for x, old in zip((cambio.w_calor, cambio.w_arbol, cambio.w_personas), p["w"])]
+        nuevos = (cambio.w_calor, cambio.w_arbol, cambio.w_personas, cambio.w_bio)
+        w = [x if x is not None else old for x, old in zip(nuevos, p["w"])]
         if min(w) < 0 or sum(w) <= 0:
             raise HTTPException(422, "Pesos >= 0 y no todos 0")
         p["w"] = tuple(w)
@@ -209,7 +218,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         estado["antes"] = resolver()
 
     def recalcular():
-        terreno = alm.escribir_h3() if alm.capturas() else None
+        terreno = alm.escribir_h3() if alm.capturas() or alm.escuchas() else None
         estado["terreno"] = terreno
         estado["ahora"] = resolver(terreno)
         estado["version"] += 1
@@ -340,9 +349,55 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     def _parametros() -> dict:
         p = estado["p"]
         return {"comunas": p["comunas"], "distritos": p["distritos"], "zona": len(p["zona"] or []),
-                "km": p["km"], "w_calor": p["w"][0], "w_arbol": p["w"][1], "w_personas": p["w"][2]}
+                "km": p["km"], "w_calor": p["w"][0], "w_arbol": p["w"][1], "w_personas": p["w"][2],
+                "w_bio": p["w"][3], "birdnet": aves.estado()}
 
     dist_por_comuna = {c: sorted(v, key=lambda n: int(n.rsplit(" ", 1)[1])) for c, v in distritos_de.items()}
+
+    def _fauna(hexes: list[str], terreno) -> dict:
+        """Especies de aves y polinizadores registrados en terreno dentro de un corredor."""
+        if terreno is None or not len(terreno):
+            return {"especies": [], "polinizadores": 0}
+        t = terreno[terreno["h3_index"].isin(set(hexes))]
+        especies = sorted({e for x in t["especies_aves"] for e in x.split("; ") if e})
+        return {"especies": especies, "polinizadores": int(t["n_polinizadores"].sum())}
+
+    @app.post("/api/audio")
+    def subir_audio(audio: UploadFile = File(...), lat: float = Form(...), lon: float = Form(...),
+                    precision_m: float | None = Form(None), tomado_en: str | None = Form(None),
+                    k: str | None = Query(None)):
+        """Escucha de aves: WAV de la página del teléfono, con su posición y hora. BirdNET identifica especies."""
+        revisar_clave(k)
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise HTTPException(422, "Coordenadas fuera de rango")
+        wav = audio.file.read(MAX_AUDIO_BYTES + 1)
+        if len(wav) > MAX_AUDIO_BYTES:
+            raise HTTPException(413, "Audio de más de 6 MB")
+        try:
+            x, tasa = aves.leer_wav(wav)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        t = hora(tomado_en)
+        detecciones = aves.detectar(wav, lat, lon, pd.Timestamp(t).to_pydatetime().replace(tzinfo=None) if t else None)
+        with lock:
+            previo = estado["ahora"]
+            esc = alm.guardar_audio(wav, lat, lon, precision_m, tomado_en, detecciones, len(x) / tasa)
+            recalcular()
+            ahora = estado["ahora"]
+        return {
+            "escucha": esc, "analizada": detecciones is not None,
+            "fuera_de_area": esc["h3_index"] not in hex_area, "comuna": comuna_de.get(esc["h3_index"]),
+            "fuera_de_seleccion": esc["h3_index"] not in set(estado["sub"]["h3_index"]),
+            "en_corredor": esc["h3_index"] in ahora["hexes"],
+            "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
+            "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
+        }
+
+    @app.get("/audios/{nombre}")
+    def audios(nombre: str):
+        if not AUDIO_OK.match(nombre) or not (alm.audios / nombre).exists():
+            raise HTTPException(404)
+        return FileResponse(alm.audios / nombre, media_type="audio/wav")
 
     @app.get("/api/salud")
     def salud():
@@ -380,7 +435,12 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             version, sid, params = estado["version"], estado["sel_id"], _parametros()
             caps = [{**c, "validacion": estado_validacion(c), "cuenta": cuenta(c, aceptar_sin_validar)}
                     for c in alm.capturas()]
-        verif = set(terreno["h3_index"]) if terreno is not None else set()
+            escuchas = alm.escuchas()
+        verif = set(terreno.loc[terreno["n_capturas"] > 0, "h3_index"]) if terreno is not None else set()
+        t_idx = terreno.set_index("h3_index") if terreno is not None and len(terreno) else None
+        bio = sub["h3_index"].map(t_idx["biodiversidad_terreno"]) if t_idx is not None else pd.Series(float("nan"), index=sub.index)
+        especies = sub["h3_index"].map(t_idx["especies_aves"]).fillna("") if t_idx is not None else pd.Series("", index=sub.index)
+        poli = sub["h3_index"].map(t_idx["n_polinizadores"]).fillna(0) if t_idx is not None else pd.Series(0, index=sub.index)
         en_antes, en_ahora = set(antes["hexes"]), set(ahora["hexes"])
         vivo = pd.Series(float("nan"), index=sub.index)
         if live is not None and len(live):
@@ -396,6 +456,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             "parque": sub["es_parque"].astype(bool).tolist(),
             "antes": [h in en_antes for h in hs], "ahora": [h in en_ahora for h in hs],
             "verificado": [h in verif for h in hs],
+            "bio": [_r(x, 3) for x in bio], "especies": especies.tolist(), "polinizadores": poli.astype(int).tolist(),
         }
         if sel_id != sid:
             col["pol"] = [poligonos[h] for h in hs]
@@ -404,6 +465,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
                       for r in alm.recorridos()]
         return {"version": version, "sel_id": sid, "seleccion": params["comunas"], "parametros": params,
                 "hex": col, "capturas": caps, "recorridos": recorridos, "en_vivo": live is not None,
+                "escuchas": escuchas, "fauna_corredor": _fauna(ahora["hexes"], terreno),
                 "antes": {**_resumen(antes), "personas_azar": antes["personas_azar"]},
                 "ahora": {**_resumen(ahora), "personas_azar": ahora["personas_azar"]}}
 
@@ -478,6 +540,7 @@ def main():
     if not a.sin_claude:
         log.info("Claude: %s", "API key encontrada" if cargar_clave_anthropic(a.archivo_clave)
                  else "sin API key (se probará un perfil de `ant`; si no hay, fotos sin validar)")
+    aves.precargar()  # el modelo de BirdNET tarda unos segundos: que la primera escucha no espere
     import uvicorn
     uvicorn.run(crear_app(a.datos, a.data, a.km, a.clave, not a.sin_claude, a.aceptar_sin_validar, a.comunas), host=a.host, port=a.puerto)
 

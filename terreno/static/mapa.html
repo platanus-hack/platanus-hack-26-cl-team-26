@@ -106,6 +106,7 @@
     <label class="capa"><input type="checkbox" id="cCalor" checked><i class="muestra" style="background:linear-gradient(90deg,#fff6e5,#ff5f00)"></i>Calor superficial</label>
     <label class="capa"><input type="checkbox" id="cVerde"><i class="muestra" style="background:linear-gradient(90deg,#ebf8eb,#16a34a)"></i>Áreas verdes (copa + NDVI)</label>
     <label class="capa"><input type="checkbox" id="cSocial"><i class="muestra" style="background:linear-gradient(90deg,#eef2ff,#4f46e5)"></i>Índice social / densidad</label>
+    <label class="capa"><input type="checkbox" id="cBio"><i class="muestra" style="background:linear-gradient(90deg,#fef9c3,#7c3aed)"></i>Biodiversidad (terreno)</label>
     <p class="ayuda">Con varias capas el color es el promedio RGB.</p>
   </section>
 
@@ -143,7 +144,9 @@
       <li><b>Temperatura superficial:</b> Landsat 8/9 C2 L2. <b>Serie histórica:</b> <code>data/historico_h3.parquet</code>, <span id="infoHist">Landsat y Sentinel-2 mensual 2023–2026</span>, vía Microsoft Planetary Computer.</li>
       <li><b>Población:</b> Censo 2024 (INE, manzana). <b>Equipamiento y parques:</b> OpenStreetMap.</li>
       <li><b>Sensores en vivo por barrio (res 7):</b> DMC, SINCA y Sensor.Community → <code>data/live_h3.parquet</code>.</li>
-      <li><b>Terreno:</b> fotos y videos con GPS desde el teléfono, validados y analizados por Claude → <code>data/terreno_h3.parquet</code>.</li>
+      <li><b>Terreno:</b> fotos y videos con GPS desde el teléfono, validados y analizados por Claude (calle, fauna y flores) → <code>data/terreno_h3.parquet</code>.</li>
+      <li><b>Aves por sonido:</b> BirdNET (K. Lisa Yang Center for Conservation Bioacoustics, Cornell; modelo CC BY-NC-SA 4.0), con filtro por lugar y semana del año.</li>
+      <li><i>Biodiversidad: no detectar fauna no significa que no haya; un hexágono sin visitar vale 0, por eso su peso es bajo.</i></li>
       <li><i>El índice social combina 50 % densidad (Censo) y 50 % cercanía a servicios (OSM); no es ingreso. La foto de calle complementa al satélite, no lo reemplaza.</i></li>
     </ul>
   </details>
@@ -266,6 +269,9 @@ function mostrarHex(c, latlng) {
       <tr><th>NDVI</th><td>${num(t.ndvi[i], 2)}</td></tr>
       <tr><th>Índice social</th><td>${num(H.social[i], 2)}</td></tr>
       <tr><th>Población</th><td>${ent(H.pob[i])}</td></tr>
+      ${H.bio[i] != null ? `<tr><th>Biodiversidad</th><td>${num(H.bio[i], 2)}</td></tr>` : ""}
+      ${H.especies[i] ? `<tr><th>Aves</th><td>${esc(H.especies[i])}</td></tr>` : ""}
+      ${H.polinizadores[i] ? `<tr><th>Polinizadores</th><td>${H.polinizadores[i]}</td></tr>` : ""}
       <tr><th>En corredor</th><td>${H.ahora[i] ? "sí" : "no"}${H.parque[i] ? " · parque" : ""}${H.verificado[i] ? " · verificado" : ""}</td></tr></table>`;
   } else {
     html += '<br><small>Fuera del área filtrada (distrito o zona).</small>';
@@ -336,12 +342,14 @@ $("zonaBorrar").onclick = () => cambiar({ zona: null }, true);
 
 // ---------- Presupuesto y pesos (barra + número, como en la app de Rol 3) ----------
 const CONTROLES = [["km", "Presupuesto (km)", 1, 20, .5], ["w_calor", "Calor (LST + vivo)", 0, 100, 5],
-                   ["w_arbol", "Falta de árboles", 0, 100, 5], ["w_personas", "Personas y social", 0, 100, 5]];
+                   ["w_arbol", "Falta de árboles", 0, 100, 5], ["w_personas", "Personas y social", 0, 100, 5],
+                   ["w_bio", "Biodiversidad (terreno)", 0, 100, 5]];
+const PESOS = ["w_calor", "w_arbol", "w_personas", "w_bio"];
 let temporizador = null;
 function armarControles(p) {
-  const total = p.w_calor + p.w_arbol + p.w_personas || 1;
-  const val = { km: p.km, w_calor: Math.round(100 * p.w_calor / total), w_arbol: Math.round(100 * p.w_arbol / total),
-                w_personas: Math.round(100 * p.w_personas / total) };
+  const total = (p.w_calor + p.w_arbol + p.w_personas) || 1;  // calor/árboles/personas suman 100; bio en la misma escala
+  const val = { km: p.km };
+  for (const k of PESOS) val[k] = Math.round(100 * (p[k] ?? 0) / total);
   $("controles").innerHTML = CONTROLES.map(([k, t, lo, hi, paso]) =>
     `<div class="control"><span>${t}</span><input type="range" id="r_${k}" min="${lo}" max="${hi}" step="${paso}" value="${val[k]}">
      <input type="number" id="n_${k}" min="${lo}" max="${hi}" step="${paso}" value="${val[k]}" aria-label="${t}"></div>`).join("");
@@ -354,16 +362,16 @@ function armarControles(p) {
 }
 function leerControles() { return Object.fromEntries(CONTROLES.map(([k]) => [k, Number($("n_" + k).value)])); }
 function repartir() {
-  const v = leerControles(), t = v.w_calor + v.w_arbol + v.w_personas;
-  $("reparto").innerHTML = t ? [["Calor", v.w_calor], ["Árboles", v.w_arbol], ["Social", v.w_personas]].map(([n, x]) =>
+  const v = leerControles(), t = PESOS.reduce((s, k) => s + v[k], 0);
+  $("reparto").innerHTML = t ? [["Calor", v.w_calor], ["Árboles", v.w_arbol], ["Social", v.w_personas], ["Biodiversidad", v.w_bio]].map(([n, x]) =>
     `<div>${n}: <b>${Math.round(100 * x / t)} %</b></div><div class="barra"><i style="width:${100 * x / t}%"></i></div>`).join("")
-    : '<div class="aviso">Los pesos suman 0: se usará 40 / 40 / 20.</div>';
+    : '<div class="aviso">Los pesos suman 0: se usará 40 / 40 / 20 / 10.</div>';
 }
 function programar() {
   repartir(); clearTimeout(temporizador);
   temporizador = setTimeout(() => {
     const v = leerControles();
-    if (!(v.w_calor + v.w_arbol + v.w_personas)) Object.assign(v, { w_calor: 40, w_arbol: 40, w_personas: 20 });
+    if (!PESOS.some(k => v[k])) Object.assign(v, { w_calor: 40, w_arbol: 40, w_personas: 20, w_bio: 10 });
     cambiar(v);
   }, 450);
 }
@@ -376,7 +384,7 @@ document.querySelectorAll("[data-vista]").forEach(b => b.onclick = () => {
   if (vista === "historico") cargarHistorico(); else pintar();
 });
 document.querySelectorAll("[data-para]").forEach(s => s.hidden = !s.dataset.para.split(" ").includes(vista));
-["cCalor", "cVerde", "cSocial"].forEach(id => $(id).onchange = pintar);
+["cCalor", "cVerde", "cSocial", "cBio"].forEach(id => $(id).onchange = pintar);
 ["desde", "hasta"].forEach(id => $(id).onchange = cargarHistorico);
 
 async function cargarHistorico() {
@@ -416,6 +424,8 @@ function colores() {
     const p = norm(H.pob);
     capas.push(H.social.map((s, i) => mezcla(0.5 * p[i] + 0.5 * Math.min(1, Math.max(0, s ?? 0.5)), [238, 242, 255], [79, 70, 229])));
   }
+  if ($("cBio").checked)  // escala absoluta 0..1: sin datos de terreno queda en el tono más claro
+    capas.push(H.bio.map(b => b == null ? [254, 249, 195] : mezcla(b, [254, 249, 195], [124, 58, 237])));
   if (!capas.length) return H.h.map(() => [[200, 205, 215], .6]);
   return Array.from({ length: n }, (_, i) => [[0, 1, 2].map(k => prom(capas.map(c => c[i][k]))), .8]);
 }
@@ -447,7 +457,10 @@ function pintar() {
     m = w.hexes ? metrica("Largo", num(w.km, 2) + " km", `${w.hexes} hexágonos`) +
         metrica("Urgencia cubierta", num(w.urgencia_cubierta, 3), `<span class="delta">${mejora >= 0 ? "+" : ""}${num(mejora)} % vs azar</span>`) +
         metrica("Personas beneficiadas", ent(w.personas_cubiertas), `<span class="delta">${w.personas_cubiertas >= w.personas_azar ? "+" : ""}${ent(w.personas_cubiertas - w.personas_azar)} vs azar</span>`) +
-        metrica("Verificados en terreno", w.verificados, "hexágonos del corredor")
+        metrica("Verificados en terreno", w.verificados, "hexágonos del corredor") +
+        metrica("Especies de aves en el corredor", d.fauna_corredor.especies.length,
+                (d.fauna_corredor.polinizadores ? `${d.fauna_corredor.polinizadores} polinizadores vistos` : "sin polinizadores registrados") +
+                (d.fauna_corredor.especies.length ? `<br>${d.fauna_corredor.especies.map(esc).join(", ")}` : ""))
       : '<div class="aviso" style="grid-column:1/-1">Sin corredor: el área no tiene un parque consolidado desde donde partir. Suma una comuna vecina o amplía el filtro.</div>';
   } else {
     $("tituloMetricas").textContent = "Promedio del período";
@@ -469,14 +482,27 @@ function pintar() {
         L1(caja("#d97706"), "Parques existentes") + L1("border-top:2px dashed #1b241e", "Corredor sin datos de terreno")
       : '<div>Color: promedio de las capas activas (claro → intenso)</div>') +
     L1("border-top:3px solid #c026d3", "Verificado en terreno") +
-    '<div>Punto azul: foto válida · gris: descartada o sin validar</div>' + L1("border-top:4px solid #7b2cbf", "Recorrido en video");
+    '<div>Punto azul: foto válida · gris: descartada o sin validar · 🎧 escucha de aves</div>' + L1("border-top:4px solid #7b2cbf", "Recorrido en video") +
+    ($("cBio").checked && vista !== "corredor" ? L1(caja("linear-gradient(90deg,#fef9c3,#7c3aed)"), "Biodiversidad en terreno: 0 → 1") : "");
   const nCap = d.capturas.length, nCuenta = d.capturas.filter(c => c.cuenta).length;
   $("sub").textContent = `${n.toLocaleString("es-CL")} hexágonos · ${nCap} captura${nCap === 1 ? "" : "s"} en terreno (${nCuenta} cuenta${nCuenta === 1 ? "" : "n"})` +
     (d.parametros.zona ? ` · zona de ${d.parametros.zona} hex.` : "");
 }
 
+const ICONO = { ave: "🐦", abeja: "🐝", mariposa: "🦋", otro_polinizador: "🪲", otro: "🐾" };
+const iconoEscucha = L.divIcon({ className: "", html: '<div style="font-size:20px;line-height:20px;filter:drop-shadow(0 1px 2px #0008)">🎧</div>', iconSize: [20, 20], iconAnchor: [10, 10] });
 function pintarCapturas() {
   capaCap.clearLayers();
+  for (const e of d.escuchas || []) {
+    const hora = new Date(e.tomado_en || e.medido_en).toLocaleString("es-CL");
+    const lista = !e.analizada ? "<em>Sin analizar (BirdNET no estaba disponible)</em>"
+      : e.detecciones.length ? e.detecciones.map(x => `🐦 <em>${esc(x.cientifico)}</em> <small>${esc(x.comun)} · ${Math.round(x.confianza * 100)} %</small>`).join("<br>")
+      : "No se identificaron aves <small>(no significa que no haya)</small>";
+    L.marker([e.lat, e.lon], { icon: iconoEscucha, pane: "capturas" })
+      .bindPopup(`<div class="pop"><strong>Escucha de ${Math.round(e.duracion_s)} s</strong><br>${lista}
+        <br><audio controls preload="none" src="/audios/${esc(e.id)}.wav" style="width:220px;margin-top:6px"></audio>
+        <br><small>${esc(hora)} · GPS ±${Math.round(e.precision_m ?? 0)} m</small></div>`).addTo(capaCap);
+  }
   for (const r of d.recorridos || []) {
     if (r.linea.length < 2) continue;
     const hora = r.inicio ? new Date(r.inicio).toLocaleString("es-CL") : "";
@@ -494,7 +520,9 @@ function pintarCapturas() {
     }
     L.circleMarker([c.lat, c.lon], { radius: 7, color: "#fff", weight: 2, fillColor: c.cuenta ? "#0b5cad" : "#999", fillOpacity: 1, pane: "capturas", renderer: svgCapturas })
       .bindPopup(`<div class="pop"><img src="/fotos/${esc(c.id)}_min.jpg" alt="Foto de terreno">
-        Árboles ${Math.round(c.arbol_pct)} % (${fuente}) · plantable: ${esc(c.espacio_plantable ?? "sin estimar")}<br>
+        ${c.arbol_pct == null ? "Foto de cerca (fauna o flores)" : `Árboles ${Math.round(c.arbol_pct)} % (${fuente}) · plantable: ${esc(c.espacio_plantable ?? "sin estimar")}`}<br>
+        ${c.fauna?.length ? "Fauna: " + c.fauna.map(a => `${ICONO[a.grupo] || ""} ${esc(a.nombre || a.grupo.replace("_", " "))} ×${a.cantidad}`).join(", ") + "<br>" : ""}
+        ${c.flores && c.flores !== "ninguna" ? `🌸 Flores: ${esc(c.flores)}<br>` : ""}
         ${c.obstaculos?.length ? "Obstáculos: " + c.obstaculos.map(esc).join(", ") + "<br>" : ""}
         <small>${esc(c.descripcion)}</small>${c.cuenta ? "" : "<br><strong>Sin validar: no cuenta</strong>"}
         <br><small>${esc(new Date(c.tomado_en || c.medido_en).toLocaleString("es-CL"))} · GPS ±${Math.round(c.precision_m ?? 0)} m${c.video_id ? ` · cuadro del video, ${Math.round(c.t_video_s ?? 0)} s` : ""}</small></div>`).addTo(capaCap);

@@ -38,7 +38,8 @@ El mapa 2026 no tiene verdad de terreno de 2026; no usarlo para afirmar que una 
 ## `optimizer.py` (Rol 1)
 
 ```python
-solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None, terreno=None) -> dict
+solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None, terreno=None,
+               w_bio=0.0) -> dict
 ```
 
 - `live`: el `data/live_h3.parquet` del Rol 2 (ver abajo). Se une por `h3_padre` sin perder cuadras y se
@@ -49,8 +50,11 @@ solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live
   `urgencia` (Serie por hexágono, para colorear el mapa).
 - `terreno` (opcional): el `data/terreno_h3.parquet` de la captura en terreno (ver abajo). Donde hay fotos,
   el déficit de árboles pasa a ser el promedio entre el satelital (`copa_modelo_pct`, o `arbol_pct`) y el de la foto (1 − `arbol_pct_terreno`/100), y los hexágonos con `viabilidad_terreno < 0,2`
-  que no son parque salen del grafo. Devuelve además `verificados` (hexágonos del corredor con foto).
-  Sin `terreno` el resultado es idéntico.
+  que no son parque salen del grafo. Devuelve además `verificados` (hexágonos del corredor con foto;
+  una escucha de aves sola no verifica). Sin `terreno` el resultado es idéntico.
+- `w_bio` (opcional, 0 por omisión: resultado idéntico): peso de `biodiversidad_terreno`. Con w_bio > 0 el
+  corredor prefiere pasar por donde el equipo registró fauna (conecta hábitat). Donde no hay datos de terreno
+  vale 0; no detectar fauna no significa que no haya, por eso conviene un peso bajo (el mapa usa 0,1).
 
 Fórmula, con cada término normalizado de 0 a 1 (min-max entre los percentiles 2 y 98):
 
@@ -59,7 +63,8 @@ calor    = 0,6·lst_c_norm + 0,4·vivo_norm     (vivo = temp_aire_c del barrio, 
            sin dato en vivo en esa cuadra, o con menos de dos barrios con dato: calor = lst_c_norm
 falta    = 1 − copa_norm                       (copa_modelo_pct normalizado como los demás términos)
 personas = 0,7·poblacion_norm + 0,3·social
-U        = (w_calor·calor + w_arbol·falta + w_personas·personas) / (w_calor + w_arbol + w_personas)
+bio      = biodiversidad_terreno (0 donde no hay terreno)
+U        = (w_calor·calor + w_arbol·falta + w_personas·personas + w_bio·bio) / (suma de los pesos)
 ```
 
 Los pesos se pueden mover libremente desde el panel y se reescalan para que sumen 1.
@@ -100,7 +105,10 @@ Una fila por hexágono res 9 con fotos que cuentan: solo las que Claude valida c
 público. Las descartadas nunca entran; las sin validar (sin Claude) solo con `--aceptar-sin-validar`.
 Cada captura trae `lat`, `lon`, `precision_m`, `tomado_en` (hora del teléfono, UTC) y `medido_en` (hora del
 servidor, UTC); las que vienen de un video traen además `video_id` y `t_video_s`. Los recorridos en video, con su
-trazado GPS punto a punto, quedan en `data/terreno/recorridos.jsonl`.
+trazado GPS punto a punto, quedan en `data/terreno/recorridos.jsonl`. Las escuchas de aves (15 s de audio,
+posición, hora y especies de BirdNET con su confianza) quedan en `data/terreno/escuchas.jsonl`; cuentan si
+BirdNET las analizó. Las fotos de cerca de fauna o flores (`tipo_foto` "fauna_flora") son válidas, suman a la
+biodiversidad y no tocan `arbol_pct_terreno` ni `plantable`.
 
 | Columna | Tipo | Qué es |
 |---|---|---|
@@ -112,7 +120,15 @@ trazado GPS punto a punto, quedan en `data/terreno/recorridos.jsonl`.
 | `viabilidad_terreno` | float 0–1 | `plantable − 0,15 × obstáculos distintos` (máx. 3), recortado. NaN si no hay `plantable` |
 | `obstaculos` | str | obstáculos distintos, separados por «; » |
 | `fuente` | str | "claude" si alguna foto se analizó con Claude, si no "indice_verde" |
-| `ultima_captura` | timestamp UTC | hora de la última foto |
+| `ultima_captura` | timestamp UTC | hora de la última foto o escucha |
+| `n_escuchas` | int | escuchas de aves analizadas en ese hexágono |
+| `especies_aves` | str | especies distintas, separadas por «; »: nombre científico (BirdNET) o común (vistas y nombradas por Claude); «ave sin identificar» si solo se vio un ave sin nombre |
+| `n_especies_aves` | int | cuántas son |
+| `n_polinizadores` | int | abejas, mariposas y otros polinizadores vistos en fotos (suma de individuos) |
+| `flores` | float 0–1 | flores vistas: ninguna 0, pocas 0,5, muchas 1 (la mayor). NaN si ninguna foto lo dice |
+| `biodiversidad_terreno` | float 0–1 | `0,5·min(n_especies_aves, 5)/5 + 0,3·[n_polinizadores > 0] + 0,2·flores` |
+
+Hexágonos con solo escuchas: `n_capturas` 0 y `arbol_pct_terreno`, `plantable`, `viabilidad_terreno` NaN.
 
 Una foto de calle ve solo parte del hexágono: complementa al satélite, no lo reemplaza.
 

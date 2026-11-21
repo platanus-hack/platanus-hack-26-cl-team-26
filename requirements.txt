@@ -21,3 +21,9 @@ python-multipart
 pillow
 anthropic
 httpx
+# aves por sonido (terreno/aves.py): BirdNET con el motor LiteRT; birdnetlib no declara librosa ni audioread
+birdnetlib==0.18.1
+librosa
+audioread
+ai-edge-litert
+audioop-lts; python_version >= "3.13"
