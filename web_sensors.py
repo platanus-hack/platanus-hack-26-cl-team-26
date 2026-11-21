@@ -26,6 +26,9 @@ import requests
 CENTRO = (-33.45, -70.65)
 RADIO_KM = 20
 INTERVALO_S = 300
+TEMP_MIN, TEMP_MAX = -10, 45      # Santiago nunca ha llegado a 40 °C
+MAX_ANTIGUEDAD_MIN = 60
+MAX_SALTO_C = 3.0
 DATA = Path(__file__).resolve().parent / "data"
 GRABACION = DATA / "grabacion"
 
@@ -103,6 +106,52 @@ def parsear_sc(respuesta):
     return list(ultimas.values())
 
 
+def control_calidad(lecturas, previas, ahora):
+    """Deja solo lecturas válidas.
+
+    - Descarta temperaturas imposibles para Santiago (fuera de TEMP_MIN..TEMP_MAX).
+    - Descarta lecturas con más de MAX_ANTIGUEDAD_MIN minutos (sensor sin datos recientes).
+    - Descarta saltos bruscos: más de MAX_SALTO_C respecto de la lectura anterior del mismo sensor
+      en los últimos 30 min (típico de un sensor que queda al sol).
+    - Humedad fuera de 0..100 pasa a None (la temperatura sigue sirviendo).
+    """
+    anterior = {p["source"]: p for p in previas}
+    validas = []
+    for x in lecturas:
+        if not TEMP_MIN <= x["temp_c"] <= TEMP_MAX:
+            continue
+        t = datetime.fromisoformat(x["timestamp"])
+        if (ahora - t).total_seconds() > MAX_ANTIGUEDAD_MIN * 60:
+            continue
+        p = anterior.get(x["source"])
+        if p and p["timestamp"] != x["timestamp"]:
+            dt = (t - datetime.fromisoformat(p["timestamp"])).total_seconds()
+            if 0 < dt <= 1800 and abs(x["temp_c"] - p["temp_c"]) > MAX_SALTO_C:
+                continue
+        h = x["humedad_pct"]
+        validas.append({**x, "humedad_pct": h if h is not None and 0 <= h <= 100 else None})
+    return validas
+
+
+def indice_calor(temp_c, humedad_pct):
+    """Sensación térmica (°C) con la fórmula de la NOAA (Rothfusz, con sus dos ajustes).
+
+    Bajo 27 °C o sin humedad, la fórmula no aplica y se devuelve la temperatura.
+    """
+    if humedad_pct is None or temp_c < 27:
+        return temp_c
+    t = temp_c * 9 / 5 + 32
+    rh = humedad_pct
+    hi = (-42.379 + 2.04901523 * t + 10.14333127 * rh - 0.22475541 * t * rh - 0.00683783 * t * t
+          - 0.05481717 * rh * rh + 0.00122874 * t * t * rh + 0.00085282 * t * rh * rh
+          - 0.00000199 * t * t * rh * rh)
+    if rh < 13 and 80 <= t <= 112:
+        hi -= (13 - rh) / 4 * math.sqrt((17 - abs(t - 95)) / 17)
+    elif rh > 85 and 80 <= t <= 87:
+        hi += (rh - 85) / 10 * (87 - t) / 5
+    return round((hi - 32) * 5 / 9, 1)
+
+
 def leer_dmc():
     usuario, token = os.environ.get("DMC_USUARIO"), os.environ.get("DMC_TOKEN")
     if not usuario or not token:
@@ -139,7 +188,9 @@ def ciclo():
         for x in lecturas:
             f.write(json.dumps({"leido": ahora.isoformat(), **x}) + "\n")
 
-    validas = [x for x in lecturas if -10 <= x["temp_c"] <= 50]
+    salida = DATA / "web_sensors.json"
+    previas = json.loads(salida.read_text(encoding="utf-8")) if salida.exists() else []
+    validas = control_calidad(lecturas, previas, ahora)
     tmp = DATA / "web_sensors.json.tmp"
     tmp.write_text(json.dumps(validas, indent=1), encoding="utf-8")
     tmp.replace(DATA / "web_sensors.json")
