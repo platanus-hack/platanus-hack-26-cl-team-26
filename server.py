@@ -5,6 +5,7 @@ Uso:
     python server.py
     Panel:    http://localhost:8000
     Telefono: Sensor Logger -> HTTP Push -> http://IP-del-notebook:8000/data
+              o la app propia en phone-app/ (mismo formato, ver phone-app/README.md)
 
 Actuador real (opcional): definir ACTUATOR_ON_URL y ACTUATOR_OFF_URL
 (por ejemplo un Shelly: http://IP-shelly/relay/0?turn=on). Sin ellas la
