@@ -127,6 +127,8 @@ class PulseController(
     private val enabled: () -> Boolean,
     /** Si el comando de luz puede usar la linterna del celular (Ajustes → General). */
     private val torchAllowed: () -> Boolean,
+    /** Si una accion del Modo celular puede ejecutarse ahora (fuera de MagneSense). */
+    private val phoneAllowed: (PhoneAction) -> Boolean,
     private val diag: (String) -> Unit,
     private val history: (HistoryKind, String) -> Unit,
 ) : SensorSink {
@@ -357,6 +359,10 @@ class PulseController(
 
     /** Modo celular: la accion la hace el servicio de accesibilidad, si esta activo. */
     private fun phone(action: PhoneAction) {
+        if (!phoneAllowed(action)) {
+            log("Modo celular funciona fuera de MagneSense")
+            return
+        }
         when (PhoneControl.perform(action)) {
             PhoneResult.NOT_ENABLED -> {
                 sounds.beep(200.0, 260)

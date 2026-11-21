@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +69,11 @@ fun AppRoot(app: MagneSenseApp) {
         mutableStateOf(!app.settings.settings.value.setupDone && app.settings.settings.value.activationMode == ActivationMode.GESTURES)
     }
 
+    // En estas pantallas el iman se mueve a proposito: Pulsos no debe actuar (ver PulseRules).
+    val calibrating = setup || screen in MAGNET_BUSY_SCREENS
+    SideEffect { app.screenBusy = calibrating }
+    val pulsesMode = app.settings.settings.collectAsState().value.activationMode == ActivationMode.PULSES
+
     if (setup) {
         SetupWizard(app, onDone = {
             app.settings.update { it.copy(setupDone = true) }
@@ -80,6 +86,14 @@ fun AppRoot(app: MagneSenseApp) {
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Tabs(screen) { screen = it }
+            if (calibrating && pulsesMode) {
+                Text(
+                    "Pulsos en pausa mientras calibras",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Palette.Muted,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (screen) {
                     Screen.PULSES -> PulsesScreen(app)
@@ -138,3 +152,6 @@ private fun Tabs(current: Screen, onSelect: (Screen) -> Unit) {
         }
     }
 }
+
+/** Pantallas donde el iman se acerca y aleja a proposito (calibrar, probar). */
+private val MAGNET_BUSY_SCREENS = setOf(Screen.CALIBRATION, Screen.TRACKER, Screen.DEBUG)

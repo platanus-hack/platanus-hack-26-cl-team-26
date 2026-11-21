@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,9 +41,20 @@ class MainActivity : ComponentActivity() {
                     val app = application as MagneSenseApp
                     // Intro "puerta magnetica" en cada apertura: se entra acercando el iman.
                     var unlocked by remember { mutableStateOf(false) }
+                    SideEffect { app.gateShowing = !unlocked }
                     if (unlocked) AppRoot(app) else MagnetGateScreen(app, onEnter = { unlocked = true })
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        (application as MagneSenseApp).inForeground = true
+    }
+
+    override fun onPause() {
+        (application as MagneSenseApp).inForeground = false
+        super.onPause()
     }
 }

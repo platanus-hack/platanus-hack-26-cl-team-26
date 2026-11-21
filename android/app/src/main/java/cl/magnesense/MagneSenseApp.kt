@@ -19,6 +19,7 @@ import cl.magnesense.feedback.Speaker
 import cl.magnesense.gestures.GestureController
 import cl.magnesense.gestures.LocalGestures
 import cl.magnesense.pulses.PulseController
+import cl.magnesense.pulses.PulseRules
 import cl.magnesense.data.ActivationMode
 import cl.magnesense.remote.ServerApi
 import cl.magnesense.remote.ServerSocket
@@ -70,6 +71,21 @@ class MagneSenseApp : Application() {
     /** Posicion 3D del iman (pestana 3D). */
     lateinit var tracker: LiveTracker
         private set
+
+    /** MagneSense esta en pantalla (MainActivity entre onResume y onPause). */
+    @Volatile
+    var inForeground = false
+
+    /** La pantalla actual mueve el iman a proposito (Calibrar, 3D, Debug). */
+    @Volatile
+    var screenBusy = false
+
+    /** La intro de la puerta magnetica esta en pantalla. */
+    @Volatile
+    var gateShowing = false
+
+    /** Se esta calibrando o probando el iman: Pulsos no debe actuar. */
+    val magnetBusy: Boolean get() = screenBusy || gateShowing
     lateinit var speaker: Speaker
         private set
 
@@ -89,8 +105,16 @@ class MagneSenseApp : Application() {
             this,
             speaker,
             sounds,
-            enabled = { settings.settings.value.activationMode == ActivationMode.PULSES && !(::gestures.isInitialized && gestures.teaching) },
+            enabled = {
+                PulseRules.enabled(
+                    pulsesMode = settings.settings.value.activationMode == ActivationMode.PULSES,
+                    teaching = ::gestures.isInitialized && gestures.teaching,
+                    inForeground = inForeground,
+                    magnetBusy = magnetBusy,
+                )
+            },
             torchAllowed = { settings.settings.value.phoneTorch },
+            phoneAllowed = { action -> PulseRules.phoneActionAllowed(action, inForeground) },
             diag = diag::add,
             history = history::add,
         )

@@ -267,7 +267,8 @@ class PhoneControlService : AccessibilityService() {
     private fun render(app: MagneSenseApp, s: PulseUiState) {
         val view = pill ?: return
         val text = hint ?: return
-        val active = s.profile == PulseProfile.PHONE &&
+        val active = !app.inForeground &&
+            s.profile == PulseProfile.PHONE &&
             s.interp == PulseInterp.COMMANDS &&
             app.settings.settings.value.activationMode == ActivationMode.PULSES
         view.visibility = if (active) View.VISIBLE else View.GONE
