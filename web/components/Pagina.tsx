@@ -281,8 +281,11 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
   const enCorredor = H.h.flatMap((_, i) => (H.ahora[i] ? [i] : []));
   const comunasCorredor = [...new Set(enCorredor.map((i) => H.comuna[i]))].sort();
   const claveCorredor = enCorredor.map((i) => H.h[i]).join();
-  const encuadrePlan = useMemo(() => (enCorredor.length ? encuadreDe(enCorredor.map((i) => anillos[i]), 0.025) : encuadreArea),
-    [claveCorredor, encuadreArea]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Por defecto se ve el área completa (las 34 comunas si están todas); el corredor se acerca a pedido.
+  const [cerca, setCerca] = useState(false);
+  useEffect(() => setCerca(false), [encuadreArea]);
+  const encuadrePlan = useMemo(() => (cerca && enCorredor.length ? encuadreDe(enCorredor.map((i) => anillos[i]), 0.025) : encuadreArea),
+    [cerca, claveCorredor, encuadreArea]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function exportar() {
     const fc = { type: "FeatureCollection", features: corredor.features.filter((f) => f.properties?.tipo === "ahora") };
@@ -400,6 +403,11 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
           <div className="izq escalon" style={est(3)}>
             <MapaHex {...mapaComun} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={corredor} encuadre={encuadrePlan}
               etiqueta="Corredor propuesto sobre la urgencia de cada cuadra" />
+            {enCorredor.length > 0 && (
+              <button type="button" className="pill zoom-corredor" aria-pressed={cerca} onClick={() => setCerca(!cerca)}>
+                {cerca ? (todas ? "Ver las 34 comunas" : "Ver toda el área") : "Acercar al corredor"}
+              </button>
+            )}
             <div className="leyenda">
               <span><i className="barra" style={{ background: grad(VERDE) }} />Urgencia</span>
               <span><i className="cuadro" style={{ background: "#22301A" }} />Corredor</span>

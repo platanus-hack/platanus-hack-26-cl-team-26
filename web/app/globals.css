@@ -149,3 +149,4 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 .terreno th:first-child { text-align: left; font-weight: 400; }
 .terreno thead th { font-size: 13px; color: var(--texto3); }
 .mapa .maplibregl-popup-content { border-radius: 14px; background: var(--papel); }
+.zoom-corredor { align-self: flex-start; min-height: 40px; font-size: 14px; }

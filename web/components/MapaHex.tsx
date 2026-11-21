@@ -118,6 +118,11 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
           id: "corredor", type: "fill", source: "corredor", filter: ["==", ["get", "tipo"], "ahora"],
           paint: { "fill-color": "#22301A", "fill-opacity": 0.92, "fill-opacity-transition": { duration: menosMovimiento() ? 0 : 700 } },
         });
+        // Contorno grueso para que el corredor se distinga aun con el área completa a la vista.
+        nuevo.addLayer({
+          id: "corredor-borde", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "ahora"],
+          paint: { "line-color": "#22301A", "line-width": ["interpolate", ["linear"], ["zoom"], 9, 3, 13, 1] },
+        });
         nuevo.addLayer({
           id: "corredor-antes", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "antes"],
           paint: { "line-color": "#22281A", "line-width": 1.6, "line-dasharray": [2, 2] },
