@@ -7,6 +7,8 @@ Teléfono: https://<túnel>/?k=<clave>   ·   Mapa para proyectar: http://localh
 Si TERRENO_CLAVE (o --clave) está definida, subir fotos exige ?k=<clave>, porque la URL del túnel es pública.
 Solo cuentan las fotos que Claude valida como exteriores de calle; sin Claude quedan «sin validar» y no cambian
 el corredor, salvo con --aceptar-sin-validar (demo sin red).
+Credenciales de Claude: ANTHROPIC_API_KEY, un perfil de `ant auth login`, o la clave sola en el archivo
+.anthropic_key en la raíz del repo (está en .gitignore; nunca la subas).
 """
 from __future__ import annotations
 
@@ -121,6 +123,18 @@ def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = P
     return app
 
 
+def cargar_clave_anthropic(archivo: Path) -> bool:
+    """Si no hay ANTHROPIC_API_KEY en el entorno, la lee de un archivo local. Devuelve si quedó definida."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return True
+    if archivo.exists():
+        clave = archivo.read_text(encoding="utf-8-sig").strip()
+        if clave:
+            os.environ["ANTHROPIC_API_KEY"] = clave
+            return True
+    return False
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--datos", type=Path, default=Path("data/santiago_h3.parquet"))
@@ -130,10 +144,15 @@ def main():
     p.add_argument("--host", default="127.0.0.1", help="127.0.0.1 basta para cloudflared; 0.0.0.0 abre la red local")
     p.add_argument("--clave", default=os.environ.get("TERRENO_CLAVE"))
     p.add_argument("--sin-claude", action="store_true", help="solo índice de verde, sin llamar a Claude")
+    p.add_argument("--archivo-clave", type=Path, default=Path(".anthropic_key"),
+                   help="archivo con la API key de Anthropic, si no está en ANTHROPIC_API_KEY")
     p.add_argument("--aceptar-sin-validar", action="store_true",
                    help="las fotos sin validar (sin Claude) también cambian el corredor; solo para demos sin red")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO)
+    if not a.sin_claude:
+        log.info("Claude: %s", "API key encontrada" if cargar_clave_anthropic(a.archivo_clave)
+                 else "sin API key (se probará un perfil de `ant`; si no hay, fotos sin validar)")
     import uvicorn
     uvicorn.run(crear_app(a.datos, a.data, a.km, a.clave, not a.sin_claude, a.aceptar_sin_validar), host=a.host, port=a.puerto)
 

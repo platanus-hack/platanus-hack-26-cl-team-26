@@ -93,7 +93,8 @@ cloudflared tunnel --url http://localhost:8000     # entrega https://<algo>.tryc
 - Teléfono: `https://<algo>.trycloudflare.com/?k=una-clave` (el GPS del navegador exige HTTPS). Aceptar la
   ubicación, esperar precisión ≤ 30 m, «Tomar foto», «Subir captura».
 - Mapa para proyectar: `http://localhost:8000/mapa` (se actualiza cada 3 s).
-- Claude: usa `ANTHROPIC_API_KEY` o un perfil de `ant auth login`. Claude primero valida que sea una foto
+- Claude: usa `ANTHROPIC_API_KEY`, un perfil de `ant auth login` o la key sola en `.anthropic_key` (raíz del
+  repo, en `.gitignore`). Claude primero valida que sea una foto
   exterior de calle o espacio público (descarta interiores, vistas desde ventanas, pantallas, primeros planos).
 - Solo las fotos válidas cambian el corredor. Sin credenciales, las fotos quedan «sin validar» (el índice de
   verde no distingue una oficina de una calle) y no cuentan; `--aceptar-sin-validar` las deja contar en una
