@@ -92,5 +92,64 @@ object ServerJson {
         return o.toString()
     }
 
+    /** Contexto para el asistente: que dispositivos, gestos y ejemplos hay. */
+    fun agentBody(
+        text: String,
+        devices: List<Pair<String, String>>,
+        detectors: List<RemoteDetector>,
+        examples: Map<String, Int>,
+        bindings: Map<String, String>,
+    ): String = JSONObject()
+        .put("text", text)
+        .put(
+            "context",
+            JSONObject()
+                .put("devices", JSONArray(devices.map { (id, name) -> JSONObject().put("id", id).put("name", name) }))
+                .put(
+                    "detectors",
+                    JSONArray(detectors.map { JSONObject().put("name", it.name).put("type", it.type.wire).put("trigger", it.trigger) }),
+                )
+                .put("examples", JSONObject(examples))
+                .put("bindings", JSONObject(bindings)),
+        )
+        .toString()
+
+    fun parseAgent(body: String): AgentReply? {
+        val o = runCatching { JSONObject(body) }.getOrNull() ?: return null
+        val steps = o.optJSONArray("steps")?.let { arr ->
+            (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let(::parseStep) }
+        }.orEmpty()
+        return AgentReply(o.optString("reply"), steps)
+    }
+
+    private fun parseStep(s: JSONObject): AgentStep {
+        val type = s.optString("type")
+        return when (type) {
+            "record" -> AgentStep.Record(
+                label = s.optString("label").ifBlank { return AgentStep.Unknown(type) },
+                count = s.optInt("count", 5).coerceIn(1, 20),
+                type = DetectorType.fromWire(s.optString("detector_type")) ?: DetectorType.EVENT,
+            )
+            "train" -> {
+                val kind = DetectorType.fromWire(s.optString("detector_type")) ?: return AgentStep.Unknown(type)
+                val label = s.optString("label").takeIf { it.isNotBlank() }
+                AgentStep.Train(
+                    TrainRequest(
+                        type = kind,
+                        name = s.optString("name").ifBlank { label ?: kind.wire },
+                        label = label,
+                        labels = s.optJSONArray("labels")?.let(::strings).orEmpty(),
+                        trigger = s.optString("trigger").takeIf { it.isNotBlank() },
+                    ),
+                )
+            }
+            "bind" -> AgentStep.Bind(
+                detector = s.optString("detector").ifBlank { return AgentStep.Unknown(type) },
+                target = s.optString("device").ifBlank { return AgentStep.Unknown(type) },
+            )
+            else -> AgentStep.Unknown(type)
+        }
+    }
+
     private fun strings(a: JSONArray) = (0 until a.length()).map { a.optString(it) }
 }

@@ -35,6 +35,28 @@ class ServerApi(private val baseUrl: () -> String) {
     suspend fun removeDetector(name: String): Outcome<Unit> =
         post("/detectors/remove", JSONObject().put("name", name).toString()) { }
 
+    sealed interface AgentOutcome {
+        data class Reply(val reply: AgentReply) : AgentOutcome
+        /** El servidor no tiene POST /agent todavia. */
+        data object NotAvailable : AgentOutcome
+        data class Error(val message: String) : AgentOutcome
+    }
+
+    /** Pide al asistente (Claude, en el servidor) que entienda un pedido en lenguaje natural. */
+    suspend fun askAgent(body: String): AgentOutcome {
+        val base = baseUrl().ifEmpty { return AgentOutcome.Error(NO_SERVER) }
+        return when (val r = Http.postJson("$base/agent", body, AGENT_TIMEOUT_MS)) {
+            is Http.Result.Ok -> ServerJson.parseAgent(r.body)?.let { AgentOutcome.Reply(it) }
+                ?: AgentOutcome.Error("Respuesta inválida del asistente")
+            is Http.Result.Failed -> when (r.code) {
+                404, 405 -> AgentOutcome.NotAvailable
+                else -> AgentOutcome.Error(
+                    runCatching { JSONObject(r.body).optString("error") }.getOrNull()?.ifBlank { null } ?: r.reason,
+                )
+            }
+        }
+    }
+
     private suspend fun <T> post(path: String, json: String, parse: (String) -> T): Outcome<T> {
         val base = baseUrl().ifEmpty { return Outcome.Error(NO_SERVER) }
         return when (val r = Http.postJson("$base$path", json)) {
@@ -48,5 +70,7 @@ class ServerApi(private val baseUrl: () -> String) {
     companion object {
         const val NO_SERVER = "Falta la URL del servidor (Ajustes → Servidor)"
         private const val TRAIN_TIMEOUT_MS = 8_000
+        /** Un modelo de lenguaje puede tardar varios segundos. */
+        private const val AGENT_TIMEOUT_MS = 30_000
     }
 }

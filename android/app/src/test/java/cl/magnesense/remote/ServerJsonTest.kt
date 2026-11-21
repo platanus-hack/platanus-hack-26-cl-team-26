@@ -62,6 +62,43 @@ class ServerJsonTest {
     }
 
     @Test
+    fun parsesAgentReplyAndSteps() {
+        val reply = ServerJson.parseAgent(
+            """{"reply":"Listo, enseñemos 'izquierda'.","steps":[
+                {"type":"record","label":"izquierda","count":5,"detector_type":"event"},
+                {"type":"train","detector_type":"event","name":"izquierda","label":"izquierda","trigger":"short"},
+                {"type":"bind","detector":"izquierda","device":"luz"},
+                {"type":"volar"}]}""",
+        )!!
+        assertEquals("Listo, enseñemos 'izquierda'.", reply.reply)
+        assertEquals(AgentStep.Record("izquierda", 5, DetectorType.EVENT), reply.steps[0])
+        assertEquals(
+            AgentStep.Train(TrainRequest(DetectorType.EVENT, "izquierda", label = "izquierda", trigger = "short")),
+            reply.steps[1],
+        )
+        assertEquals(AgentStep.Bind("izquierda", "luz"), reply.steps[2])
+        assertEquals(AgentStep.Unknown("volar"), reply.steps[3])
+    }
+
+    @Test
+    fun agentBodyCarriesContext() {
+        val body = ServerJson.agentBody(
+            "cuando mueva el dedo a la izquierda, prende la luz",
+            devices = listOf("luz" to "Luz"),
+            detectors = emptyList(),
+            examples = mapOf("izquierda" to 2),
+            bindings = emptyMap(),
+        )
+        val o = org.json.JSONObject(body)
+        assertEquals("cuando mueva el dedo a la izquierda, prende la luz", o.getString("text"))
+        val context = o.getJSONObject("context")
+        val device = context.getJSONArray("devices").getJSONObject(0)
+        assertEquals("luz", device.getString("id"))
+        assertEquals("Luz", device.getString("name"))
+        assertEquals(2, context.getJSONObject("examples").getInt("izquierda"))
+    }
+
+    @Test
     fun trainBodyAlwaysAsksServerNotToAct() {
         val body = ServerJson.trainBody(TrainRequest(DetectorType.EVENT, "izquierda", label = "izquierda", trigger = "double"))
         assertTrue(body.contains("\"action\":\"none\""))

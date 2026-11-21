@@ -87,3 +87,20 @@ data class TrainResult(
         const val GOOD_SEPARATION = 2.0
     }
 }
+
+/** Un paso que propone el asistente (POST /agent). La app lo ejecuta solo si el cuidador acepta. */
+sealed interface AgentStep {
+    /** Grabar [count] ejemplos de [label] (abre el asistente de ensenanza). */
+    data class Record(val label: String, val count: Int, val type: DetectorType) : AgentStep
+
+    /** Crear un detector con los ejemplos ya grabados. */
+    data class Train(val request: TrainRequest) : AgentStep
+
+    /** Enlazar un gesto aprendido a un dispositivo (id), "scan" o "none". */
+    data class Bind(val detector: String, val target: String) : AgentStep
+
+    /** Un paso que esta version de la app no conoce: se muestra pero no se ejecuta. */
+    data class Unknown(val type: String) : AgentStep
+}
+
+data class AgentReply(val reply: String, val steps: List<AgentStep>)
