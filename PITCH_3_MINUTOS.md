@@ -18,7 +18,7 @@
 
 ### Minuto 0:00 – 0:30 | La Brecha Térmica Invisible de Santiago
 * **Qué se muestra en pantalla:**  
-  Pestaña *"🎯 Pitch & Demo Jurado"* en `app.py`, mostrando las métricas de Cerro Navia vs. Providencia.
+  `/mapa`, vista *Tiempo real* con el botón «Piloto (Providencia + Cerro Navia)»: métricas de calor, copa y población.
 * **Qué dice el orador:**  
   > *"Santiago no solo es desigual en ingresos; es brutalmente desigual en sombra y temperatura.  
   > Mientras en Providencia y Las Condes la temperatura superficial de verano promedia **32.8 °C** con un **47%** de cobertura verde, a solo unos kilómetros al poniente, en Cerro Navia y Estación Central, la superficie hierve a **37.2 °C** con apenas un **6%** de áreas verdes.  
@@ -28,7 +28,7 @@
 
 ### Minuto 0:30 – 1:00 | La Solución VerdeH3: Macro + Micro en Grilla H3
 * **Qué se muestra en pantalla:**  
-  El mapa 3D hexagonal extruido con los hexágonos de resolución 9 (~174 m por lado).
+  `/mapa` con la grilla hexagonal H3 de resolución 9 (~174 m por lado); vista *Corredor* para el corredor óptimo.
 * **Qué dice el orador:**  
   > *"El satélite ve el calor cada 100 metros con Landsat y Sentinel-2, pero no puede ver qué pasa bajo la copa de un árbol o en una vereda estrecha. Por otro lado, las fotos a nivel de calle ven cada árbol, pero no la isla de calor completa.  
   > **VerdeH3 fusiona ambos mundos en una grilla hexagonal H3**: cruzamos temperatura satelital, índice de vegetación, equipamiento social (colegios y centros de salud) e imágenes de calle tomadas desde vehículos —que en producción se alimentan de las dashcams de los buses Red del transporte público— para priorizar qué corredor verde conviene plantar primero."*
@@ -44,7 +44,7 @@
   1. *"Invito a uno de los jurados a retirar o mover esta planta (árbol) de la vereda en la maqueta."*
   2. *(El juez mueve la planta)*.
   3. La cámara detecta en tiempo real la caída de sombra (de 65% a menos de 30% en menos de 1 segundo).
-  4. El hexágono en el mapa 3D pasa inmediatamente a rojo por estrés térmico.
+  4. El hexágono en el mapa pasa inmediatamente a rojo por estrés térmico.
   5. El corredor verde se **recalcula automáticamente** en pantalla para absorber ese punto crítico.
   6. **Salida física instantánea:**  
      - La baliza parpadea en rojo.  

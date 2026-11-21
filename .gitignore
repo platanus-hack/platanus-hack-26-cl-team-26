@@ -13,3 +13,8 @@ datos/cache/red_cruda_*.pkl
 
 # Binarios y túneles locales
 /bin/
+# fotos de terreno: pueden tener caras o patentes
+data/terreno/fotos/
+data/terreno/videos/
+# API key local de Anthropic para terreno/servidor.py
+.anthropic_key
