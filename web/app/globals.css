@@ -79,7 +79,7 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 .esqueleto { position: absolute; inset: 0; z-index: 2; display: grid; place-items: end start; padding: 22px; background: linear-gradient(100deg, #e9e3cf 30%, #f3eee0 45%, #e9e3cf 60%) 0 0 / 300% 100%, #e9e3cf; transition: opacity 0.45s var(--ease-out), visibility 0.45s; }
 .esqueleto::before { content: ""; position: absolute; inset: 14% 20% 14% 24%; background: #ddd6bf; opacity: 0.55; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
 .esqueleto span { position: relative; font-size: 14px; color: var(--texto3); }
-.esqueleto.fuera { opacity: 0; visibility: hidden; }
+.esqueleto.fuera { opacity: 0; visibility: hidden; animation: none; }
 @media (prefers-reduced-motion: no-preference) { .esqueleto { animation: brillo 1.6s linear infinite; } .sk { animation: brillo 1.6s linear infinite; } }
 @keyframes brillo { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 .actualiza { position: absolute; z-index: 3; left: 50%; bottom: 16px; transform: translateX(-50%); padding: 8px 14px; border-radius: 999px; background: var(--tinta); color: var(--crema2); font-size: 13px; pointer-events: none; }

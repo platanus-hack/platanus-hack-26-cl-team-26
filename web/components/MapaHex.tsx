@@ -22,11 +22,11 @@ function tenir(mapa: MapaML) {
       else if (l.type === "fill" && id.includes("water")) mapa.setPaintProperty(l.id, "fill-color", "#CDD6C2");
       else if (l.type === "fill" && /park|wood|grass|forest/.test(id)) mapa.setPaintProperty(l.id, "fill-color", "#DCE0C4");
       else if (l.type === "fill" && /landcover|landuse/.test(id)) mapa.setPaintProperty(l.id, "fill-color", "#EAE5D3");
-      else if (l.type === "fill" && id.includes("building")) mapa.setPaintProperty(l.id, "fill-color", "#E6DFCB");
+      else if ((l.type === "fill" || l.type === "fill-extrusion") && id.includes("building")) mapa.setLayoutProperty(l.id, "visibility", "none");
       else if (l.type === "line" && /road|bridge|tunnel|highway|street/.test(id)) mapa.setPaintProperty(l.id, "line-color", "#FBF8EF");
       else if (l.type === "line" && id.includes("water")) mapa.setPaintProperty(l.id, "line-color", "#CDD6C2");
       else if (l.type === "symbol") {
-        if (/poi|housenum/.test(id)) mapa.setLayoutProperty(l.id, "visibility", "none");
+        if (/poi|housenum|roadname_minor|roadname_sec|watername|aeroway|rail/.test(id)) mapa.setLayoutProperty(l.id, "visibility", "none");
         else mapa.setPaintProperty(l.id, "text-color", "#59623F");
       }
     } catch { /* capa sin esa propiedad */ }
@@ -59,8 +59,8 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
   const [rueda, setRueda] = useState<"tactil" | "apagada" | "activa">("apagada");
   const [falla, setFalla] = useState(false);
   const elegido = useRef<number | null>(null);
-  const cb = useRef({ alElegir, alComuna, popupCaptura, activa });
-  cb.current = { alElegir, alComuna, popupCaptura, activa };
+  const cb = useRef({ alElegir, alComuna, popupCaptura, activa, datos });
+  cb.current = { alElegir, alComuna, popupCaptura, activa, datos };
   const inicial = useRef({ datos, capas, activa, encuadre });
   const hayComunas = useRef(false), hayCuadras = useRef(false), claveCorredor = useRef("");
 
@@ -106,18 +106,17 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
         for (const c of ini.capas) {
           nuevo.addLayer({
             id: c.id, type: "fill", source: "hex",
-            paint: { "fill-color": c.color, "fill-opacity": c.id === ini.activa ? OPACIDAD : 0, "fill-opacity-transition": fundido },
+            layout: { visibility: c.id === ini.activa ? "visible" : "none" },
+            paint: { "fill-color": c.color, "fill-opacity": OPACIDAD, "fill-opacity-transition": fundido, "fill-antialias": false },
           });
         }
+        // Con todo el Gran Santiago a la vista los bordes de 13 mil cuadras solo ensucian y cuestan; aparecen al acercar.
         nuevo.addLayer({
-          id: "borde", type: "line", source: "hex",
-          paint: {
-            "line-color": ["case", ["boolean", ["feature-state", "sel"], false], "#22281A", "#F6F1E4"],
-            "line-width": ["case", ["boolean", ["feature-state", "sel"], false], 2.6, 0.35],
-            // Con todo el Gran Santiago a la vista los bordes de 13 mil cuadras solo ensucian; aparecen al acercar.
-            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10.5, ["case", ["boolean", ["feature-state", "sel"], false], 1, 0], 12, 1],
-          },
+          id: "borde", type: "line", source: "hex", minzoom: 11,
+          paint: { "line-color": "#F6F1E4", "line-width": 0.35, "line-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0, 12, 1] },
         });
+        nuevo.addSource("elegida", { type: "geojson", data: VACIO });
+        nuevo.addLayer({ id: "elegida", type: "line", source: "elegida", paint: { "line-color": "#22281A", "line-width": 2.6 } });
         nuevo.addSource("comunas", { type: "geojson", data: VACIO });
         nuevo.addLayer({
           id: "comunas-relleno", type: "fill", source: "comunas",
@@ -175,9 +174,9 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
           const hex = nuevo.getLayer(cb.current.activa) ? nuevo.queryRenderedFeatures(e.point, { layers: [cb.current.activa] })[0] : undefined;
           if (hex) {
             const i = Number(hex.id);
-            if (elegido.current != null) nuevo.setFeatureState({ source: "hex", id: elegido.current }, { sel: false });
             elegido.current = i === elegido.current ? null : i;
-            if (elegido.current != null) nuevo.setFeatureState({ source: "hex", id: elegido.current }, { sel: true });
+            const f = elegido.current == null ? null : cb.current.datos.features.find((x) => x.properties?.i === i);
+            (nuevo.getSource("elegida") as GeoJSONSource).setData(f ? { type: "FeatureCollection", features: [f] } : VACIO);
             cb.current.alElegir?.(elegido.current);
             return;
           }
@@ -205,13 +204,13 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
   useEffect(() => {
     const m = mapa.current;
     if (!listo || !m) return;
-    for (const c of capas) if (m.getLayer(c.id)) m.setPaintProperty(c.id, "fill-opacity", c.id === activa ? OPACIDAD : 0);
+    for (const c of capas) if (m.getLayer(c.id)) m.setLayoutProperty(c.id, "visibility", c.id === activa ? "visible" : "none");
   }, [activa, capas, listo]);
 
   useEffect(() => {
     const m = mapa.current;
     if (!listo || !m) return;
-    if (elegido.current != null) { m.removeFeatureState({ source: "hex" }); elegido.current = null; }
+    if (elegido.current != null) { (m.getSource("elegida") as GeoJSONSource).setData(VACIO); elegido.current = null; }
     hayCuadras.current = datos.features.length > 0;
     setActualizando(true);
     (m.getSource("hex") as GeoJSONSource).setData(datos);
