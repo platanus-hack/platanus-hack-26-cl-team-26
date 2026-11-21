@@ -36,9 +36,23 @@ import java.util.Locale
  * lista de gestos con su accion. Los gestos se pueden probar aqui aunque el modo sea escaneo.
  */
 @Composable
-fun GesturesScreen(app: MagneSenseApp, onOpenSettings: () -> Unit, onOpenSetup: () -> Unit) {
+fun GesturesScreen(
+    app: MagneSenseApp,
+    onOpenSettings: () -> Unit,
+    onOpenSetup: () -> Unit,
+    startTeaching: Boolean = false,
+    onTeachStarted: () -> Unit = {},
+) {
     var teaching by rememberSaveable { mutableStateOf(false) }
     var draft by remember { mutableStateOf(TeachDraft()) }
+    // Desde Control: "Grabar un gesto nuevo" abre directo la grabacion.
+    LaunchedEffect(startTeaching) {
+        if (startTeaching) {
+            draft = TeachDraft()
+            teaching = true
+            onTeachStarted()
+        }
+    }
     DisposableEffect(teaching) {
         app.gestures.teaching = teaching
         onDispose { app.gestures.teaching = false }
@@ -75,6 +89,12 @@ private fun GestureList(app: MagneSenseApp, onOpenSettings: () -> Unit, onOpenSe
     Column(Modifier.verticalScroll(rememberScrollState())) {
         ScreenColumn {
             Text("Gestos aprendidos", style = MaterialTheme.typography.headlineMedium, color = Palette.Text)
+            BigButton("● Grabar un gesto nuevo", { onTeach(TeachDraft()) }, Modifier.fillMaxWidth())
+            Text(
+                "Le pones un nombre, lo grabas 3 veces y eliges qué hace (canción, cuack, un enchufe…).",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Palette.Muted,
+            )
 
             Panel {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -115,7 +135,6 @@ private fun GestureList(app: MagneSenseApp, onOpenSettings: () -> Unit, onOpenSe
 
             AssistantCard(app, onTeach = onTeach)
 
-            BigButton("Enseñar un gesto", { onTeach(TeachDraft()) }, Modifier.fillMaxWidth())
 
             val detectors = server.phase2.detectors
             val forgotten = settings.gestureBindings.keys.filter { n -> detectors.none { it.name == n } }

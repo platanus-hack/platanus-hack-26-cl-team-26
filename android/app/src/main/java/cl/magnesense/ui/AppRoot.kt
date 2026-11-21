@@ -56,6 +56,7 @@ fun AppRoot(app: MagneSenseApp) {
     val detector by engine.detector.status.collectAsState()
     val scan by access.scanning.state.collectAsState()
     // La primera vez se abre el asistente de inicio (imán, calibrar, gestos).
+    var teachRequest by rememberSaveable { mutableStateOf(false) }
     var setup by rememberSaveable { mutableStateOf(!app.settings.settings.value.setupDone) }
 
     if (setup) {
@@ -72,8 +73,17 @@ fun AppRoot(app: MagneSenseApp) {
             Tabs(screen) { screen = it }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (screen) {
-                    Screen.CONTROL -> ControlScreen(app, onCalibrate = { screen = Screen.CALIBRATION })
-                    Screen.GESTURES -> GesturesScreen(app, onOpenSettings = { screen = Screen.SETTINGS }, onOpenSetup = { setup = true })
+                    Screen.CONTROL -> ControlScreen(app, onCalibrate = { screen = Screen.CALIBRATION }, onTeachGesture = {
+                        teachRequest = true
+                        screen = Screen.GESTURES
+                    })
+                    Screen.GESTURES -> GesturesScreen(
+                        app,
+                        onOpenSettings = { screen = Screen.SETTINGS },
+                        onOpenSetup = { setup = true },
+                        startTeaching = teachRequest,
+                        onTeachStarted = { teachRequest = false },
+                    )
                     Screen.CALIBRATION -> CalibrationScreen(engine.detector, onDone = { screen = Screen.CONTROL })
                     Screen.HISTORY -> HistoryScreen(app.history)
                     Screen.SETTINGS -> SettingsScreen(app.settings, access.actions, app.telemetry, app.server)

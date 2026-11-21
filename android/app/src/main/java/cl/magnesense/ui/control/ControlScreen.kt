@@ -43,6 +43,7 @@ import cl.magnesense.scanning.ScanState
 import cl.magnesense.sensor.SensorHub
 import cl.magnesense.sensor.SensorSnapshot
 import cl.magnesense.ui.components.BigButton
+import cl.magnesense.ui.components.BigOutlineButton
 import cl.magnesense.ui.components.ConditionChip
 import cl.magnesense.ui.components.DeviceBadgeIcon
 import cl.magnesense.ui.components.Panel
@@ -54,7 +55,7 @@ import java.util.Locale
 
 /** Pantalla principal: se lee desde 2 m. La persona no necesita tocarla. */
 @Composable
-fun ControlScreen(app: MagneSenseApp, onCalibrate: () -> Unit) {
+fun ControlScreen(app: MagneSenseApp, onCalibrate: () -> Unit, onTeachGesture: () -> Unit) {
     val engine = app.engine
     val access = app.access
     val d by engine.detector.status.collectAsState()
@@ -82,6 +83,7 @@ fun ControlScreen(app: MagneSenseApp, onCalibrate: () -> Unit) {
     ) {
         StatusHeader(d, scan, sensors, gestureStatus, onRecenter = engine.detector::recenterBaseline)
         if (settings.activationMode == ActivationMode.GESTURES) GestureBindingsRow(settings.gestureBindings, devices)
+        BigOutlineButton("● Grabar un gesto nuevo", onTeachGesture, Modifier.fillMaxWidth())
         if (d.state == DetectorState.UNCALIBRATED) {
             Panel {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
