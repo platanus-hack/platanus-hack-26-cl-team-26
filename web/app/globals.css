@@ -206,3 +206,34 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 .resumen-mapa .chip { min-height: 30px; font-size: 13px; }
 /* El pie retoma el fondo satelital de la portada, más velado. */
 .b footer { background: linear-gradient(rgba(246, 241, 228, 0.93), rgba(246, 241, 228, 0.86)), url(/img/santiago-s2-1200.webp) 70% 55% / cover; border-top: 1px solid var(--salvia3); }
+
+/* Herramientas del mapa: lápiz para encerrar cuadras, bajo los botones de zoom */
+.herramientas { position: absolute; z-index: 3; left: 12px; top: 70px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.herr { min-height: 40px; padding: 0 14px 0 12px; border-radius: 999px; border: 0; background: var(--papel); color: var(--oliva-osc); font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; box-shadow: 0 1px 0 rgba(47, 69, 32, 0.12), 0 10px 24px -16px rgba(47, 69, 32, 0.6); }
+.herr.activa { background: var(--tinta); color: var(--crema2); }
+.herr:focus-visible, .volver:focus-visible, .quita:focus-visible { outline: 2px solid var(--oliva); outline-offset: 2px; }
+.resumen-mapa .chip.zona { background: var(--tinta); color: var(--crema2); }
+.resumen-mapa .chip.zona button { color: var(--crema2); }
+.resumen-mapa .volver { min-height: 32px; font-size: 13px; }
+.resumen-mapa .nota { font-size: 13px; }
+
+/* Cifras de lo elegido: total grande y una fila por comuna */
+.elegido { display: flex; flex-direction: column; gap: 14px; padding-top: 16px; border-top: 2px solid var(--salvia3); }
+.elegido .vacio { margin: 0; font-size: 18px; color: var(--texto2); max-width: 70ch; }
+.elegido .vacio b { color: var(--oliva-osc); }
+.totales { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 32px; color: var(--texto2); font-size: 15px; }
+.totales .quien { flex-basis: 100%; font-family: var(--f-serif); font-size: clamp(26px, 3vw, 34px); color: var(--oliva); line-height: 1.1; }
+.totales b { font-family: var(--f-serif); font-weight: 400; font-size: clamp(34px, 4vw, 48px); color: var(--oliva); margin-right: 4px; }
+.dif { font-size: 14px; font-weight: 700; color: var(--texto3); margin-left: 4px; white-space: nowrap; }
+.dif.peor { color: #966222; }
+.dif.mejor { color: var(--oliva); }
+.tabla-env { overflow-x: auto; }
+.tabla-elegido { width: 100%; border-collapse: collapse; font-size: 15px; }
+.tabla-elegido th, .tabla-elegido td { padding: 8px 10px; border-bottom: 1px solid var(--salvia3); text-align: right; white-space: nowrap; }
+.tabla-elegido thead th { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--texto3); }
+.tabla-elegido th:first-child { text-align: left; }
+.tabla-elegido tbody th { font-weight: 700; color: var(--tinta); }
+.tabla-elegido .dif { margin: 0; }
+.quita { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--crema2); color: var(--tinta); font-size: 17px; cursor: pointer; }
+.quita:hover { background: var(--salvia3); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -13,6 +13,9 @@ const OPACIDAD = 0.82;
 const VACIO: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 export type Capa = { id: string; color: ExpressionSpecification };
+// Lo elegido: índices de comuna (propiedad c de cada cuadra) o cuadras sueltas (propiedad i). null = todo Santiago.
+export type Foco = { comunas: number[]; hexes: number[] } | null;
+const TENUE = 0.22;
 
 function tenir(mapa: MapaML) {
   for (const l of mapa.getStyle().layers ?? []) {
@@ -33,19 +36,22 @@ function tenir(mapa: MapaML) {
   }
 }
 
-export default function MapaHex({ datos, capas, activa, corredor, comunas, capturas, recorridos, popupCaptura,
-  encuadre, alElegir, alComuna, etiqueta, children }: {
+export default function MapaHex({ datos, capas, activa, corredor, comunas, distritos, capturas, recorridos, popupCaptura,
+  encuadre, foco = null, alPasar, alComuna, alLazo, etiqueta, children }: {
   datos: GeoJSON.FeatureCollection;
   capas: Capa[];
   activa: string;
   corredor?: GeoJSON.FeatureCollection;      // polígonos con propiedad tipo: "ahora" | "antes" | "verificado"
-  comunas?: GeoJSON.FeatureCollection;       // contornos con propiedades c (nombre) y est: todas | sel | vec | otra
+  comunas?: GeoJSON.FeatureCollection;       // contornos con propiedades c (nombre) y est: sel | otra
+  distritos?: GeoJSON.FeatureCollection;     // líneas entre sectores (distritos censales) de una misma comuna
   capturas?: GeoJSON.FeatureCollection;      // puntos con propiedad color
   recorridos?: GeoJSON.FeatureCollection;
   popupCaptura?: (props: Record<string, unknown>) => string;
   encuadre: LngLatBoundsLike;
-  alElegir?: (i: number | null) => void;
-  alComuna?: (c: string) => void;
+  foco?: Foco;
+  alPasar?: (i: number | null) => void;      // cuadra bajo el puntero
+  alComuna?: (c: string) => void;            // tocar una cuadra o comuna: suma o quita su comuna
+  alLazo?: (anillo: [number, number][]) => void;  // zona dibujada con el lápiz, en [lng, lat]
   etiqueta: string;
   children?: React.ReactNode;                 // controles que flotan sobre el mapa
 }) {
@@ -58,9 +64,11 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
   const [actualizando, setActualizando] = useState(false);
   const [rueda, setRueda] = useState<"tactil" | "apagada" | "activa">("apagada");
   const [falla, setFalla] = useState(false);
-  const elegido = useRef<number | null>(null);
-  const cb = useRef({ alElegir, alComuna, popupCaptura, activa, datos });
-  cb.current = { alElegir, alComuna, popupCaptura, activa, datos };
+  const [lapiz, setLapiz] = useState(false);
+  const pasado = useRef<number | null>(null);
+  const sinClicHasta = useRef(0);   // al soltar el lápiz el mapa dispara un clic que no debe elegir comuna
+  const cb = useRef({ alPasar, alComuna, alLazo, popupCaptura, activa, datos, lapiz });
+  cb.current = { alPasar, alComuna, alLazo, popupCaptura, activa, datos, lapiz };
   const inicial = useRef({ datos, capas, activa, encuadre });
   const hayComunas = useRef(false), hayCuadras = useRef(false), claveCorredor = useRef("");
 
@@ -116,26 +124,31 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
           paint: { "line-color": "#F6F1E4", "line-width": 0.35, "line-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0, 12, 1] },
         });
         nuevo.addSource("elegida", { type: "geojson", data: VACIO });
-        nuevo.addLayer({ id: "elegida", type: "line", source: "elegida", paint: { "line-color": "#22281A", "line-width": 2.6 } });
+        nuevo.addLayer({ id: "elegida", type: "line", source: "elegida", paint: { "line-color": "#22281A", "line-width": 2.2 } });
+        // Sectores: raya fina punteada entre distritos de una misma comuna, más visible al acercar.
+        nuevo.addSource("distritos", { type: "geojson", data: VACIO });
+        nuevo.addLayer({
+          id: "distritos", type: "line", source: "distritos",
+          paint: {
+            "line-color": "#2F4520", "line-dasharray": [2, 1.6],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.6, 13, 1.3],
+            "line-opacity": ["interpolate", ["linear"], ["zoom"], 9.5, 0.3, 12, 0.75],
+          },
+        });
+        // Comunas: halo claro debajo y línea oscura encima, para que el límite se lea sobre cualquier color.
+        // El relleno es casi transparente: solo sirve para tocar una comuna donde no hay cuadras.
         nuevo.addSource("comunas", { type: "geojson", data: VACIO });
+        nuevo.addLayer({ id: "comunas-relleno", type: "fill", source: "comunas", paint: { "fill-color": "#4F6E31", "fill-opacity": 0.001 } });
         nuevo.addLayer({
-          id: "comunas-relleno", type: "fill", source: "comunas",
-          // Lo elegido a color (sus cuadras), las vecinas tenues y el resto apagado.
-          paint: {
-            "fill-color": ["match", ["get", "est"], "otra", "#EFE9DA", "#4F6E31"],
-            "fill-opacity": ["match", ["get", "est"], "vec", 0.14, "otra", 0.55, 0.001],
-          },
+          id: "comunas-halo", type: "line", source: "comunas", layout: { "line-join": "round" },
+          paint: { "line-color": "#FFFDF6", "line-opacity": 0.8, "line-width": ["interpolate", ["linear"], ["zoom"], 9, ["match", ["get", "est"], "sel", 6.5, 2.6], 13, ["match", ["get", "est"], "sel", 7.5, 4]] },
         });
         nuevo.addLayer({
-          id: "comunas-linea", type: "line", source: "comunas", filter: ["!=", ["get", "est"], "vec"],
+          id: "comunas-linea", type: "line", source: "comunas", layout: { "line-join": "round" },
           paint: {
-            "line-color": ["match", ["get", "est"], "otra", "#8C9A63", "#2F4520"],
-            "line-width": ["match", ["get", "est"], "sel", 2.6, "todas", 0.9, 1],
+            "line-color": ["match", ["get", "est"], "sel", "#22281A", "#2F4520"],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 9, ["match", ["get", "est"], "sel", 3.2, 1.3], 13, ["match", ["get", "est"], "sel", 3.6, 2]],
           },
-        });
-        nuevo.addLayer({
-          id: "comunas-vecina", type: "line", source: "comunas", filter: ["==", ["get", "est"], "vec"],
-          paint: { "line-color": "#2F4520", "line-width": 1.8, "line-dasharray": [3, 3] },
         });
         nuevo.addSource("corredor", { type: "geojson", data: VACIO });
         nuevo.addLayer({
@@ -157,14 +170,18 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
         });
         nuevo.addSource("recorridos", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "recorridos", type: "line", source: "recorridos", paint: { "line-color": "#6B3FA0", "line-width": 4, "line-opacity": 0.85 } });
+        nuevo.addSource("lazo", { type: "geojson", data: VACIO });
+        nuevo.addLayer({ id: "lazo-relleno", type: "fill", source: "lazo", paint: { "fill-color": "#966222", "fill-opacity": 0.12 } });
+        nuevo.addLayer({ id: "lazo", type: "line", source: "lazo", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#22281A", "line-width": 2.4, "line-dasharray": [1.5, 1.2] } });
         nuevo.addSource("capturas", { type: "geojson", data: VACIO });
         nuevo.addLayer({
           id: "capturas", type: "circle", source: "capturas",
           paint: { "circle-radius": 7, "circle-color": ["get", "color"], "circle-stroke-color": "#FFFDF6", "circle-stroke-width": 2 },
         });
 
-        // Un toque: captura → su foto; cuadra del área → su detalle; otra comuna → elegirla.
+        // Un toque: captura → su foto; cuadra o comuna → sumar o quitar su comuna. Con el lápiz activo no se elige nada.
         nuevo.on("click", (e) => {
+          if (cb.current.lapiz || performance.now() < sinClicHasta.current) return;
           const cap = nuevo.queryRenderedFeatures(e.point, { layers: ["capturas"] })[0];
           if (cap && cb.current.popupCaptura) {
             popup?.remove();
@@ -172,21 +189,27 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
             return;
           }
           const hex = nuevo.getLayer(cb.current.activa) ? nuevo.queryRenderedFeatures(e.point, { layers: [cb.current.activa] })[0] : undefined;
-          if (hex) {
-            const i = Number(hex.id);
-            elegido.current = i === elegido.current ? null : i;
-            const f = elegido.current == null ? null : cb.current.datos.features.find((x) => x.properties?.i === i);
-            (nuevo.getSource("elegida") as GeoJSONSource).setData(f ? { type: "FeatureCollection", features: [f] } : VACIO);
-            cb.current.alElegir?.(elegido.current);
-            return;
-          }
+          if (hex && hex.properties.cn) { cb.current.alComuna?.(String(hex.properties.cn)); return; }
           const com = nuevo.queryRenderedFeatures(e.point, { layers: ["comunas-relleno"] })[0];
           if (com) cb.current.alComuna?.(String(com.properties.c));
         });
+        // Al pasar el puntero: contorno de la cuadra y sus datos abajo del mapa.
+        const pasar = (i: number | null) => {
+          if (i === pasado.current) return;
+          pasado.current = i;
+          const f = i == null ? null : cb.current.datos.features[i];
+          (nuevo.getSource("elegida") as GeoJSONSource).setData(f ? { type: "FeatureCollection", features: [f] } : VACIO);
+          cb.current.alPasar?.(i);
+        };
         nuevo.on("mousemove", (e) => {
+          if (cb.current.lapiz) return;
           const capas = ["capturas", "comunas-relleno", cb.current.activa].filter((x) => nuevo.getLayer(x));
-          nuevo.getCanvas().style.cursor = nuevo.queryRenderedFeatures(e.point, { layers: capas }).length ? "pointer" : "";
+          const fs = nuevo.queryRenderedFeatures(e.point, { layers: capas });
+          nuevo.getCanvas().style.cursor = fs.length ? "pointer" : "";
+          const hex = fs.find((f) => f.layer.id === cb.current.activa);
+          pasar(hex ? Number(hex.id) : null);
         });
+        nuevo.getCanvas().addEventListener("mouseleave", () => pasar(null));
         setListo(true);
       });
       // Cada vez que el mapa termina de dibujar lo pendiente, se quita el skeleton o el aviso de actualización.
@@ -210,11 +233,78 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
   useEffect(() => {
     const m = mapa.current;
     if (!listo || !m) return;
-    if (elegido.current != null) { (m.getSource("elegida") as GeoJSONSource).setData(VACIO); elegido.current = null; }
+    if (pasado.current != null) { (m.getSource("elegida") as GeoJSONSource).setData(VACIO); pasado.current = null; }
     hayCuadras.current = datos.features.length > 0;
     setActualizando(true);
     (m.getSource("hex") as GeoJSONSource).setData(datos);
   }, [datos, listo]);
+
+  // Lo elegido a color pleno; lo demás atenuado, nunca oculto.
+  const claveFoco = foco ? `${foco.comunas.join()}|${foco.hexes.length}:${foco.hexes.slice(0, 50).join()}` : "";
+  useEffect(() => {
+    const m = mapa.current;
+    if (!listo || !m) return;
+    const op: ExpressionSpecification | number = foco
+      ? ["case", ["any", ["in", ["get", "c"], ["literal", foco.comunas]], ["in", ["get", "i"], ["literal", foco.hexes]]], OPACIDAD, TENUE]
+      : OPACIDAD;
+    for (const c of capas) if (m.getLayer(c.id)) m.setPaintProperty(c.id, "fill-opacity", op);
+  }, [claveFoco, capas, listo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!listo) return;
+    (mapa.current?.getSource("distritos") as GeoJSONSource | undefined)?.setData(distritos ?? VACIO);
+  }, [distritos, listo]);
+
+  // Lápiz: con él activo el mapa no se arrastra; se dibuja una zona y al soltar se entrega su contorno.
+  useEffect(() => {
+    const m = mapa.current;
+    if (!listo || !m) return;
+    const cont = m.getCanvasContainer();
+    if (!lapiz) {
+      m.dragPan.enable(); m.touchZoomRotate.enable(); m.doubleClickZoom.enable();
+      cont.style.cursor = "";
+      return;
+    }
+    m.dragPan.disable(); m.touchZoomRotate.disable(); m.doubleClickZoom.disable();
+    cont.style.cursor = "crosshair";
+    const lazo = m.getSource("lazo") as GeoJSONSource;
+    let pts: [number, number][] = [], ult: [number, number] | null = null, dibuja = false;
+    const pintar = (cerrar: boolean) => lazo.setData(pts.length < 2 ? VACIO : {
+      type: "FeatureCollection", features: [cerrar && pts.length > 2
+        ? { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[...pts, pts[0]]] } }
+        : { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: pts } }],
+    });
+    const punto = (e: PointerEvent): [number, number] => { const r = cont.getBoundingClientRect(); const ll = m.unproject([e.clientX - r.left, e.clientY - r.top]); return [ll.lng, ll.lat]; };
+    const abajo = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      dibuja = true; cont.setPointerCapture(e.pointerId);
+      pts = [punto(e)]; ult = [e.clientX, e.clientY];
+    };
+    const mueve = (e: PointerEvent) => {
+      if (!dibuja || !ult || Math.hypot(e.clientX - ult[0], e.clientY - ult[1]) < 4) return;
+      ult = [e.clientX, e.clientY]; pts.push(punto(e)); pintar(false);
+    };
+    const arriba = () => {
+      if (!dibuja) return;
+      dibuja = false;
+      sinClicHasta.current = performance.now() + 500;
+      if (pts.length > 2) { pintar(true); cb.current.alLazo?.(pts); }
+      setTimeout(() => lazo.setData(VACIO), 700);
+      setLapiz(false);
+    };
+    cont.style.touchAction = "none";
+    cont.addEventListener("pointerdown", abajo);
+    cont.addEventListener("pointermove", mueve);
+    cont.addEventListener("pointerup", arriba);
+    cont.addEventListener("pointercancel", arriba);
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setLapiz(false); };
+    window.addEventListener("keydown", esc);
+    return () => {
+      cont.removeEventListener("pointerdown", abajo); cont.removeEventListener("pointermove", mueve);
+      cont.removeEventListener("pointerup", arriba); cont.removeEventListener("pointercancel", arriba);
+      window.removeEventListener("keydown", esc); cont.style.touchAction = "";
+    };
+  }, [lapiz, listo]);
 
   useEffect(() => {
     if (!listo) return;
@@ -253,7 +343,17 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, captu
       <div ref={nodo} style={{ position: "absolute", inset: 0 }} />
       <div className={`esqueleto${pintado ? " fuera" : ""}`} aria-hidden={!falla}><span>{falla ? "Este navegador no puede dibujar el mapa (necesita WebGL2)." : "Dibujando las comunas…"}</span></div>
       {pintado && actualizando && <div className="actualiza" role="status">Actualizando el mapa…</div>}
-      {pintado && rueda === "apagada" && <div className="pista" aria-hidden="true">Haz clic en el mapa para acercar con la rueda</div>}
+      {pintado && alLazo && (
+        <div className="herramientas">
+          <button type="button" className={`herr${lapiz ? " activa" : ""}`} aria-pressed={lapiz} onClick={() => setLapiz(!lapiz)}
+            title="Encierra cuadras dibujando con el lápiz">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4L16 5l3 3L8 19l-4 1zM14 7l3 3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg>
+            {lapiz ? "Dibuja la zona" : "Lápiz"}
+          </button>
+        </div>
+      )}
+      {pintado && lapiz && <div className="pista" role="status">Mantén apretado y encierra las cuadras. Esc para cancelar.</div>}
+      {pintado && !lapiz && rueda === "apagada" && <div className="pista" aria-hidden="true">Haz clic en el mapa para acercar con la rueda</div>}
       {children}
     </div>
   );
