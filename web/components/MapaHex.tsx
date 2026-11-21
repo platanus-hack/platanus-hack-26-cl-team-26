@@ -37,7 +37,7 @@ function tenir(mapa: MapaML) {
 }
 
 export default function MapaHex({ datos, capas, activa, corredor, comunas, distritos, capturas, recorridos, popupCaptura,
-  encuadre, foco = null, alPasar, alComuna, alLazo, etiqueta, children }: {
+  encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, children }: {
   datos: GeoJSON.FeatureCollection;
   capas: Capa[];
   activa: string;
@@ -49,6 +49,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   popupCaptura?: (props: Record<string, unknown>) => string;
   encuadre: LngLatBoundsLike;
   foco?: Foco;
+  hitos?: GeoJSON.FeatureCollection;         // puntos con propiedad n: nombres de cerros isla y parques
   alPasar?: (i: number | null) => void;      // cuadra bajo el puntero
   alComuna?: (c: string) => void;            // tocar una cuadra o comuna: suma o quita su comuna
   alLazo?: (anillo: [number, number][]) => void;  // zona dibujada con el lápiz, en [lng, lat]
@@ -69,7 +70,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   const sinClicHasta = useRef(0);   // al soltar el lápiz el mapa dispara un clic que no debe elegir comuna
   const cb = useRef({ alPasar, alComuna, alLazo, popupCaptura, activa, datos, lapiz });
   cb.current = { alPasar, alComuna, alLazo, popupCaptura, activa, datos, lapiz };
-  const inicial = useRef({ datos, capas, activa, encuadre });
+  const inicial = useRef({ datos, capas, activa, encuadre, hitos });
   const hayComunas = useRef(false), hayCuadras = useRef(false), claveCorredor = useRef("");
 
   useEffect(() => {
@@ -175,6 +176,14 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         });
         nuevo.addSource("recorridos", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "recorridos", type: "line", source: "recorridos", paint: { "line-color": "#6B3FA0", "line-width": 4, "line-opacity": 0.85 } });
+        // Nombres de los cerros isla y parques grandes, con la misma fuente de letras del mapa base.
+        const letra = (nuevo.getStyle().layers ?? []).flatMap((l) => (l.type === "symbol" && Array.isArray(l.layout?.["text-font"]) ? [l.layout["text-font"] as string[]] : []))[0];
+        nuevo.addSource("hitos", { type: "geojson", data: inicial.current.hitos ?? VACIO });
+        if (letra) nuevo.addLayer({
+          id: "hitos", type: "symbol", source: "hitos",
+          layout: { "text-field": ["get", "n"], "text-font": letra, "text-size": ["interpolate", ["linear"], ["zoom"], 9, 11, 13, 14], "text-max-width": 7 },
+          paint: { "text-color": "#22301A", "text-halo-color": "#FFFDF6", "text-halo-width": 1.8 },
+        });
         nuevo.addSource("lazo", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "lazo-relleno", type: "fill", source: "lazo", paint: { "fill-color": "#966222", "fill-opacity": 0.12 } });
         nuevo.addLayer({ id: "lazo", type: "line", source: "lazo", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#22281A", "line-width": 2.4, "line-dasharray": [1.5, 1.2] } });
@@ -249,7 +258,8 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   useEffect(() => {
     const m = mapa.current;
     if (!listo || !m) return;
-    const dentro: ExpressionSpecification = ["any", ["in", ["get", "c"], ["literal", foco?.comunas ?? []]], ["in", ["get", "i"], ["literal", foco?.hexes ?? []]]];
+    // Los parques (propiedad k, solo en Planificar) nunca se apagan: son las islas verdes que une el corredor.
+    const dentro: ExpressionSpecification = ["any", ["boolean", ["get", "k"], false], ["in", ["get", "c"], ["literal", foco?.comunas ?? []]], ["in", ["get", "i"], ["literal", foco?.hexes ?? []]]];
     for (const c of capas) if (m.getLayer(c.id)) m.setPaintProperty(c.id, "fill-opacity", foco ? ["case", dentro, 0.95, TENUE] : OPACIDAD);
     m.setPaintProperty("velo", "fill-opacity", foco ? ["case", dentro, 0, VELO] : 0);
     m.setLayoutProperty("velo", "visibility", foco ? "visible" : "none");

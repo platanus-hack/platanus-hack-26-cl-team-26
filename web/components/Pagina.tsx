@@ -48,7 +48,16 @@ const LEYENDA: Record<string, [string, string]> = {
   copa: [grad(VERDE), "Copa de árboles, de 0 % a 25 % o más"],
   personas: [grad(VERDE), "Personas: 50 % densidad del Censo y 50 % cercanía a servicios"],
 };
-const CAPAS_PLAN: Capa[] = [{ id: "urg", color: ["case", ["get", "k"], "#B7C298", ["==", ["get", "u"], null], "#E4DFCC", escala("u", VERDE, 0, 0.85)] }];
+// Cerros isla y parques grandes de Santiago: las islas verdes que el corredor busca unir.
+const ISLAS: [string, number, number][] = [
+  ["Cerro San Cristóbal", -70.632, -33.422], ["Cerro Renca", -70.713, -33.392], ["Cerro Santa Lucía", -70.6436, -33.4405],
+  ["Parque O'Higgins", -70.66, -33.4645], ["Quinta Normal", -70.682, -33.441], ["Cerro Blanco", -70.6445, -33.4195],
+];
+const HITOS: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: ISLAS.map(([n, lng, lat]) => ({ type: "Feature", properties: { n }, geometry: { type: "Point", coordinates: [lng, lat] } })),
+};
+const CAPAS_PLAN: Capa[] = [{ id: "urg", color: ["case", ["get", "k"], "#7FA35A", ["==", ["get", "u"], null], "#E4DFCC", escala("u", VERDE, 0, 0.85)] }];
 const CAPAS_HIST: Capa[] = [{ id: "hist", color: ["case", ["==", ["get", "hn"], null], "#E4DFCC", escala("hn", OCRE, 0, 1)] }];
 
 function encuadreDe(anillos: number[][][], margen = 0.006): LngLatBoundsLike {
@@ -469,7 +478,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
         <div className="b-plan">
           <div className="izq escalon" style={est(3)}>
-            <MapaHex {...mapaComun} foco={planListo ? foco : TODO_GRIS} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={verCorredor ? corredor : SIN_CORREDOR} encuadre={encuadrePlan}
+            <MapaHex {...mapaComun} foco={planListo ? foco : TODO_GRIS} hitos={HITOS} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={verCorredor ? corredor : SIN_CORREDOR} encuadre={encuadrePlan}
               etiqueta="Corredor propuesto sobre la urgencia de cada cuadra">
               {filtro}
               {!planListo && <div className="gris" aria-hidden="true" />}
@@ -489,7 +498,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             <div className="leyenda">
               <span><i className="barra" style={{ background: grad(VERDE) }} />Urgencia</span>
               <span><i className="cuadro" style={{ background: "#22301A" }} />Corredor</span>
-              <span><i className="cuadro" style={{ background: "#B7C298" }} />Parque</span>
+              <span><i className="cuadro" style={{ background: "#7FA35A" }} />Islas verdes: cerros y parques</span>
               <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Sin datos de terreno</span>
               <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno</span>
               <span><i className="cuadro" style={{ background: "#2D5E9E", borderRadius: 7 }} />Foto válida</span>
