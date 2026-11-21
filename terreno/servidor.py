@@ -1,0 +1,336 @@
+"""Servidor de captura en terreno: el teléfono sube fotos con GPS, el corredor se recalcula y el mapa se actualiza.
+
+    python -m terreno.servidor --puerto 8000          # 34 comunas; el corredor se calcula en las elegidas
+    cloudflared tunnel --url http://localhost:8000      # HTTPS público: el GPS del teléfono lo exige
+
+Teléfono: https://<túnel>/?k=<clave>   ·   Mapa para proyectar: http://localhost:8000/mapa
+Si TERRENO_CLAVE (o --clave) está definida, subir fotos exige ?k=<clave>, porque la URL del túnel es pública.
+Solo cuentan las fotos que Claude valida como exteriores de calle; sin Claude quedan «sin validar» y no cambian
+el corredor, salvo con --aceptar-sin-validar (demo sin red).
+Credenciales de Claude: ANTHROPIC_API_KEY, un perfil de `ant auth login`, o la clave sola en el archivo
+.anthropic_key en la raíz del repo (está en .gitignore; nunca la subas).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+import h3
+import pandas as pd
+from fastapi import Body, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse
+
+from optimizer import solve_corridor
+from terreno.almacen import Almacen, cuenta, estado_validacion
+from terreno.vision import analizar
+
+ESTATICO = Path(__file__).resolve().parent / "static"
+MAX_FOTO_BYTES = 15 * 1024 * 1024
+FOTO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}(_min)?\.jpg$")
+VIDEO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}\.(webm|mp4|mov)$")
+MAX_VIDEO_BYTES = 80 * 1024 * 1024
+MAX_CUADROS_RECIBIDOS = 40
+MAX_CUADROS_ANALIZADOS = 12   # cada cuadro analizado es una llamada a Claude
+CUADROS_POR_HEX = 2
+EXT_VIDEO = {"video/webm": "webm", "video/mp4": "mp4", "video/quicktime": "mov"}
+log = logging.getLogger("terreno")
+
+
+def _resumen(r: dict) -> dict:
+    return {"hexes": len(r["hexes"]), "km": round(r["length_km"], 2),
+            "urgencia_cubierta": round(r["urgencia_cubierta"], 3), "urgencia_azar": round(r["urgencia_azar"], 3),
+            "personas_cubiertas": r["personas_cubiertas"], "verificados": r.get("verificados", 0)}
+
+
+def _num(x, lo=None, hi=None):
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    if v != v or (lo is not None and v < lo) or (hi is not None and v > hi):
+        return None
+    return v
+
+
+def _punto(p: dict) -> dict | None:
+    """Punto GPS del teléfono, solo con campos conocidos y en rango."""
+    lat, lon = _num(p.get("lat"), -90, 90), _num(p.get("lon"), -180, 180)
+    if lat is None or lon is None:
+        return None
+    return {"lat": lat, "lon": lon, "precision_m": _num(p.get("precision_m"), 0), "t_s": _num(p.get("t_s"), 0),
+            "tomado_en": p.get("tomado_en") if isinstance(p.get("tomado_en"), str) else None}
+
+
+def elegir_cuadros(cuadros: list[dict], maximo: int = MAX_CUADROS_ANALIZADOS) -> list[int]:
+    """Índices de cuadros a analizar: hasta CUADROS_POR_HEX por hexágono, primero uno por hexágono (en orden)."""
+    grupos: dict[str, list[int]] = {}
+    for i, c in enumerate(cuadros):
+        grupos.setdefault(h3.latlng_to_cell(c["lat"], c["lon"], 9), []).append(i)
+    rondas = [[g[0] for g in grupos.values()],
+              [g[len(g) // 2] for g in grupos.values() if len(g) > 1]]  # el del medio de su tramo
+    elegidos: list[int] = []
+    for ronda in rondas[:CUADROS_POR_HEX]:
+        for i in ronda:
+            if len(elegidos) < maximo and i not in elegidos:
+                elegidos.append(i)
+    return sorted(elegidos)
+
+
+def _comunas_geo(df: pd.DataFrame) -> dict:
+    """Contorno de cada comuna (unión de sus hexágonos) como anillos [[lat, lon], ...] para Leaflet."""
+    geo = {}
+    for comuna, hs in df.groupby("comuna")["h3_index"]:
+        g = h3.h3shape_to_geo(h3.cells_to_h3shape(list(hs)))
+        polys = [g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"]
+        geo[comuna] = [[[[round(la, 5), round(lo, 5)] for lo, la in anillo] for anillo in poly] for poly in polys]
+    return geo
+
+
+def _vecinas(df: pd.DataFrame) -> dict[str, list[str]]:
+    """Comunas que comparten borde: algún hexágono de una toca uno de la otra."""
+    comuna = dict(zip(df["h3_index"], df["comuna"]))
+    pares: dict[str, set[str]] = {c: set() for c in df["comuna"].unique()}
+    for h, c in comuna.items():
+        for v in h3.grid_ring(h, 1):
+            cv = comuna.get(v)
+            if cv and cv != c:
+                pares[c].add(cv)
+    return {c: sorted(v) for c, v in pares.items()}
+
+
+def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path = Path("data"),
+              km: float = 3.0, clave: str | None = None, usar_claude: bool = True,
+              aceptar_sin_validar: bool = False, comunas: list[str] | None = None) -> FastAPI:
+    df = pd.read_parquet(datos)
+    alm = Almacen(data_dir, aceptar_sin_validar)
+    hex_area = set(df["h3_index"])
+    comuna_de = dict(zip(df["h3_index"], df["comuna"]))
+    todas = sorted(df["comuna"].unique())
+    vecinas = _vecinas(df)
+    geo = _comunas_geo(df)
+    poligonos = {h: [[round(la, 6), round(lo, 6)] for la, lo in h3.cell_to_boundary(h)] for h in df["h3_index"]}
+    lock = threading.Lock()
+    estado: dict = {}
+
+    def elegir(sel: list[str]):
+        """Fija las comunas donde se calcula el corredor y su línea base sin terreno («antes»)."""
+        sel = [c for c in todas if c in set(sel)]
+        if not sel:
+            raise HTTPException(422, "Elige al menos una comuna")
+        estado["sel"] = sel
+        estado["sub"] = df[df["comuna"].isin(sel)].reset_index(drop=True)
+        estado["antes"] = solve_corridor(estado["sub"], km)
+
+    def recalcular():
+        terreno = alm.escribir_h3() if alm.capturas() else None
+        estado["terreno"] = terreno
+        estado["ahora"] = solve_corridor(estado["sub"], km, terreno=terreno)
+
+    inicial = comunas or (["Cerro Navia"] if "Cerro Navia" in todas else todas[:1])
+    faltan = set(inicial) - set(todas)
+    if faltan:
+        raise ValueError(f"Comunas que no están en {datos}: {sorted(faltan)}")
+    elegir(inicial)
+    recalcular()
+    app = FastAPI(title="VerdeH3 · captura en terreno")
+
+    def revisar_clave(k: str | None):
+        if clave and k != clave:
+            raise HTTPException(403, "Clave incorrecta: abre la página con ?k=<clave>")
+
+    @app.get("/")
+    def captura_html():
+        return FileResponse(ESTATICO / "captura.html")
+
+    @app.get("/mapa")
+    def mapa_html():
+        return FileResponse(ESTATICO / "mapa.html")
+
+    @app.post("/api/captura")
+    def captura(foto: UploadFile = File(...), lat: float = Form(...), lon: float = Form(...),
+                precision_m: float | None = Form(None), rumbo: float | None = Form(None),
+                nota: str = Form(""), tomado_en: str | None = Form(None), k: str | None = Query(None)):
+        revisar_clave(k)
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise HTTPException(422, "Coordenadas fuera de rango")
+        datos_foto = foto.file.read(MAX_FOTO_BYTES + 1)
+        if len(datos_foto) > MAX_FOTO_BYTES:
+            raise HTTPException(413, "Foto de más de 15 MB")
+        try:
+            obs = analizar(datos_foto, usar_claude)
+        except Exception:
+            raise HTTPException(422, "No se pudo leer la imagen")
+        with lock:
+            previo = estado["ahora"]
+            cap = alm.guardar(datos_foto, lat, lon, precision_m, rumbo, nota, obs, tomado_en)
+            recalcular()
+            ahora = estado["ahora"]
+        return {
+            "captura": cap,
+            "validacion": estado_validacion(cap),
+            "cuenta": cuenta(cap, aceptar_sin_validar),
+            "fuera_de_area": cap["h3_index"] not in hex_area,
+            "comuna": comuna_de.get(cap["h3_index"]),
+            "fuera_de_seleccion": comuna_de.get(cap["h3_index"]) not in estado["sel"],
+            "en_corredor": cap["h3_index"] in ahora["hexes"],
+            "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
+            "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
+        }
+
+    @app.post("/api/video")
+    def subir_video(cuadros: list[UploadFile] = File(...), meta: str = Form(...),
+                    video: UploadFile | None = File(None), k: str | None = Query(None)):
+        """Video grabado en la página: cuadros JPEG con su posición y hora, más el trazado GPS del recorrido."""
+        revisar_clave(k)
+        try:
+            m = json.loads(meta)
+            info = [_punto(c) for c in m["cuadros"]]
+            track = [x for x in (_punto(p) for p in m.get("track", [])[:5000]) if x]
+        except (ValueError, KeyError, TypeError, AttributeError):
+            raise HTTPException(422, "meta inválido")
+        if not cuadros or len(cuadros) != len(info) or len(cuadros) > MAX_CUADROS_RECIBIDOS:
+            raise HTTPException(422, f"Entre 1 y {MAX_CUADROS_RECIBIDOS} cuadros, cada uno con su posición")
+        validos = [i for i, c in enumerate(info) if c]
+        if not validos:
+            raise HTTPException(422, "Ningún cuadro trae posición GPS")
+        vbytes, ext = None, None
+        if video is not None:
+            ext = EXT_VIDEO.get((video.content_type or "").split(";")[0])
+            if ext is None:
+                raise HTTPException(415, "Formato de video no soportado (webm, mp4 o mov)")
+            vbytes = video.file.read(MAX_VIDEO_BYTES + 1)
+            if len(vbytes) > MAX_VIDEO_BYTES:
+                raise HTTPException(413, "Video de más de 80 MB")
+        sel = [validos[i] for i in elegir_cuadros([info[i] for i in validos])]
+        imgs = [cuadros[i].file.read(MAX_FOTO_BYTES + 1) for i in sel]
+
+        def analizar_seguro(b):
+            try:
+                return analizar(b, usar_claude) if len(b) <= MAX_FOTO_BYTES else None
+            except Exception:
+                return None
+
+        with ThreadPoolExecutor(4) as ex:
+            resultados = list(ex.map(analizar_seguro, imgs))
+        with lock:
+            previo = estado["ahora"]
+            rec = alm.guardar_video(vbytes, ext, m.get("inicio"), track, len(sel), str(m.get("nota", "")))
+            caps = []
+            for i, img, obs in zip(sel, imgs, resultados):
+                if obs is None:
+                    continue
+                c = info[i]
+                caps.append(alm.guardar(img, c["lat"], c["lon"], c["precision_m"], None, "", obs, c["tomado_en"],
+                                        extra={"video_id": rec["id"], "t_video_s": c["t_s"]}))
+            recalcular()
+            ahora = estado["ahora"]
+        estados = [estado_validacion(c) for c in caps]
+        return {
+            "recorrido": {k2: rec[k2] for k2 in ("id", "inicio", "duracion_s", "archivo")},
+            "cuadros_recibidos": len(cuadros), "cuadros_analizados": len(caps),
+            "validos": estados.count("valida"), "descartados": estados.count("descartada"),
+            "sin_validar": estados.count("sin_validar"),
+            "hexagonos": sorted({c["h3_index"] for c in caps if cuenta(c, aceptar_sin_validar)}),
+            "fuera_de_area": sum(c["h3_index"] not in hex_area for c in caps),
+            "fuera_de_seleccion": sum(comuna_de.get(c["h3_index"]) not in estado["sel"] for c in caps),
+            "motivos_descarte": sorted({c.get("motivo_rechazo", "") for c in caps if c.get("valida") is False} - {""}),
+            "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
+            "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
+        }
+
+    def es_local(request: Request) -> bool:
+        """El mapa abierto en el mismo computador (no por el túnel, que agrega cf-connecting-ip)."""
+        return (request.client is not None and request.client.host in ("127.0.0.1", "::1", "testclient")
+                and "cf-connecting-ip" not in request.headers)
+
+    @app.get("/api/comunas")
+    def api_comunas():
+        return {"comunas": todas, "vecinas": vecinas, "geo": geo, "seleccion": estado["sel"]}
+
+    @app.post("/api/seleccion")
+    def api_seleccion(request: Request, comunas: list[str] = Body(..., embed=True), k: str | None = Query(None)):
+        """Cambia las comunas del corredor. Desde el mismo computador no pide clave; por el túnel sí."""
+        if not es_local(request):
+            revisar_clave(k)
+        with lock:
+            elegir(comunas)
+            recalcular()
+            return {"seleccion": estado["sel"], "antes": _resumen(estado["antes"]),
+                    "ahora": _resumen(estado["ahora"])}
+
+    @app.get("/api/estado")
+    def api_estado():
+        with lock:
+            ahora, terreno, antes, sub, sel = (estado[x] for x in ("ahora", "terreno", "antes", "sub", "sel"))
+            caps = [{**c, "validacion": estado_validacion(c), "cuenta": cuenta(c, aceptar_sin_validar)}
+                    for c in alm.capturas()]
+        verif = set(terreno["h3_index"]) if terreno is not None else set()
+        en_antes, en_ahora = set(antes["hexes"]), set(ahora["hexes"])
+        U = ahora["urgencia"]
+        hexes = [{"h": h, "pol": poligonos[h], "u": round(float(u), 3), "parque": bool(p),
+                  "antes": h in en_antes, "ahora": h in en_ahora, "verificado": h in verif}
+                 for h, u, p in zip(sub["h3_index"], U, sub["es_parque"])]
+        recorridos = [{"id": r["id"], "inicio": r.get("inicio"), "duracion_s": r.get("duracion_s"),
+                       "archivo": r.get("archivo"), "linea": [[p["lat"], p["lon"]] for p in r.get("track", [])]}
+                      for r in alm.recorridos()]
+        return {"seleccion": sel, "hexes": hexes, "capturas": caps, "recorridos": recorridos,
+                "antes": _resumen(antes), "ahora": _resumen(ahora)}
+
+    @app.get("/videos/{nombre}")
+    def videos(nombre: str):
+        if not VIDEO_OK.match(nombre) or not (alm.videos / nombre).exists():
+            raise HTTPException(404)
+        return FileResponse(alm.videos / nombre)
+
+    @app.get("/fotos/{nombre}")
+    def fotos(nombre: str):
+        if not FOTO_OK.match(nombre) or not (alm.fotos / nombre).exists():
+            raise HTTPException(404)
+        return FileResponse(alm.fotos / nombre, media_type="image/jpeg")
+
+    return app
+
+
+def cargar_clave_anthropic(archivo: Path) -> bool:
+    """Si no hay ANTHROPIC_API_KEY en el entorno, la lee de un archivo local. Devuelve si quedó definida."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return True
+    if archivo.exists():
+        clave = archivo.read_text(encoding="utf-8-sig").strip()
+        if clave:
+            os.environ["ANTHROPIC_API_KEY"] = clave
+            return True
+    return False
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--datos", type=Path, default=Path("data/santiago_h3_gs.parquet"))
+    p.add_argument("--comunas", nargs="+", help="comunas iniciales del corredor (luego se eligen en el mapa)")
+    p.add_argument("--data", type=Path, default=Path("data"), help="dónde guardar capturas y terreno_h3.parquet")
+    p.add_argument("--km", type=float, default=3.0)
+    p.add_argument("--puerto", type=int, default=8000)
+    p.add_argument("--host", default="127.0.0.1", help="127.0.0.1 basta para cloudflared; 0.0.0.0 abre la red local")
+    p.add_argument("--clave", default=os.environ.get("TERRENO_CLAVE"))
+    p.add_argument("--sin-claude", action="store_true", help="solo índice de verde, sin llamar a Claude")
+    p.add_argument("--archivo-clave", type=Path, default=Path(".anthropic_key"),
+                   help="archivo con la API key de Anthropic, si no está en ANTHROPIC_API_KEY")
+    p.add_argument("--aceptar-sin-validar", action="store_true",
+                   help="las fotos sin validar (sin Claude) también cambian el corredor; solo para demos sin red")
+    a = p.parse_args()
+    logging.basicConfig(level=logging.INFO)
+    if not a.sin_claude:
+        log.info("Claude: %s", "API key encontrada" if cargar_clave_anthropic(a.archivo_clave)
+                 else "sin API key (se probará un perfil de `ant`; si no hay, fotos sin validar)")
+    import uvicorn
+    uvicorn.run(crear_app(a.datos, a.data, a.km, a.clave, not a.sin_claude, a.aceptar_sin_validar, a.comunas), host=a.host, port=a.puerto)
+
+
+if __name__ == "__main__":
+    main()

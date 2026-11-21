@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VerdeH3 · Terreno</title>
+<style>
+  :root { --verde:#1f6e43; --fondo:#f4f6f3; --texto:#1b241e; --tenue:#5d6b61; --borde:#d5ddd6; --alerta:#b3541e; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.45 system-ui, sans-serif; background:var(--fondo); color:var(--texto); }
+  main { max-width:480px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:4px 0 2px; color:var(--verde); }
+  .sub { color:var(--tenue); margin:0 0 16px; font-size:.9rem; }
+  .card { background:#fff; border:1px solid var(--borde); border-radius:12px; padding:14px; margin-bottom:12px; }
+  .gps { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .punto { width:12px; height:12px; border-radius:50%; background:#bbb; flex:none; }
+  .ok .punto { background:var(--verde); } .mal .punto { background:var(--alerta); }
+  .gps small { color:var(--tenue); }
+  label.boton, button { display:block; width:100%; text-align:center; padding:18px; border-radius:12px; border:0;
+    font-size:1.1rem; font-weight:600; background:var(--verde); color:#fff; cursor:pointer; }
+  button.sec { background:#fff; color:var(--verde); border:2px solid var(--verde); margin-top:8px; padding:12px; }
+  button:disabled { opacity:.5; }
+  .camara { position:fixed; inset:0; z-index:10; background:#000; color:#fff; }
+  .camara.oculto { display:none; }
+  .camara video { width:100%; height:100%; object-fit:cover; }
+  .cam-arriba, .cam-abajo { position:absolute; left:0; right:0; display:flex; align-items:center; padding:16px;
+    background:linear-gradient(#0009, #0000); }
+  .cam-arriba { top:0; justify-content:space-between; }
+  .cam-abajo { bottom:0; flex-direction:column; gap:12px; padding-bottom:32px; background:linear-gradient(#0000, #0009); }
+  .cam-arriba span { padding:4px 10px; border-radius:99px; background:#0008; font-size:.9rem; }
+  .cam-arriba span.ok { color:#9be0b4; } .cam-arriba span.mal { color:#ffb38a; }
+  #cerrarCam { width:44px; height:44px; padding:0; border-radius:50%; background:#0008; font-size:1.2rem; }
+  #camInfo { font-variant-numeric:tabular-nums; text-shadow:0 1px 3px #000; }
+  #botonRec { width:76px; height:76px; padding:0; border-radius:50%; background:#fff3; border:4px solid #fff;
+    position:relative; }
+  #botonRec::after { content:""; position:absolute; inset:8px; border-radius:50%; background:#e53935; transition:all .2s; }
+  #botonRec.grabando::after { inset:20px; border-radius:6px; }
+  input[type=file] { display:none; }
+  textarea { width:100%; border:1px solid var(--borde); border-radius:8px; padding:8px; font:inherit; min-height:44px; }
+  img.prev { width:100%; border-radius:8px; margin:10px 0; display:none; }
+  .res dl { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:8px 0 0; }
+  .res dt { color:var(--tenue); } .res dd { margin:0; font-weight:600; }
+  .cambio { padding:10px; border-radius:8px; background:#e6f2ea; margin-top:10px; }
+  .cambio.no { background:#f1f1ee; }
+  .error { color:var(--alerta); font-weight:600; }
+  .oculto { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>VerdeH3 · captura en terreno</h1>
+  <p class="sub">Foto de la calle con GPS: verifica el hexágono y recalcula el corredor.</p>
+
+  <div class="card gps" id="gps"><span class="punto"></span><span id="gpsTxt" style="flex:1">Buscando GPS…</span></div>
+
+  <div class="card">
+    <label class="boton" for="foto">📷 Tomar foto</label>
+    <input id="foto" type="file" accept="image/*" capture="environment">
+    <img id="prev" class="prev" alt="Vista previa">
+    <textarea id="nota" placeholder="Nota opcional (ej: vereda ancha, sin árboles)"></textarea>
+    <button id="enviar" class="sec" disabled>Subir captura</button>
+    <p id="estado" class="sub" style="margin:8px 0 0"></p>
+  </div>
+
+  <div class="card">
+    <button id="grabar">🎥 Abrir cámara de video</button>
+    <p id="vEstado" class="sub" style="margin:8px 0 0">Graba caminando por el corredor: cada 3 s se guarda un cuadro
+      con su posición GPS y su hora. Máximo 3 minutos.</p>
+    <button id="subirVideo" class="sec" disabled>Subir video</button>
+  </div>
+
+  <div class="card res oculto" id="res"></div>
+</main>
+
+<div id="camara" class="camara oculto" role="dialog" aria-label="Cámara de video">
+  <video id="vivo" playsinline muted></video>
+  <div class="cam-arriba"><span id="camGps">Buscando GPS…</span><button id="cerrarCam" aria-label="Cerrar cámara">✕</button></div>
+  <div class="cam-abajo"><span id="camInfo"></span><button id="botonRec" aria-label="Grabar"></button></div>
+</div>
+<script>
+const k = new URLSearchParams(location.search).get("k");
+let pos = null, rumbo = null, blob = null, fotoT = null;
+const $ = id => document.getElementById(id);
+
+if (!("geolocation" in navigator) || !isSecureContext) {
+  $("gpsTxt").textContent = "GPS no disponible: abre la página por HTTPS (túnel).";
+  $("gps").className = "card gps mal";
+} else {
+  navigator.geolocation.watchPosition(p => {
+    pos = p.coords;
+    puntoTrack();
+    const acc = Math.round(pos.accuracy);
+    $("gps").className = "card gps " + (acc <= 30 ? "ok" : "mal");
+    $("gpsTxt").innerHTML = `GPS ±${acc} m<br><small>${pos.latitude.toFixed(5)}, ${pos.longitude.toFixed(5)}${acc > 30 ? " · espera a que mejore" : ""}</small>`;
+    habilitar();
+  }, e => {
+    $("gpsTxt").innerHTML = e.code === 1
+      ? "Sin permiso de ubicación.<br><small>Permítela para este sitio en el navegador y recarga la página.</small>"
+      : "Sin GPS todavía: " + e.message;
+    $("gps").className = "card gps mal";
+  }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+}
+
+window.addEventListener("deviceorientationabsolute", e => { if (e.alpha != null) rumbo = (360 - e.alpha) % 360; });
+window.addEventListener("deviceorientation", e => {
+  if (e.webkitCompassHeading != null) rumbo = e.webkitCompassHeading;
+});
+
+function habilitar() { $("enviar").disabled = !(pos && blob); }
+
+$("foto").addEventListener("change", async ev => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  $("estado").textContent = "Preparando foto…";
+  const img = await createImageBitmap(f);
+  const s = Math.min(1, 1280 / Math.max(img.width, img.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  blob = await new Promise(r => c.toBlob(r, "image/jpeg", 0.85));
+  fotoT = new Date().toISOString();
+  $("prev").src = URL.createObjectURL(blob); $("prev").style.display = "block";
+  $("estado").textContent = "";
+  habilitar();
+});
+
+$("enviar").addEventListener("click", async () => {
+  if (!pos || !blob) return;
+  $("enviar").disabled = true;
+  $("estado").textContent = "Subiendo y analizando… (hasta 30 s)";
+  const fd = new FormData();
+  fd.append("foto", blob, "captura.jpg");
+  fd.append("lat", pos.latitude); fd.append("lon", pos.longitude);
+  fd.append("precision_m", pos.accuracy);
+  if (rumbo != null) fd.append("rumbo", Math.round(rumbo));
+  fd.append("nota", $("nota").value);
+  if (fotoT) fd.append("tomado_en", fotoT);
+  try {
+    const r = await fetch("/api/captura" + (k ? "?k=" + encodeURIComponent(k) : ""), { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.status);
+    mostrar(d);
+    blob = null; $("foto").value = ""; $("prev").style.display = "none"; $("nota").value = "";
+    $("estado").textContent = "Listo. Puedes tomar la siguiente.";
+  } catch (e) {
+    $("estado").innerHTML = `<span class="error">Error: ${e.message}</span>`;
+  }
+  habilitar();
+});
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function mostrar(d) {
+  const c = d.captura, a = d.previo, n = d.ahora;
+  const fuente = c.fuente === "claude" ? "Claude (visión)" : "índice de verde";
+  $("res").classList.remove("oculto");
+  if (d.validacion === "descartada") {
+    $("res").innerHTML = `<strong class="error">Foto descartada</strong>
+      <p style="margin:6px 0 0">${esc(c.motivo_rechazo || "No muestra una calle o espacio público exterior.")}</p>
+      <p class="sub" style="margin:6px 0 0">No cambia el corredor. Toma la foto afuera, a nivel de calle.</p>`;
+    return;
+  }
+  const aviso = d.cuenta ? "" : `<p class="error" style="margin:8px 0 0">Sin validar: sin análisis de Claude no se
+    sabe si es una calle, así que no cambia el corredor.</p>`;
+  $("res").innerHTML = `
+    <strong>${d.comuna ? esc(d.comuna) + " · " : ""}hexágono ${esc(c.h3_index.slice(0, 9))}…</strong>${d.fuera_de_area ? ' <span class="error">fuera del Gran Santiago</span>' : ""}
+    ${d.fuera_de_seleccion && !d.fuera_de_area ? `<p class="sub" style="margin:6px 0 0">Guardada. Para ver su efecto, elige ${esc(d.comuna)} en el mapa.</p>` : ""}
+    <dl>
+      <dt>Árboles</dt><dd>${Math.round(c.arbol_pct)} % <small>(${fuente})</small></dd>
+      <dt>Verde en la foto</dt><dd>${Math.round(c.verde_pct)} %</dd>
+      <dt>Espacio para plantar</dt><dd>${esc(c.espacio_plantable ?? "sin estimar")}</dd>
+      <dt>Obstáculos</dt><dd>${c.obstaculos?.length ? c.obstaculos.map(esc).join(", ") : "—"}</dd>
+    </dl>
+    ${c.descripcion ? `<p class="sub" style="margin:8px 0 0">${esc(c.descripcion)}</p>` : ""}
+    ${aviso}
+    <div class="cambio ${d.corredor_cambio ? "" : "no"}">
+      ${d.corredor_cambio ? "<strong>El corredor cambió.</strong>" : "El corredor se mantiene."}
+      ${d.en_corredor ? " Este hexágono está en el corredor." : ""}<br>
+      Urgencia cubierta ${a.urgencia_cubierta} → ${n.urgencia_cubierta} ·
+      personas ${a.personas_cubiertas.toLocaleString("es-CL")} → ${n.personas_cubiertas.toLocaleString("es-CL")} ·
+      verificados ${n.verificados}
+    </div>`;
+}
+// ---------- Video: grabación en la página, con trazado GPS y un cuadro cada 3 s ----------
+const CADA_MS = 3000, MAX_CUADROS = 40, MAX_S = 180, MAX_VIDEO = 80 * 1024 * 1024;
+let rec = null, stream = null, partes = [], cuadros = [], track = [], t0 = 0, inicio = null, reloj = null, videoBlob = null;
+const seg = () => (performance.now() - t0) / 1000;
+
+function tipoVideo() {
+  if (!window.MediaRecorder) return null;
+  for (const t of ["video/mp4", "video/webm;codecs=vp9", "video/webm"]) if (MediaRecorder.isTypeSupported(t)) return t;
+  return "";
+}
+
+function puntoTrack() {
+  actualizarCamGps();
+  if (rec && pos) track.push({ lat: pos.latitude, lon: pos.longitude, precision_m: pos.accuracy,
+    t_s: +seg().toFixed(1), tomado_en: new Date().toISOString() });
+}
+
+let ultimoCuadro = -CADA_MS;
+async function cuadro() {
+  const v = $("vivo");
+  if (!pos || !v.videoWidth || performance.now() - ultimoCuadro < CADA_MS - 100) return;
+  ultimoCuadro = performance.now();
+  const s = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.round(v.videoWidth * s); c.height = Math.round(v.videoHeight * s);
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+  const meta = { lat: pos.latitude, lon: pos.longitude, precision_m: pos.accuracy,
+                 t_s: +seg().toFixed(1), tomado_en: new Date().toISOString() };
+  const b = await new Promise(r => c.toBlob(r, "image/jpeg", 0.8));
+  if (b) cuadros.push({ blob: b, ...meta });
+}
+
+function estadoVideo() {
+  const t = Math.round(seg());
+  $("camInfo").textContent = `● ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")} · ${cuadros.length} cuadros`;
+  $("vEstado").textContent = `● Grabando ${Math.round(seg())} s · ${cuadros.length} cuadros · ${track.length} puntos GPS` +
+    (pos && pos.accuracy > 30 ? " · GPS impreciso" : "");
+}
+
+async function abrirCamara() {
+  if (tipoVideo() === null || !navigator.mediaDevices?.getUserMedia) {
+    $("vEstado").innerHTML = '<span class="error">Este navegador no puede grabar video en la página.</span>'; return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false });
+  } catch (e) { $("vEstado").innerHTML = `<span class="error">Sin cámara: ${esc(e.message)}</span>`; return; }
+  const v = $("vivo"); v.srcObject = stream;
+  $("camara").classList.remove("oculto"); document.body.style.overflow = "hidden";
+  await v.play();
+  $("camInfo").textContent = "Toca el botón para grabar";
+  actualizarCamGps();
+}
+
+function cerrarCamara() {
+  if (rec) detenerGrabacion();
+  stream?.getTracks().forEach(t => t.stop()); stream = null;
+  $("camara").classList.add("oculto"); document.body.style.overflow = "";
+}
+
+function actualizarCamGps() {
+  if (!$("camara") || $("camara").classList.contains("oculto")) return;
+  $("camGps").textContent = pos ? `GPS ±${Math.round(pos.accuracy)} m` : "Buscando GPS…";
+  $("camGps").className = pos && pos.accuracy <= 30 ? "ok" : "mal";
+}
+
+function iniciarGrabacion() {
+  if (!pos) { $("camInfo").textContent = "Espera a tener GPS antes de grabar"; return; }
+  const tipo = tipoVideo();
+  partes = []; cuadros = []; track = []; videoBlob = null; t0 = performance.now(); inicio = new Date().toISOString();
+  rec = new MediaRecorder(stream, { ...(tipo ? { mimeType: tipo } : {}), videoBitsPerSecond: 1_500_000 });
+  rec.ondataavailable = e => { if (e.data.size) partes.push(e.data); };
+  rec.onstop = () => {
+    videoBlob = new Blob(partes, { type: (rec.mimeType || tipo || "video/webm").split(";")[0] });
+    const mb = (videoBlob.size / 1048576).toFixed(1);
+    $("vEstado").textContent = `Listo: ${Math.round(track.at(-1)?.t_s ?? 0)} s, ${cuadros.length} cuadros, ${track.length} puntos GPS, ${mb} MB.` +
+      (videoBlob.size > MAX_VIDEO ? " El video pesa demasiado: se subirán solo los cuadros." : "");
+    $("subirVideo").disabled = !cuadros.length;
+    rec = null;
+  };
+  rec.start(1000);
+  puntoTrack(); cuadro();
+  reloj = setInterval(() => {
+    cuadro(); estadoVideo();
+    if (seg() >= MAX_S || cuadros.length >= MAX_CUADROS) cerrarCamara();
+  }, 1000);
+  $("botonRec").classList.add("grabando"); $("botonRec").setAttribute("aria-label", "Detener");
+  $("subirVideo").disabled = true;
+  estadoVideo();
+}
+
+function detenerGrabacion() {
+  clearInterval(reloj);
+  puntoTrack();
+  if (rec && rec.state !== "inactive") rec.stop();
+  $("botonRec").classList.remove("grabando"); $("botonRec").setAttribute("aria-label", "Grabar");
+}
+
+$("grabar").addEventListener("click", abrirCamara);
+$("cerrarCam").addEventListener("click", cerrarCamara);
+$("botonRec").addEventListener("click", () => rec ? cerrarCamara() : iniciarGrabacion());
+
+$("subirVideo").addEventListener("click", async () => {
+  $("subirVideo").disabled = true;
+  $("vEstado").textContent = "Subiendo y analizando cuadros… (puede tardar 30 s o más)";
+  const fd = new FormData();
+  cuadros.forEach((c, i) => fd.append("cuadros", c.blob, `cuadro${i}.jpg`));
+  fd.append("meta", JSON.stringify({ inicio, nota: $("nota").value, track,
+    cuadros: cuadros.map(({ blob, ...m }) => m) }));
+  if (videoBlob && videoBlob.size <= MAX_VIDEO) {
+    const ext = videoBlob.type.includes("mp4") ? "mp4" : "webm";
+    fd.append("video", videoBlob, "recorrido." + ext);
+  }
+  try {
+    const r = await fetch("/api/video" + (k ? "?k=" + encodeURIComponent(k) : ""), { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.status);
+    mostrarVideo(d);
+    cuadros = []; track = []; videoBlob = null;
+    $("vEstado").textContent = "Recorrido subido. Puedes grabar otro.";
+  } catch (e) {
+    $("vEstado").innerHTML = `<span class="error">Error: ${esc(e.message)}</span>`;
+    $("subirVideo").disabled = false;
+  }
+});
+
+function mostrarVideo(d) {
+  const a = d.previo, n = d.ahora;
+  $("res").classList.remove("oculto");
+  $("res").innerHTML = `
+    <strong>Recorrido de ${Math.round(d.recorrido.duracion_s)} s</strong>
+    <dl>
+      <dt>Cuadros analizados</dt><dd>${d.cuadros_analizados} de ${d.cuadros_recibidos}</dd>
+      <dt>Válidos</dt><dd>${d.validos}</dd>
+      <dt>Descartados</dt><dd>${d.descartados}</dd>
+      ${d.sin_validar ? `<dt>Sin validar</dt><dd>${d.sin_validar}</dd>` : ""}
+      <dt>Hexágonos verificados</dt><dd>${d.hexagonos.length}</dd>
+      ${d.fuera_de_area ? `<dt>Fuera del Gran Santiago</dt><dd>${d.fuera_de_area}</dd>` : ""}
+      ${d.fuera_de_seleccion > d.fuera_de_area ? `<dt>Fuera de las comunas elegidas</dt><dd>${d.fuera_de_seleccion - d.fuera_de_area}</dd>` : ""}
+    </dl>
+    ${d.motivos_descarte.length ? `<p class="sub" style="margin:8px 0 0">Descartes: ${d.motivos_descarte.map(esc).join(" · ")}</p>` : ""}
+    <div class="cambio ${d.corredor_cambio ? "" : "no"}">
+      ${d.corredor_cambio ? "<strong>El corredor cambió.</strong>" : "El corredor se mantiene."}<br>
+      Urgencia cubierta ${a.urgencia_cubierta} → ${n.urgencia_cubierta} ·
+      personas ${a.personas_cubiertas.toLocaleString("es-CL")} → ${n.personas_cubiertas.toLocaleString("es-CL")} ·
+      verificados ${n.verificados}
+    </div>`;
+}
+</script>
+</body>
+</html>
