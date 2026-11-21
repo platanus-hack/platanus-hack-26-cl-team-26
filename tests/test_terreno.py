@@ -16,6 +16,8 @@ from optimizer import solve_corridor
 from terreno.almacen import Almacen, terreno_h3
 
 DEMO = Path("data/santiago_h3.parquet")
+GS = Path("data/santiago_h3_gs.parquet")
+COMUNAS_DEMO = ["Providencia", "Cerro Navia"]
 
 
 def jpeg(rgb, tam=(320, 240)) -> bytes:
@@ -120,7 +122,7 @@ def test_servidor_validacion():
     form = {"lat": str(lat), "lon": str(lon)}
     foto = {"foto": ("c.jpg", jpeg((128, 128, 128)), "image/jpeg")}
     with tempfile.TemporaryDirectory() as tmp:
-        c = TestClient(crear_app(DEMO, Path(tmp)))
+        c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO))
         for resultado, esperado in ((obs(False, "ninguno", "Interior"), "descartada"), (None, "sin_validar")):
             deshacer = con_claude(resultado)
             try:
@@ -149,7 +151,7 @@ def test_servidor():
     hx = solve_corridor(df)["hexes"][0]
     lat, lon = h3.cell_to_latlng(hx)
     with tempfile.TemporaryDirectory() as tmp:
-        c = TestClient(crear_app(DEMO, Path(tmp), clave="secreta", usar_claude=False, aceptar_sin_validar=True))
+        c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, clave="secreta", usar_claude=False, aceptar_sin_validar=True))
         assert c.get("/").status_code == 200 and c.get("/mapa").status_code == 200
         form = {"lat": str(lat), "lon": str(lon), "precision_m": "8"}
         foto = {"foto": ("c.jpg", jpeg((128, 128, 128)), "image/jpeg")}
@@ -194,7 +196,7 @@ def test_video():
     archivos = [("cuadros", (f"c{i}.jpg", jpeg((128, 128, 128)), "image/jpeg")) for i in range(3)]
     archivos.append(("video", ("r.webm", b"video falso", "video/webm")))
     with tempfile.TemporaryDirectory() as tmp:
-        c = TestClient(crear_app(DEMO, Path(tmp)))
+        c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO))
         deshacer = con_claude(obs(True, "mucho"))
         try:
             r = c.post("/api/video", data={"meta": meta}, files=archivos)
@@ -219,6 +221,38 @@ def test_video():
         f = c.post("/api/captura", data={"lat": la, "lon": lo, "tomado_en": "2026-11-21T15:30:00-03:00"},
                    files={"foto": ("c.jpg", jpeg((90, 90, 90)), "image/jpeg")}).json()
         assert f["captura"]["tomado_en"] == "2026-11-21T18:30:00+00:00" and f["captura"]["medido_en"]
+
+
+
+def test_seleccion_comunas():
+    """34 comunas: el corredor se calcula en las elegidas; se suman vecinas; por el túnel pide clave."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(GS, Path(tmp), clave="secreta", usar_claude=False))
+        info = c.get("/api/comunas").json()
+        assert len(info["comunas"]) == 34 and info["seleccion"] == ["Cerro Navia"]
+        assert "Quinta Normal" in info["vecinas"]["Cerro Navia"] and "Maipú" not in info["vecinas"]["Cerro Navia"]
+        assert all(a in info["vecinas"][b] for a in info["vecinas"] for b in info["vecinas"][a])  # simétrica
+        e = c.get("/api/estado").json()
+        df = pd.read_parquet(GS)
+        assert len(e["hexes"]) == (df["comuna"] == "Cerro Navia").sum()
+        r = c.post("/api/seleccion", json={"comunas": ["Quinta Normal", "Cerro Navia"]})
+        assert r.status_code == 200 and r.json()["seleccion"] == ["Cerro Navia", "Quinta Normal"]
+        e = c.get("/api/estado").json()
+        assert len(e["hexes"]) == df["comuna"].isin(["Cerro Navia", "Quinta Normal"]).sum()
+        assert set(df.set_index("h3_index").loc[[h["h"] for h in e["hexes"] if h["ahora"]], "comuna"]) <= {"Cerro Navia", "Quinta Normal"}
+        assert c.post("/api/seleccion", json={"comunas": []}).status_code == 422
+        assert c.post("/api/seleccion", json={"comunas": ["Narnia"]}).status_code == 422
+        tunel = {"cf-connecting-ip": "1.2.3.4"}
+        assert c.post("/api/seleccion", json={"comunas": ["Maipú"]}, headers=tunel).status_code == 403
+        assert c.post("/api/seleccion?k=secreta", json={"comunas": ["Maipú"]}, headers=tunel).status_code == 200
+        # una foto en otra comuna se guarda pero queda fuera de la selección
+        la, lo = h3.cell_to_latlng(df.loc[df["comuna"] == "Providencia", "h3_index"].iloc[0])
+        f = c.post("/api/captura?k=secreta", data={"lat": la, "lon": lo},
+                   files={"foto": ("c.jpg", jpeg((90, 90, 90)), "image/jpeg")}).json()
+        assert f["comuna"] == "Providencia" and f["fuera_de_seleccion"] and not f["fuera_de_area"]
 
 
 if __name__ == "__main__":

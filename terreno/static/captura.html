@@ -163,7 +163,8 @@ function mostrar(d) {
   const aviso = d.cuenta ? "" : `<p class="error" style="margin:8px 0 0">Sin validar: sin análisis de Claude no se
     sabe si es una calle, así que no cambia el corredor.</p>`;
   $("res").innerHTML = `
-    <strong>Hexágono ${esc(c.h3_index.slice(0, 9))}…</strong>${d.fuera_de_area ? ' <span class="error">fuera del área de estudio</span>' : ""}
+    <strong>${d.comuna ? esc(d.comuna) + " · " : ""}hexágono ${esc(c.h3_index.slice(0, 9))}…</strong>${d.fuera_de_area ? ' <span class="error">fuera del Gran Santiago</span>' : ""}
+    ${d.fuera_de_seleccion && !d.fuera_de_area ? `<p class="sub" style="margin:6px 0 0">Guardada. Para ver su efecto, elige ${esc(d.comuna)} en el mapa.</p>` : ""}
     <dl>
       <dt>Árboles</dt><dd>${Math.round(c.arbol_pct)} % <small>(${fuente})</small></dd>
       <dt>Verde en la foto</dt><dd>${Math.round(c.verde_pct)} %</dd>
@@ -316,7 +317,8 @@ function mostrarVideo(d) {
       <dt>Descartados</dt><dd>${d.descartados}</dd>
       ${d.sin_validar ? `<dt>Sin validar</dt><dd>${d.sin_validar}</dd>` : ""}
       <dt>Hexágonos verificados</dt><dd>${d.hexagonos.length}</dd>
-      ${d.fuera_de_area ? `<dt>Fuera del área</dt><dd>${d.fuera_de_area}</dd>` : ""}
+      ${d.fuera_de_area ? `<dt>Fuera del Gran Santiago</dt><dd>${d.fuera_de_area}</dd>` : ""}
+      ${d.fuera_de_seleccion > d.fuera_de_area ? `<dt>Fuera de las comunas elegidas</dt><dd>${d.fuera_de_seleccion - d.fuera_de_area}</dd>` : ""}
     </dl>
     ${d.motivos_descarte.length ? `<p class="sub" style="margin:8px 0 0">Descartes: ${d.motivos_descarte.map(esc).join(" · ")}</p>` : ""}
     <div class="cambio ${d.corredor_cambio ? "" : "no"}">

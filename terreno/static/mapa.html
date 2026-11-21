@@ -22,6 +22,14 @@
   .leyenda span { display:inline-block; width:22px; height:0; vertical-align:middle; margin-right:6px; }
   .flash { animation:flash 1.5s ease-out; } @keyframes flash { from { background:#d6f0de; } to { background:#fff; } }
   .pop img { width:220px; border-radius:6px; display:block; margin-bottom:6px; }
+  .comunas { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 6px; }
+  .chip { display:inline-flex; align-items:center; gap:4px; padding:3px 4px 3px 10px; border-radius:99px;
+    background:#e6f2ea; color:var(--verde); font-size:.85rem; font-weight:600; }
+  .chip button { border:0; background:none; color:inherit; font-size:1rem; line-height:1; cursor:pointer;
+    width:24px; height:24px; border-radius:50%; }
+  .chip button:hover { background:#cfe6d7; } .chip button:disabled { opacity:.3; cursor:default; }
+  .ayuda { color:var(--tenue); font-size:.8rem; margin:0 0 10px; }
+  .leaflet-tooltip.nombre { font-weight:600; }
 </style>
 </head>
 <body>
@@ -29,6 +37,8 @@
 <div class="panel" id="panel">
   <h1>Corredor verde · en vivo</h1>
   <p class="sub" id="sub">Cargando…</p>
+  <div class="comunas" id="chips"></div>
+  <p class="ayuda">Toca una comuna vecina (borde punteado) para sumarla al corredor, u otra comuna para empezar ahí.</p>
   <table>
     <thead><tr><th></th><th>Antes</th><th>Ahora</th></tr></thead>
     <tbody id="tabla"></tbody>
@@ -43,12 +53,13 @@
   </div>
 </div>
 <script>
-const mapa = L.map("mapa", { zoomControl: true }).setView([-33.44, -70.65], 12);  // Santiago, hasta encuadrar
+const mapa = L.map("mapa", { zoomControl: true, preferCanvas: true }).setView([-33.44, -70.65], 12);  // Santiago, hasta encuadrar
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19, attribution: "© OpenStreetMap"
 }).addTo(mapa);
-const capaHex = L.layerGroup().addTo(mapa), capaCap = L.layerGroup().addTo(mapa);
-let encuadrado = false, firma = "";
+mapa.createPane("comunas").style.zIndex = 350;   // bajo los hexágonos (overlayPane, 400)
+const capaCom = L.layerGroup().addTo(mapa), capaHex = L.layerGroup().addTo(mapa), capaCap = L.layerGroup().addTo(mapa);
+let firma = "", seleccion = [], info = null, cambiando = false;
 
 function color(u) {  // urgencia 0..1 → amarillo claro a rojo
   const t = Math.max(0, Math.min(1, (u - 0.3) / 0.6));
@@ -61,13 +72,78 @@ function fila(nombre, a, n, mejorSiSube = true) {
   return `<tr><th>${nombre}</th><td>${a}</td><td class="${sube ? "sube" : ""}">${n}</td></tr>`;
 }
 
+// ---------- Comunas: se dibujan una vez; el estilo depende de la selección ----------
+const capasComuna = {};
+async function cargarComunas() {
+  info = await (await fetch("/api/comunas")).json();
+  for (const c of info.comunas) {
+    capasComuna[c] = L.polygon(info.geo[c], { pane: "comunas" })
+      .bindTooltip(c, { sticky: true, className: "nombre" })
+      .on("click", () => tocarComuna(c))
+      .addTo(capaCom);
+  }
+}
+
+function vecinasDe(sel) {
+  const v = new Set();
+  for (const c of sel) for (const x of info.vecinas[c] || []) if (!sel.includes(x)) v.add(x);
+  return v;
+}
+
+function estilarComunas() {
+  const vec = vecinasDe(seleccion);
+  for (const [c, capa] of Object.entries(capasComuna)) {
+    const elegida = seleccion.includes(c), vecina = vec.has(c);
+    capa.setStyle(elegida
+      ? { color: "#1f6e43", weight: 3, dashArray: null, fill: true, fillOpacity: 0, interactive: false }
+      : vecina
+        ? { color: "#1f6e43", weight: 2, dashArray: "6 6", fill: true, fillColor: "#1f6e43", fillOpacity: .08 }
+        : { color: "#6b7a70", weight: 1, dashArray: null, fill: true, fillColor: "#6b7a70", fillOpacity: .04 });
+  }
+  $chips.innerHTML = seleccion.map(c =>
+    `<span class="chip">${esc(c)}<button aria-label="Quitar ${esc(c)}" data-c="${esc(c)}" ${seleccion.length < 2 ? "disabled" : ""}>×</button></span>`
+  ).join("");
+  $chips.querySelectorAll("button").forEach(b => b.onclick = () => elegirComunas(seleccion.filter(x => x !== b.dataset.c)));
+}
+
+function tocarComuna(c) {
+  if (cambiando || seleccion.includes(c)) return;
+  elegirComunas(vecinasDe(seleccion).has(c) ? [...seleccion, c] : [c]);
+}
+
+async function elegirComunas(sel) {
+  cambiando = true;
+  $sub.textContent = "Calculando corredor…";
+  try {
+    const r = await fetch("/api/seleccion", { method: "POST", headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ comunas: sel }) });
+    if (!r.ok) throw new Error((await r.json()).detail || r.status);
+  } catch (e) { $sub.textContent = "No se pudo cambiar: " + e.message; cambiando = false; return; }
+  cambiando = false;
+  firma = "";
+  await actualizar();
+}
+
+function encuadrarSeleccion() {
+  mapa.invalidateSize();
+  if (!mapa.getSize().x) return false;  // pestaña oculta al cargar: se reintenta al cambiar de tamaño
+  const b = L.latLngBounds([]);
+  for (const c of seleccion) b.extend(capasComuna[c].getBounds());
+  if (b.isValid()) mapa.fitBounds(b.pad(0.05));
+  return true;
+}
+
+let porEncuadrar = true;
 async function actualizar() {
   let d;
   try { d = await (await fetch("/api/estado")).json(); } catch { return; }
-  const nueva = JSON.stringify([d.capturas.length, (d.recorridos || []).length, d.ahora]);
+  const nueva = JSON.stringify([d.seleccion, d.capturas.length, (d.recorridos || []).length, d.ahora]);
   if (nueva === firma) return;
   const primera = firma === "";
   firma = nueva;
+  if (JSON.stringify(d.seleccion) !== JSON.stringify(seleccion)) {
+    seleccion = d.seleccion; estilarComunas(); porEncuadrar = true;
+  }
 
   capaHex.clearLayers();
   const ahoraLineas = [], antesLineas = [];
@@ -116,23 +192,13 @@ async function actualizar() {
   const nCuentan = d.capturas.filter(c => c.cuenta).length;
   $sub.textContent = `${d.capturas.length} captura${d.capturas.length === 1 ? "" : "s"} en terreno · ${nCuentan} cuenta${nCuentan === 1 ? "" : "n"}`;
   if (!primera) { $panel.classList.remove("flash"); void $panel.offsetWidth; $panel.classList.add("flash"); }
-
-  encuadrar(ahoraLineas.length ? ahoraLineas.flat() : d.hexes.flatMap(h => h.pol), ahoraLineas.length ? 0.6 : 0.05);
+  if (porEncuadrar) porEncuadrar = !encuadrarSeleccion();
 }
 
-let foco = null, margen = 0;
-function encuadrar(puntos, pad) {
-  if (encuadrado || !puntos.length) return;
-  foco = puntos; margen = pad;
-  mapa.invalidateSize();
-  if (!mapa.getSize().x) return;  // pestaña oculta al cargar: se reintenta al cambiar de tamaño
-  mapa.fitBounds(L.latLngBounds(foco).pad(margen));
-  encuadrado = true;
-}
-window.addEventListener("resize", () => foco && encuadrar(foco, margen));
-const $tabla = document.getElementById("tabla"), $sub = document.getElementById("sub"), $panel = document.getElementById("panel");
-actualizar();
-setInterval(actualizar, 3000);
+window.addEventListener("resize", () => { if (porEncuadrar) porEncuadrar = !encuadrarSeleccion(); });
+const $tabla = document.getElementById("tabla"), $sub = document.getElementById("sub"),
+      $panel = document.getElementById("panel"), $chips = document.getElementById("chips");
+cargarComunas().then(() => { actualizar(); setInterval(actualizar, 3000); });
 </script>
 </body>
 </html>

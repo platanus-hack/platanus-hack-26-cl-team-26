@@ -1,6 +1,6 @@
 """Servidor de captura en terreno: el teléfono sube fotos con GPS, el corredor se recalcula y el mapa se actualiza.
 
-    python -m terreno.servidor --datos data/santiago_h3.parquet --puerto 8000
+    python -m terreno.servidor --puerto 8000          # 34 comunas; el corredor se calcula en las elegidas
     cloudflared tunnel --url http://localhost:8000      # HTTPS público: el GPS del teléfono lo exige
 
 Teléfono: https://<túnel>/?k=<clave>   ·   Mapa para proyectar: http://localhost:8000/mapa
@@ -23,7 +23,7 @@ from pathlib import Path
 
 import h3
 import pandas as pd
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from optimizer import solve_corridor
@@ -82,22 +82,61 @@ def elegir_cuadros(cuadros: list[dict], maximo: int = MAX_CUADROS_ANALIZADOS) ->
     return sorted(elegidos)
 
 
-def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = Path("data"),
+def _comunas_geo(df: pd.DataFrame) -> dict:
+    """Contorno de cada comuna (unión de sus hexágonos) como anillos [[lat, lon], ...] para Leaflet."""
+    geo = {}
+    for comuna, hs in df.groupby("comuna")["h3_index"]:
+        g = h3.h3shape_to_geo(h3.cells_to_h3shape(list(hs)))
+        polys = [g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"]
+        geo[comuna] = [[[[round(la, 5), round(lo, 5)] for lo, la in anillo] for anillo in poly] for poly in polys]
+    return geo
+
+
+def _vecinas(df: pd.DataFrame) -> dict[str, list[str]]:
+    """Comunas que comparten borde: algún hexágono de una toca uno de la otra."""
+    comuna = dict(zip(df["h3_index"], df["comuna"]))
+    pares: dict[str, set[str]] = {c: set() for c in df["comuna"].unique()}
+    for h, c in comuna.items():
+        for v in h3.grid_ring(h, 1):
+            cv = comuna.get(v)
+            if cv and cv != c:
+                pares[c].add(cv)
+    return {c: sorted(v) for c, v in pares.items()}
+
+
+def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path = Path("data"),
               km: float = 3.0, clave: str | None = None, usar_claude: bool = True,
-              aceptar_sin_validar: bool = False) -> FastAPI:
+              aceptar_sin_validar: bool = False, comunas: list[str] | None = None) -> FastAPI:
     df = pd.read_parquet(datos)
     alm = Almacen(data_dir, aceptar_sin_validar)
-    antes = solve_corridor(df, km)
     hex_area = set(df["h3_index"])
+    comuna_de = dict(zip(df["h3_index"], df["comuna"]))
+    todas = sorted(df["comuna"].unique())
+    vecinas = _vecinas(df)
+    geo = _comunas_geo(df)
     poligonos = {h: [[round(la, 6), round(lo, 6)] for la, lo in h3.cell_to_boundary(h)] for h in df["h3_index"]}
     lock = threading.Lock()
     estado: dict = {}
 
+    def elegir(sel: list[str]):
+        """Fija las comunas donde se calcula el corredor y su línea base sin terreno («antes»)."""
+        sel = [c for c in todas if c in set(sel)]
+        if not sel:
+            raise HTTPException(422, "Elige al menos una comuna")
+        estado["sel"] = sel
+        estado["sub"] = df[df["comuna"].isin(sel)].reset_index(drop=True)
+        estado["antes"] = solve_corridor(estado["sub"], km)
+
     def recalcular():
         terreno = alm.escribir_h3() if alm.capturas() else None
         estado["terreno"] = terreno
-        estado["ahora"] = solve_corridor(df, km, terreno=terreno)
+        estado["ahora"] = solve_corridor(estado["sub"], km, terreno=terreno)
 
+    inicial = comunas or (["Cerro Navia"] if "Cerro Navia" in todas else todas[:1])
+    faltan = set(inicial) - set(todas)
+    if faltan:
+        raise ValueError(f"Comunas que no están en {datos}: {sorted(faltan)}")
+    elegir(inicial)
     recalcular()
     app = FastAPI(title="VerdeH3 · captura en terreno")
 
@@ -137,9 +176,11 @@ def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = P
             "validacion": estado_validacion(cap),
             "cuenta": cuenta(cap, aceptar_sin_validar),
             "fuera_de_area": cap["h3_index"] not in hex_area,
+            "comuna": comuna_de.get(cap["h3_index"]),
+            "fuera_de_seleccion": comuna_de.get(cap["h3_index"]) not in estado["sel"],
             "en_corredor": cap["h3_index"] in ahora["hexes"],
             "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
-            "antes": _resumen(antes), "previo": _resumen(previo), "ahora": _resumen(ahora),
+            "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
         }
 
     @app.post("/api/video")
@@ -197,15 +238,36 @@ def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = P
             "sin_validar": estados.count("sin_validar"),
             "hexagonos": sorted({c["h3_index"] for c in caps if cuenta(c, aceptar_sin_validar)}),
             "fuera_de_area": sum(c["h3_index"] not in hex_area for c in caps),
+            "fuera_de_seleccion": sum(comuna_de.get(c["h3_index"]) not in estado["sel"] for c in caps),
             "motivos_descarte": sorted({c.get("motivo_rechazo", "") for c in caps if c.get("valida") is False} - {""}),
             "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
-            "antes": _resumen(antes), "previo": _resumen(previo), "ahora": _resumen(ahora),
+            "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
         }
+
+    def es_local(request: Request) -> bool:
+        """El mapa abierto en el mismo computador (no por el túnel, que agrega cf-connecting-ip)."""
+        return (request.client is not None and request.client.host in ("127.0.0.1", "::1", "testclient")
+                and "cf-connecting-ip" not in request.headers)
+
+    @app.get("/api/comunas")
+    def api_comunas():
+        return {"comunas": todas, "vecinas": vecinas, "geo": geo, "seleccion": estado["sel"]}
+
+    @app.post("/api/seleccion")
+    def api_seleccion(request: Request, comunas: list[str] = Body(..., embed=True), k: str | None = Query(None)):
+        """Cambia las comunas del corredor. Desde el mismo computador no pide clave; por el túnel sí."""
+        if not es_local(request):
+            revisar_clave(k)
+        with lock:
+            elegir(comunas)
+            recalcular()
+            return {"seleccion": estado["sel"], "antes": _resumen(estado["antes"]),
+                    "ahora": _resumen(estado["ahora"])}
 
     @app.get("/api/estado")
     def api_estado():
         with lock:
-            ahora, terreno = estado["ahora"], estado["terreno"]
+            ahora, terreno, antes, sub, sel = (estado[x] for x in ("ahora", "terreno", "antes", "sub", "sel"))
             caps = [{**c, "validacion": estado_validacion(c), "cuenta": cuenta(c, aceptar_sin_validar)}
                     for c in alm.capturas()]
         verif = set(terreno["h3_index"]) if terreno is not None else set()
@@ -213,11 +275,11 @@ def crear_app(datos: Path = Path("data/santiago_h3.parquet"), data_dir: Path = P
         U = ahora["urgencia"]
         hexes = [{"h": h, "pol": poligonos[h], "u": round(float(u), 3), "parque": bool(p),
                   "antes": h in en_antes, "ahora": h in en_ahora, "verificado": h in verif}
-                 for h, u, p in zip(df["h3_index"], U, df["es_parque"])]
+                 for h, u, p in zip(sub["h3_index"], U, sub["es_parque"])]
         recorridos = [{"id": r["id"], "inicio": r.get("inicio"), "duracion_s": r.get("duracion_s"),
                        "archivo": r.get("archivo"), "linea": [[p["lat"], p["lon"]] for p in r.get("track", [])]}
                       for r in alm.recorridos()]
-        return {"hexes": hexes, "capturas": caps, "recorridos": recorridos,
+        return {"seleccion": sel, "hexes": hexes, "capturas": caps, "recorridos": recorridos,
                 "antes": _resumen(antes), "ahora": _resumen(ahora)}
 
     @app.get("/videos/{nombre}")
@@ -249,7 +311,8 @@ def cargar_clave_anthropic(archivo: Path) -> bool:
 
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--datos", type=Path, default=Path("data/santiago_h3.parquet"))
+    p.add_argument("--datos", type=Path, default=Path("data/santiago_h3_gs.parquet"))
+    p.add_argument("--comunas", nargs="+", help="comunas iniciales del corredor (luego se eligen en el mapa)")
     p.add_argument("--data", type=Path, default=Path("data"), help="dónde guardar capturas y terreno_h3.parquet")
     p.add_argument("--km", type=float, default=3.0)
     p.add_argument("--puerto", type=int, default=8000)
@@ -266,7 +329,7 @@ def main():
         log.info("Claude: %s", "API key encontrada" if cargar_clave_anthropic(a.archivo_clave)
                  else "sin API key (se probará un perfil de `ant`; si no hay, fotos sin validar)")
     import uvicorn
-    uvicorn.run(crear_app(a.datos, a.data, a.km, a.clave, not a.sin_claude, a.aceptar_sin_validar), host=a.host, port=a.puerto)
+    uvicorn.run(crear_app(a.datos, a.data, a.km, a.clave, not a.sin_claude, a.aceptar_sin_validar, a.comunas), host=a.host, port=a.puerto)
 
 
 if __name__ == "__main__":
