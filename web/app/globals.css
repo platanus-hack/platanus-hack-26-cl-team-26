@@ -42,7 +42,7 @@ section[id], footer[id] { scroll-margin-top: 16px; }
 .barra { width: 120px; height: 10px; border-radius: 6px; display: inline-block; }
 .aviso { margin: 0; padding: 12px 14px; border-radius: 12px; background: #e4e8d2; font-size: 14px; line-height: 1.45; color: var(--oliva-osc); }
 
-.b { border-right: 24px solid var(--oliva); min-height: 100vh; }
+.b { min-height: 100vh; }
 .banda { margin: 0; padding: 10px 16px; text-align: center; background: var(--banda); font-size: 15px; color: #3f3a22; }
 .b-pad { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .b-in { max-width: 1240px; margin: 0 auto; }
@@ -137,7 +137,6 @@ section[id], footer[id] { scroll-margin-top: 16px; }
   .js .revela, .js .revela .escalon { opacity: 1; transform: none; }
 }
 @media (max-width: 700px) {
-  .b { border-right-width: 10px; }
   .b-meses { gap: 1px; }
   .b-hero .fondo { object-position: 80% 50%; }
   .b-hero .velo { background: linear-gradient(180deg, rgba(239, 233, 218, 0.86) 0%, rgba(239, 233, 218, 0.72) 75%, rgba(239, 233, 218, 0.35) 100%); }
