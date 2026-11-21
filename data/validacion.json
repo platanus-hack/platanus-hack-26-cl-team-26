@@ -1,0 +1,65 @@
+{
+ "calculado_en": "2026-11-21T12:31:24.971489-03:00",
+ "todo": {
+  "casos": 777,
+  "con_estimacion": 259,
+  "sin_vecino_a_8km": 518,
+  "instantes": 88,
+  "sensores": 18,
+  "error_medio_idw_c": 0.48,
+  "error_medio_promedio_ciudad_c": 0.58,
+  "idw_mejor_que_promedio": true
+ },
+ "manana_6_12h": {
+  "casos": 222,
+  "con_estimacion": 73,
+  "sin_vecino_a_8km": 149,
+  "instantes": 25,
+  "sensores": 17,
+  "error_medio_idw_c": 0.52,
+  "error_medio_promedio_ciudad_c": 0.63,
+  "idw_mejor_que_promedio": true
+ },
+ "tarde_12_20h": {
+  "casos": 240,
+  "con_estimacion": 81,
+  "sin_vecino_a_8km": 159,
+  "instantes": 28,
+  "sensores": 18,
+  "error_medio_idw_c": 0.87,
+  "error_medio_promedio_ciudad_c": 0.82,
+  "idw_mejor_que_promedio": false
+ },
+ "por_origen": {
+  "DMC": {
+   "casos": 29,
+   "con_estimacion": 8,
+   "sin_vecino_a_8km": 21,
+   "instantes": 5,
+   "sensores": 8,
+   "error_medio_idw_c": 1.57,
+   "error_medio_promedio_ciudad_c": 2.15,
+   "idw_mejor_que_promedio": true
+  },
+  "SINCA": {
+   "casos": 738,
+   "con_estimacion": 246,
+   "sin_vecino_a_8km": 492,
+   "instantes": 82,
+   "sensores": 9,
+   "error_medio_idw_c": 0.41,
+   "error_medio_promedio_ciudad_c": 0.5,
+   "idw_mejor_que_promedio": true
+  },
+  "grabacion": {
+   "casos": 10,
+   "con_estimacion": 5,
+   "sin_vecino_a_8km": 5,
+   "instantes": 1,
+   "sensores": 10,
+   "error_medio_idw_c": 2.38,
+   "error_medio_promedio_ciudad_c": 1.71,
+   "idw_mejor_que_promedio": false
+  }
+ }
+}
