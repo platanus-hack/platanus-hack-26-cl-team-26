@@ -34,6 +34,7 @@ DATA = Path(__file__).resolve().parent / "data"
 GRABACION = DATA / "grabacion"
 
 URL_DMC = "https://climatologia.meteochile.gob.cl/application/servicios/getDatosRecientesRedEma"
+URL_DMC_EMA = "https://climatologia.meteochile.gob.cl/application/servicios/getDatosRecientesEma"
 URL_SC = f"https://data.sensor.community/airrohr/v1/filter/area={CENTRO[0]},{CENTRO[1]},{RADIO_KM}"
 
 
@@ -75,7 +76,7 @@ def parsear_dmc(respuesta, todas=False):
     """Lecturas con temperatura de las estaciones a menos de RADIO_KM.
 
     Por defecto, solo la última de cada estación. Con todas=True, todas las que trae la respuesta
-    (la DMC entrega las últimas 12 horas, minuto a minuto).
+    (minuto a minuto: 1 hora en el servicio de la red, 12 horas en el de cada estación).
     """
     salida = []
     for bloque in respuesta.get("datosEstaciones", []):
@@ -159,27 +160,39 @@ def indice_calor(temp_c, humedad_pct):
     return round((hi - 32) * 5 / 9, 1)
 
 
-def leer_dmc(todas=False):
+def pedir_dmc(url):
+    """Respuesta JSON de un servicio de la DMC, o None si falta el token o no trae datos."""
     usuario, token = os.environ.get("DMC_USUARIO"), os.environ.get("DMC_TOKEN")
     if not usuario or not token:
         print("DMC: sin DMC_USUARIO/DMC_TOKEN, se salta")
-        return []
-    r = requests.get(URL_DMC, params={"usuario": usuario, "token": token}, timeout=60)
+        return None
+    r = requests.get(url, params={"usuario": usuario, "token": token}, timeout=60)
     r.raise_for_status()
     datos = r.json()
     if "datosEstaciones" not in datos:
         print("DMC:", datos.get("mensaje", "respuesta sin datos"))
-        return []
-    return parsear_dmc(datos, todas)
+        return None
+    return datos
+
+
+def leer_dmc():
+    """Última lectura de cada estación de Santiago (el servicio de la red trae solo la última hora)."""
+    datos = pedir_dmc(URL_DMC)
+    return parsear_dmc(datos) if datos else []
 
 
 def recuperar_12h():
-    """Guarda las últimas 12 horas de la DMC en data/grabacion/AAAA-MM-DD_dmc12h.jsonl.
+    """Guarda las últimas 12 horas de cada estación de Santiago en data/grabacion/AAAA-MM-DD_dmc12h.jsonl.
 
+    Usa el servicio por estación (el de la red completa trae solo la última hora).
     Se puede correr varias veces: reescribe el archivo del día. Al juntarlo con la grabación
     normal, quitar duplicados por (source, timestamp).
     """
-    lecturas = leer_dmc(todas=True)
+    lecturas = []
+    for est in leer_dmc():
+        datos = pedir_dmc(f"{URL_DMC_EMA}/{est['source'].removeprefix('DMC_')}")
+        if datos:
+            lecturas += parsear_dmc({"datosEstaciones": [datos["datosEstaciones"]]}, todas=True)
     if not lecturas:
         print("Sin lecturas de la DMC: no se escribe nada")
         return
