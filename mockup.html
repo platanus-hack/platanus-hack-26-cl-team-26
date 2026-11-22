@@ -1,0 +1,2111 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VerdeH3 — Corredores Verdes de Santiago</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --bg-canvas: #f5f5f7;
+      --bg-surface: #ffffff;
+      --bg-glass: rgba(255, 255, 255, 0.82);
+      --bg-subtle: #f2f2f7;
+      --text-primary: #1d1d1f;
+      --text-secondary: #6e6e73;
+      --text-tertiary: #86868b;
+      --border-hairline: rgba(0, 0, 0, 0.08);
+      --accent-green: #1b7f4b;
+      --accent-green-soft: rgba(27, 127, 75, 0.1);
+      --accent-warm: #d9532f;
+      --accent-amber: #d9822b;
+      --accent-blue: #0071e3;
+      --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.07);
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-canvas);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Inter', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ==========================================================================
+       1. MINIMALIST INTRO SCREEN (APPLE AESTHETIC)
+       ========================================================================== */
+    #intro-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: linear-gradient(180deg, #fbfbfd 0%, #f5f5f7 100%);
+      cursor: pointer;
+      transition: opacity 0.75s cubic-bezier(0.25, 1, 0.5, 1), visibility 0.75s;
+      overflow: hidden;
+    }
+
+    #intro-screen.zooming-out {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    #globe-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    .intro-left {
+      position: relative;
+      z-index: 10;
+      max-width: 520px;
+      padding-left: 7vw;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--accent-green);
+    }
+
+    .brand-title {
+      font-size: 4.5rem;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.02;
+      color: var(--text-primary);
+    }
+
+    .audience-lead {
+      font-size: 1.25rem;
+      font-weight: 400;
+      line-height: 1.48;
+      letter-spacing: -0.01em;
+      color: var(--text-secondary);
+      max-width: 440px;
+    }
+
+    .intro-metrics {
+      display: flex;
+      gap: 2.25rem;
+      padding-top: 0.75rem;
+      margin-top: 0.25rem;
+      border-top: 1px solid var(--border-hairline);
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .metric-item .m-val {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+    }
+
+    .metric-item .m-lbl {
+      font-size: 0.78rem;
+      color: var(--text-tertiary);
+    }
+
+    .cta-wrap {
+      margin-top: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .cta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.85rem 1.5rem;
+      border-radius: 999px;
+      background: var(--text-primary);
+      color: #ffffff;
+      font-size: 0.92rem;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+
+    #intro-screen:hover .cta-pill {
+      background: var(--accent-green);
+      transform: scale(1.02);
+    }
+
+    .cta-hint {
+      font-size: 0.8rem;
+      color: var(--text-tertiary);
+    }
+
+    /* ==========================================================================
+       2. MAIN APPLICATION VIEW (APPLE MAPS / FROSTED GLASS SHEET LAYOUT)
+       ========================================================================== */
+    #app-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: grid;
+      grid-template-rows: 58px 1fr;
+      grid-template-columns: 340px 1fr 330px;
+      background: var(--bg-canvas);
+      opacity: 0;
+      transform: scale(1.015);
+      transition: opacity 0.65s ease, transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    #app-screen.active {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    /* Top Navigation Bar */
+    .topbar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.25rem;
+      background: var(--bg-glass);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: 1px solid var(--border-hairline);
+      z-index: 500;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .brand-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent-green);
+    }
+
+    .topbar-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+    }
+
+    .topbar-sub {
+      font-size: 0.8rem;
+      color: var(--text-tertiary);
+      padding-left: 0.5rem;
+      border-left: 1px solid var(--border-hairline);
+    }
+
+    /* iOS-Style Segmented Control for Map Layers */
+    .layer-segmented {
+      display: flex;
+      align-items: center;
+      background: var(--bg-subtle);
+      padding: 3px;
+      border-radius: 10px;
+      gap: 2px;
+    }
+
+    .layer-tab {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 500;
+      padding: 0.4rem 0.85rem;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    .layer-tab:hover {
+      color: var(--text-primary);
+    }
+
+    .layer-tab.active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      font-weight: 600;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-minimal {
+      background: var(--bg-subtle);
+      border: none;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 500;
+      padding: 0.42rem 0.85rem;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .btn-minimal:hover {
+      background: #e5e5ea;
+    }
+
+    /* ==========================================================================
+       LEFT SIDEBAR: CLEAN GROUPED CARDS & FILTERS
+       ========================================================================== */
+    .sidebar-left {
+      background: var(--bg-canvas);
+      border-right: 1px solid var(--border-hairline);
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      z-index: 400;
+    }
+
+    .sidebar-left::-webkit-scrollbar,
+    .sidebar-right::-webkit-scrollbar {
+      width: 5px;
+    }
+    .sidebar-left::-webkit-scrollbar-thumb,
+    .sidebar-right::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 3px;
+    }
+
+    .card {
+      background: var(--bg-surface);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--text-tertiary);
+    }
+
+    .card-meta {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--accent-green);
+    }
+
+    /* Scope Grid */
+    .preset-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.4rem;
+    }
+
+    .preset-btn {
+      background: var(--bg-subtle);
+      border: 1px solid transparent;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 0.76rem;
+      font-weight: 500;
+      padding: 0.55rem 0.65rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s ease;
+    }
+
+    .preset-btn small {
+      display: block;
+      font-size: 0.67rem;
+      color: var(--text-tertiary);
+      font-weight: 400;
+      margin-top: 2px;
+    }
+
+    .preset-btn.active {
+      background: var(--accent-green-soft);
+      border-color: var(--accent-green);
+      color: var(--accent-green);
+      font-weight: 600;
+    }
+
+    .preset-btn.active small {
+      color: var(--accent-green);
+      opacity: 0.85;
+    }
+
+    /* Controls */
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .control-label .val {
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+    }
+
+    .apple-select {
+      width: 100%;
+      background: var(--bg-subtle);
+      border: 1px solid transparent;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 500;
+      padding: 0.5rem 0.65rem;
+      border-radius: 8px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .apple-select:focus {
+      border-color: var(--accent-green);
+      background: var(--bg-surface);
+    }
+
+    /* Segmented Pill */
+    .segmented-control {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      background: var(--bg-subtle);
+      padding: 2px;
+      border-radius: 8px;
+    }
+
+    .seg-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 0.73rem;
+      font-weight: 500;
+      padding: 0.36rem 0.3rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .seg-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Apple iOS Switches */
+    .switch-list {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .switch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      font-size: 0.8rem;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+
+    .switch-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .switch-row:first-child {
+      padding-top: 0;
+    }
+
+    .ios-switch {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 38px;
+      height: 22px;
+      background: #e5e5ea;
+      border-radius: 999px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .ios-switch::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      background: #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .ios-switch:checked {
+      background: #34c759;
+    }
+
+    .ios-switch:checked::after {
+      transform: translateX(16px);
+    }
+
+    /* Minimal Sliders */
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: #e5e5ea;
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 0.5px solid rgba(0, 0, 0, 0.12);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+      cursor: pointer;
+    }
+
+    /* ==========================================================================
+       CENTER MAP VIEWPORT
+       ========================================================================== */
+    .map-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #eef0f2;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    .map-top-overlay {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      z-index: 450;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      pointer-events: none;
+    }
+
+    .kpi-strip {
+      display: flex;
+      gap: 0.55rem;
+      pointer-events: auto;
+      flex-wrap: wrap;
+    }
+
+    .kpi-card {
+      background: var(--bg-glass);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border: 1px solid var(--border-hairline);
+      border-radius: 12px;
+      padding: 0.55rem 0.85rem;
+      min-width: 120px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .kpi-card .lbl {
+      font-size: 0.68rem;
+      color: var(--text-tertiary);
+      font-weight: 500;
+    }
+
+    .kpi-card .num {
+      font-size: 1.15rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      margin-top: 1px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .basemap-pill {
+      pointer-events: auto;
+      display: flex;
+      background: var(--bg-glass);
+      backdrop-filter: saturate(180%) blur(20px);
+      border: 1px solid var(--border-hairline);
+      border-radius: 10px;
+      padding: 3px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .basemap-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 0.73rem;
+      font-weight: 500;
+      padding: 0.32rem 0.65rem;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+
+    .basemap-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Map Legend Bottom Left */
+    .map-legend {
+      position: absolute;
+      bottom: 18px;
+      left: 18px;
+      z-index: 450;
+      background: var(--bg-glass);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border: 1px solid var(--border-hairline);
+      border-radius: 14px;
+      padding: 0.8rem 1rem;
+      min-width: 250px;
+      box-shadow: var(--shadow-md);
+    }
+
+    .legend-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.45rem;
+    }
+
+    .legend-unit {
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--text-tertiary);
+    }
+
+    .legend-bar {
+      height: 8px;
+      border-radius: 4px;
+      width: 100%;
+      margin-bottom: 0.3rem;
+    }
+
+    .legend-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ==========================================================================
+       RIGHT SIDEBAR: SUMMARY, HEX DETAIL & COMUNA COMPARISON
+       ========================================================================== */
+    .sidebar-right {
+      background: var(--bg-canvas);
+      border-left: 1px solid var(--border-hairline);
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      z-index: 400;
+    }
+
+    .corridor-card {
+      background: var(--bg-surface);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid rgba(27, 127, 75, 0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .stat-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.6rem;
+    }
+
+    .stat-box {
+      background: var(--bg-subtle);
+      border-radius: var(--radius-sm);
+      padding: 0.65rem 0.75rem;
+    }
+
+    .stat-box .s-lbl {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+    }
+
+    .stat-box .s-val {
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-box .s-sub {
+      font-size: 0.68rem;
+      color: var(--accent-green);
+      font-weight: 500;
+      margin-top: 2px;
+    }
+
+    /* Hex Inspector Grid */
+    .inspector-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.45rem;
+    }
+
+    .prop-cell {
+      background: var(--bg-subtle);
+      border-radius: 8px;
+      padding: 0.5rem 0.65rem;
+    }
+
+    .prop-cell .k {
+      font-size: 0.68rem;
+      color: var(--text-tertiary);
+    }
+
+    .prop-cell .v {
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Clean Comuna Bars */
+    .comuna-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      padding: 0.45rem 0;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .comuna-row:last-child {
+      border-bottom: none;
+    }
+
+    .comuna-row-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .comuna-row-meta {
+      font-size: 0.74rem;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .track {
+      width: 100%;
+      height: 6px;
+      background: var(--bg-subtle);
+      border-radius: 3px;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
+    .leaflet-container {
+      background: #eef0f2 !important;
+      font-family: inherit !important;
+    }
+    .leaflet-popup-content-wrapper {
+      background: rgba(255, 255, 255, 0.95) !important;
+      color: var(--text-primary) !important;
+      border-radius: 12px !important;
+      box-shadow: var(--shadow-md) !important;
+      border: 1px solid var(--border-hairline);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ========================================================================
+       STAGE 1: MINIMALIST APPLE-STYLE INTRO WITH 3D GLOBE
+       ======================================================================== -->
+  <section id="intro-screen">
+    <canvas id="globe-canvas"></canvas>
+
+    <div class="intro-left">
+      <div class="eyebrow">Santiago de Chile · Planificación Urbana</div>
+      <h1 class="brand-title">VerdeH3</h1>
+      <p class="audience-lead">
+        Diseñamos corredores verdes continuos cruzando calor superficial, cobertura arbórea y población en cada cuadra de la ciudad.
+      </p>
+
+      <div class="intro-metrics">
+        <div class="metric-item">
+          <span class="m-val">34</span>
+          <span class="m-lbl">Comunas</span>
+        </div>
+        <div class="metric-item">
+          <span class="m-val">13.172</span>
+          <span class="m-lbl">Cuadras H3</span>
+        </div>
+        <div class="metric-item">
+          <span class="m-val">+3,2 °C</span>
+          <span class="m-lbl">Brecha térmica</span>
+        </div>
+      </div>
+
+      <div class="cta-wrap">
+        <div class="cta-pill">
+          <span>Explorar Santiago</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14"></path>
+            <path d="m12 5 7 7-7 7"></path>
+          </svg>
+        </div>
+        <span class="cta-hint">Haz clic para acercar el mapa</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       STAGE 2: CLEAN APPLE-STYLE MAP & FILTER INTERFACE
+       ======================================================================== -->
+  <main id="app-screen">
+    <!-- TOP BAR -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="brand-dot"></span>
+        <span class="topbar-title">VerdeH3</span>
+        <span class="topbar-sub">Gran Santiago</span>
+      </div>
+
+      <!-- Segmented Layer Control -->
+      <nav class="layer-segmented" id="layer-tabs">
+        <button class="layer-tab active" data-layer="urgencia">Urgencia</button>
+        <button class="layer-tab" data-layer="lst">Temperatura</button>
+        <button class="layer-tab" data-layer="arbol">Arborización</button>
+        <button class="layer-tab" data-layer="falso_verde">Falso Verde</button>
+        <button class="layer-tab" data-layer="vivo">Sensores</button>
+        <button class="layer-tab" data-layer="social">Acceso Social</button>
+      </nav>
+
+      <div class="topbar-right">
+        <button class="btn-minimal" id="btn-reset-filters">Restablecer</button>
+        <button class="btn-minimal" id="btn-back-globe">Vista Global</button>
+      </div>
+    </header>
+
+    <!-- LEFT SIDEBAR: FILTERS & CORRIDOR CONTROLS -->
+    <aside class="sidebar-left">
+      <!-- 1. TERRITORIO -->
+      <section class="card">
+        <div class="card-header">
+          <span class="card-title">Territorio</span>
+          <span class="card-meta" id="active-hex-count">279 celdas</span>
+        </div>
+
+        <div class="preset-grid" id="scope-presets">
+          <button class="preset-btn active" data-scope="demo">
+            Demo Contraste
+            <small>Providencia y C. Navia</small>
+          </button>
+          <button class="preset-btn" data-scope="piloto">
+            Piloto 4 Comunas
+            <small>+Las Condes y Est. Central</small>
+          </button>
+          <button class="preset-btn" data-scope="gs">
+            Gran Santiago
+            <small>34 comunas</small>
+          </button>
+          <button class="preset-btn" data-scope="criticas">
+            Mayor Calor
+            <small>Zona poniente y norte</small>
+          </button>
+        </div>
+
+        <div class="control-group">
+          <div class="control-label">
+            <span>Comuna</span>
+            <span class="val" id="selected-comuna-label">Todas</span>
+          </div>
+          <select class="apple-select" id="comuna-select">
+            <option value="ALL">Todas las comunas del área</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <div class="control-label">
+            <span>Resolución H3</span>
+            <span class="val" id="res-label">Cuadra (174 m)</span>
+          </div>
+          <div class="segmented-control" id="res-control">
+            <button class="seg-btn active" data-res="9">Cuadra · R9</button>
+            <button class="seg-btn" data-res="8">Barrio · R8</button>
+            <button class="seg-btn" data-res="7">Sector · R7</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. FILTROS DE CAPAS -->
+      <section class="card">
+        <div class="card-header">
+          <span class="card-title">Filtros de Mapa</span>
+        </div>
+
+        <div class="switch-list">
+          <label class="switch-row">
+            <span>Corredor verde óptimo</span>
+            <input type="checkbox" class="ios-switch" id="chk-corridor" checked />
+          </label>
+          <label class="switch-row">
+            <span>Parques consolidados</span>
+            <input type="checkbox" class="ios-switch" id="chk-parks" checked />
+          </label>
+          <label class="switch-row">
+            <span>Excluir precordillera (≥ 900 m)</span>
+            <input type="checkbox" class="ios-switch" id="chk-precordillera" checked />
+          </label>
+          <label class="switch-row">
+            <span>Excluir zonas sin población</span>
+            <input type="checkbox" class="ios-switch" id="chk-lowpop" checked />
+          </label>
+          <label class="switch-row">
+            <span>Solo «falso verde» (sin sombra)</span>
+            <input type="checkbox" class="ios-switch" id="chk-falso-verde" />
+          </label>
+          <label class="switch-row">
+            <span>Estaciones meteorológicas</span>
+            <input type="checkbox" class="ios-switch" id="chk-sensors" checked />
+          </label>
+        </div>
+
+        <div class="control-group" style="padding-top:0.25rem;">
+          <div class="control-label">
+            <span>Temperatura mínima</span>
+            <span class="val" id="val-min-lst">30,0 °C</span>
+          </div>
+          <input type="range" id="slider-min-lst" min="30" max="39" step="0.5" value="30" />
+        </div>
+
+        <div class="control-group">
+          <div class="control-label">
+            <span>Cobertura arbórea máxima</span>
+            <span class="val" id="val-max-tree">100 %</span>
+          </div>
+          <input type="range" id="slider-max-tree" min="5" max="100" step="5" value="100" />
+        </div>
+
+        <div class="control-group">
+          <div class="control-label">
+            <span>Confianza sensores en vivo</span>
+            <span class="val" id="val-confianza">Alta y Media</span>
+          </div>
+          <select class="apple-select" id="select-confianza">
+            <option value="alta_media">Confianza alta y media</option>
+            <option value="alta">Solo confianza alta</option>
+            <option value="todas">Todas las estaciones</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- 3. PARÁMETROS DEL CORREDOR -->
+      <section class="card">
+        <div class="card-header">
+          <span class="card-title">Optimizador de Corredor</span>
+          <span class="card-meta" id="val-budget">3,0 km</span>
+        </div>
+
+        <div class="control-group">
+          <div class="control-label">
+            <span>Presupuesto de longitud</span>
+          </div>
+          <input type="range" id="slider-budget" min="1.0" max="8.0" step="0.5" value="3.0" />
+        </div>
+
+        <div class="control-group">
+          <div class="control-label">
+            <span>Prioridad Calor</span>
+            <span class="val" id="val-w-calor">40 %</span>
+          </div>
+          <input type="range" id="slider-w-calor" min="0" max="1" step="0.05" value="0.40" />
+        </div>
+
+        <div class="control-group">
+          <div class="control-label">
+            <span>Prioridad Falta de Árboles</span>
+            <span class="val" id="val-w-arbol">40 %</span>
+          </div>
+          <input type="range" id="slider-w-arbol" min="0" max="1" step="0.05" value="0.40" />
+        </div>
+
+        <div class="control-group">
+          <div class="control-label">
+            <span>Prioridad Población y Servicios</span>
+            <span class="val" id="val-w-personas">20 %</span>
+          </div>
+          <input type="range" id="slider-w-personas" min="0" max="1" step="0.05" value="0.20" />
+        </div>
+      </section>
+    </aside>
+
+    <!-- CENTER MAP -->
+    <section class="map-container">
+      <div class="map-top-overlay">
+        <div class="kpi-strip">
+          <div class="kpi-card">
+            <div class="lbl">Temp. Superficial</div>
+            <div class="num" id="kpi-lst">35,4 °C</div>
+          </div>
+          <div class="kpi-card">
+            <div class="lbl">Cobertura Arbórea</div>
+            <div class="num" id="kpi-tree">13,8 %</div>
+          </div>
+          <div class="kpi-card">
+            <div class="lbl">Urgencia Media</div>
+            <div class="num" id="kpi-urg">0,64</div>
+          </div>
+          <div class="kpi-card">
+            <div class="lbl">Falso Verde</div>
+            <div class="num" id="kpi-falso">42 celdas</div>
+          </div>
+        </div>
+
+        <div class="basemap-pill" id="basemap-switcher">
+          <button class="basemap-btn active" data-style="light">Mapa</button>
+          <button class="basemap-btn" data-style="sat">Satélite</button>
+          <button class="basemap-btn" data-style="dark">Oscuro</button>
+        </div>
+      </div>
+
+      <div id="map"></div>
+
+      <div class="map-legend">
+        <div class="legend-header">
+          <span id="legend-layer-name">Índice de Urgencia</span>
+          <span class="legend-unit" id="legend-unit">0,0 – 1,0</span>
+        </div>
+        <div class="legend-bar" id="legend-gradient" style="background: linear-gradient(90deg, #2e9e62 0%, #f0b429 50%, #d9482b 100%);"></div>
+        <div class="legend-labels" id="legend-scale-labels">
+          <span>Baja</span>
+          <span>Media</span>
+          <span>Alta</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT SIDEBAR: IMPACT & DETAILS -->
+    <aside class="sidebar-right">
+      <section class="corridor-card">
+        <div class="card-header">
+          <span class="card-title" style="color:var(--accent-green);">Corredor Propuesto</span>
+          <span class="card-meta" id="corridor-km-badge">2,8 km · 8 tramos</span>
+        </div>
+
+        <div class="stat-pair">
+          <div class="stat-box">
+            <div class="s-lbl">Vecinos beneficiados</div>
+            <div class="s-val" id="corr-pop">9.735</div>
+            <div class="s-sub" id="corr-pop-vs">+29 % vs trazado azar</div>
+          </div>
+          <div class="stat-box">
+            <div class="s-lbl">Urgencia cubierta</div>
+            <div class="s-val" id="corr-urg">0,78</div>
+            <div class="s-sub" id="corr-urg-vs">+15 % vs trazado azar</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <span class="card-title">Detalle de Cuadra</span>
+          <span class="card-meta" id="insp-comuna">Cerro Navia</span>
+        </div>
+
+        <div class="inspector-grid">
+          <div class="prop-cell">
+            <div class="k">Temperatura (LST)</div>
+            <div class="v" id="insp-lst">38,4 °C</div>
+          </div>
+          <div class="prop-cell">
+            <div class="k">Urgencia</div>
+            <div class="v" id="insp-u">0,81</div>
+          </div>
+          <div class="prop-cell">
+            <div class="k">Sombra arbórea</div>
+            <div class="v" id="insp-arbol">4,2 %</div>
+          </div>
+          <div class="prop-cell">
+            <div class="k">Pasto / NDVI</div>
+            <div class="v" id="insp-ndvi">1,8 % · 0,16</div>
+          </div>
+          <div class="prop-cell">
+            <div class="k">Habitantes</div>
+            <div class="v" id="insp-pob">1.240</div>
+          </div>
+          <div class="prop-cell">
+            <div class="k">Acceso a Metro</div>
+            <div class="v" id="insp-social">620 m</div>
+          </div>
+          <div class="prop-cell">
+            <div class="k">Aire en vivo</div>
+            <div class="v" id="insp-vivo">32,6 °C</div>
+          </div>
+          <div class="prop-cell">
+            <div class="k">Clasificación</div>
+            <div class="v" id="insp-estado">Corredor</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <span class="card-title">Comparativa por Comuna</span>
+          <span class="card-meta">Calor vs. Árboles</span>
+        </div>
+        <div id="comuna-bars-container"></div>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    /* ------------------------------------------------------------------------
+       REAL COMUNA DATASET (FROM datos/salida_h3_gs/resumen_h3.json)
+       ------------------------------------------------------------------------ */
+    const COMUNAS_DATA = [
+      { name: "Cerro Navia", lat: -33.422, lon: -70.735, lst: 36.98, ndvi: 0.17, arbol: 5.6, pasto: 1.7, verde: 9.41, pob: 118361, metro: 2767, piloto: true, demo: true },
+      { name: "Providencia", lat: -33.431, lon: -70.616, lst: 33.75, ndvi: 0.30, arbol: 21.9, pasto: 1.7, verde: 17.20, pob: 135691, metro: 588, piloto: true, demo: true },
+      { name: "Estación Central", lat: -33.463, lon: -70.696, lst: 37.02, ndvi: 0.18, arbol: 6.4, pasto: 2.1, verde: 4.93, pob: 97918, metro: 862, piloto: true, demo: false },
+      { name: "Las Condes", lat: -33.412, lon: -70.565, lst: 32.93, ndvi: 0.32, arbol: 26.4, pasto: 6.2, verde: 49.34, pob: 335789, metro: 1450, piloto: true, demo: false, precordillera: true },
+      { name: "Quilicura", lat: -33.361, lon: -70.728, lst: 40.65, ndvi: 0.17, arbol: 4.8, pasto: 8.4, verde: 9.74, pob: 377526, metro: 2855, crit: true },
+      { name: "Pudahuel", lat: -33.441, lon: -70.768, lst: 40.53, ndvi: 0.22, arbol: 5.9, pasto: 14.2, verde: 8.56, pob: 374836, metro: 3900, crit: true },
+      { name: "Cerrillos", lat: -33.495, lon: -70.715, lst: 38.54, ndvi: 0.15, arbol: 5.4, pasto: 7.5, verde: 7.88, pob: 67931, metro: 2319, crit: true },
+      { name: "Maipú", lat: -33.510, lon: -70.758, lst: 38.33, ndvi: 0.27, arbol: 7.2, pasto: 18.5, verde: 3.84, pob: 582938, metro: 2406, crit: true },
+      { name: "Renca", lat: -33.402, lon: -70.718, lst: 38.12, ndvi: 0.17, arbol: 6.1, pasto: 6.8, verde: 7.84, pob: 130816, metro: 3412, crit: true },
+      { name: "Santiago", lat: -33.451, lon: -70.655, lst: 35.28, ndvi: 0.17, arbol: 11.2, pasto: 3.4, verde: 10.24, pob: 234007, metro: 506 },
+      { name: "Ñuñoa", lat: -33.456, lon: -70.598, lst: 34.23, ndvi: 0.26, arbol: 18.4, pasto: 3.1, verde: 7.52, pob: 190922, metro: 606 },
+      { name: "Vitacura", lat: -33.385, lon: -70.575, lst: 32.88, ndvi: 0.39, arbol: 29.5, pasto: 9.8, verde: 15.43, pob: 89604, metro: 3516 },
+      { name: "La Reina", lat: -33.443, lon: -70.545, lst: 32.69, ndvi: 0.35, arbol: 27.1, pasto: 5.4, verde: 14.75, pob: 94249, metro: 2546, precordillera: true },
+      { name: "Peñalolén", lat: -33.485, lon: -70.552, lst: 31.19, ndvi: 0.30, arbol: 19.2, pasto: 8.7, verde: 20.47, pob: 291678, metro: 2471, precordillera: true },
+      { name: "La Florida", lat: -33.535, lon: -70.582, lst: 32.25, ndvi: 0.28, arbol: 16.5, pasto: 9.2, verde: 16.59, pob: 444161, metro: 1768, precordillera: true },
+      { name: "Puente Alto", lat: -33.595, lon: -70.578, lst: 33.59, ndvi: 0.26, arbol: 12.1, pasto: 11.4, verde: 3.71, pob: 532879, metro: 1666 },
+      { name: "San Bernardo", lat: -33.592, lon: -70.702, lst: 36.38, ndvi: 0.29, arbol: 8.4, pasto: 19.2, verde: 2.05, pob: 393078, metro: 2996, crit: true },
+      { name: "El Bosque", lat: -33.562, lon: -70.675, lst: 36.25, ndvi: 0.15, arbol: 6.3, pasto: 3.2, verde: 2.92, pob: 162494, metro: 1009 },
+      { name: "La Pintana", lat: -33.585, lon: -70.632, lst: 35.18, ndvi: 0.26, arbol: 8.9, pasto: 15.8, verde: 2.73, pob: 219302, metro: 3226 },
+      { name: "Recoleta", lat: -33.408, lon: -70.642, lst: 34.62, ndvi: 0.21, arbol: 13.5, pasto: 4.5, verde: 17.05, pob: 153881, metro: 816 },
+      { name: "Independencia", lat: -33.415, lon: -70.665, lst: 35.68, ndvi: 0.16, arbol: 8.2, pasto: 2.1, verde: 4.66, pob: 100814, metro: 807 },
+      { name: "Quinta Normal", lat: -33.438, lon: -70.698, lst: 35.92, ndvi: 0.17, arbol: 8.8, pasto: 2.6, verde: 4.87, pob: 113391, metro: 1562 },
+      { name: "Lo Prado", lat: -33.445, lon: -70.722, lst: 36.00, ndvi: 0.14, arbol: 6.2, pasto: 1.9, verde: 4.14, pob: 98549, metro: 461 },
+      { name: "Conchalí", lat: -33.385, lon: -70.675, lst: 36.32, ndvi: 0.17, arbol: 7.1, pasto: 2.8, verde: 3.18, pob: 126324, metro: 795 },
+      { name: "Huechuraba", lat: -33.368, lon: -70.638, lst: 36.01, ndvi: 0.26, arbol: 12.4, pasto: 9.6, verde: 6.25, pob: 99734, metro: 3143 },
+      { name: "Macul", lat: -33.488, lon: -70.602, lst: 35.29, ndvi: 0.20, arbol: 11.8, pasto: 4.2, verde: 4.64, pob: 116876, metro: 830 },
+      { name: "San Miguel", lat: -33.498, lon: -70.652, lst: 35.45, ndvi: 0.17, arbol: 9.6, pasto: 2.3, verde: 2.03, pob: 115115, metro: 666 },
+      { name: "San Joaquín", lat: -33.498, lon: -70.628, lst: 35.69, ndvi: 0.14, arbol: 7.4, pasto: 2.1, verde: 4.52, pob: 91019, metro: 1001 },
+      { name: "Pedro Aguirre Cerda", lat: -33.492, lon: -70.678, lst: 36.16, ndvi: 0.14, arbol: 6.9, pasto: 2.4, verde: 6.02, pob: 105311, metro: 1220 },
+      { name: "Lo Espejo", lat: -33.522, lon: -70.688, lst: 35.89, ndvi: 0.12, arbol: 5.1, pasto: 1.8, verde: 4.47, pob: 96048, metro: 2620, crit: true },
+      { name: "La Cisterna", lat: -33.532, lon: -70.662, lst: 35.44, ndvi: 0.16, arbol: 8.1, pasto: 2.2, verde: 1.58, pob: 91980, metro: 773 },
+      { name: "La Granja", lat: -33.535, lon: -70.622, lst: 34.39, ndvi: 0.14, arbol: 7.8, pasto: 2.5, verde: 8.17, pob: 116141, metro: 1087 },
+      { name: "San Ramón", lat: -33.542, lon: -70.642, lst: 34.65, ndvi: 0.13, arbol: 6.4, pasto: 1.9, verde: 5.42, pob: 83325, metro: 987 },
+      { name: "Lo Barnechea", lat: -33.352, lon: -70.518, lst: 34.30, ndvi: 0.35, arbol: 18.9, pasto: 16.5, verde: 8.05, pob: 121359, metro: 6281, precordillera: true }
+    ];
+
+    const LIVE_STATIONS = [
+      { id: "DMC-330020", name: "Quinta Normal (DMC)", lat: -33.445, lon: -70.682, temp: 32.4, hum: 24, anom: +1.8, conf: "alta" },
+      { id: "DMC-330021", name: "Pudahuel AMB (DMC)", lat: -33.392, lon: -70.785, temp: 33.9, hum: 19, anom: +2.7, conf: "alta" },
+      { id: "DMC-330019", name: "Tobalaba / La Reina (DMC)", lat: -33.455, lon: -70.548, temp: 30.2, hum: 29, anom: +0.6, conf: "alta" },
+      { id: "DMC-330075", name: "La Platina / La Pintana (DMC)", lat: -33.572, lon: -70.625, temp: 31.8, hum: 25, anom: +1.3, conf: "media" },
+      { id: "SC-98412", name: "Las Condes (Sensor.Community)", lat: -33.408, lon: -70.568, temp: 29.8, hum: 31, anom: +0.4, conf: "alta" }
+    ];
+
+    /* ------------------------------------------------------------------------
+       STAGE 1: CLEAN DAYLIGHT MINIMALIST GLOBE WITH CHILE HIGHLIGHTED
+       ------------------------------------------------------------------------ */
+    const globeCanvas = document.getElementById('globe-canvas');
+    const ctx = globeCanvas.getContext('2d');
+
+    let globeWidth = window.innerWidth;
+    let globeHeight = window.innerHeight;
+    globeCanvas.width = globeWidth;
+    globeCanvas.height = globeHeight;
+
+    const CHILE_OUTLINE = [
+      [-70.3, -17.5], [-69.5, -18.2], [-68.5, -19.5], [-68.2, -21.5], [-67.8, -22.8],
+      [-68.3, -24.5], [-68.5, -26.5], [-69.1, -28.0], [-69.8, -30.0], [-70.2, -32.0],
+      [-70.0, -33.4], [-70.4, -35.5], [-71.0, -37.5], [-71.4, -39.5], [-71.8, -41.5],
+      [-71.9, -43.5], [-71.6, -45.5], [-72.5, -47.5], [-73.0, -49.5], [-72.2, -51.5],
+      [-70.8, -52.8], [-68.6, -54.8], [-67.2, -55.8], [-69.5, -55.5], [-72.8, -53.8],
+      [-74.8, -51.5], [-75.4, -48.5], [-74.8, -45.5], [-74.2, -43.0], [-73.8, -40.5],
+      [-73.2, -37.5], [-72.2, -35.0], [-71.6, -33.4], [-71.5, -30.5], [-71.3, -27.5],
+      [-70.7, -24.0], [-70.2, -21.0], [-70.3, -17.5]
+    ];
+
+    const SOUTH_AMERICA = [
+      [-77, 8], [-74, 11], [-67, 10.5], [-61, 8.5], [-52, 4.5], [-48, -1],
+      [-35, -6], [-38, -13], [-40, -20], [-43, -23], [-48, -26], [-52, -32],
+      [-58, -35], [-62, -39], [-65, -43], [-66, -48], [-68, -52], [-67, -55.8],
+      [-73, -53], [-75, -48], [-74, -42], [-73, -37], [-71.6, -33.4], [-71.3, -27],
+      [-70.5, -21], [-70.3, -17.5], [-75, -14], [-79, -8], [-81, -4.5], [-80, 0],
+      [-78, 4], [-77, 8]
+    ];
+
+    const NORTH_AMERICA = [
+      [-77, 8], [-83, 10], [-88, 16], [-90, 21], [-97, 22], [-97, 28], [-90, 30],
+      [-81, 25], [-80, 32], [-75, 38], [-70, 42], [-62, 46], [-55, 52], [-64, 60],
+      [-80, 65], [-105, 68], [-135, 68], [-165, 64], [-160, 56], [-135, 55],
+      [-124, 48], [-124, 40], [-118, 33], [-110, 23], [-95, 16], [-84, 9], [-77, 8]
+    ];
+
+    let rotLon = -45;
+    let rotLat = -20;
+    let zoomFactor = 1.0;
+    let isTransitioning = false;
+    let transitionProgress = 0;
+
+    function project3D(lonDeg, latDeg, centerLon, centerLat, radius, cx, cy) {
+      const lam = (lonDeg - centerLon) * Math.PI / 180;
+      const phi = latDeg * Math.PI / 180;
+      const phi0 = centerLat * Math.PI / 180;
+
+      const cosc = Math.sin(phi0) * Math.sin(phi) + Math.cos(phi0) * Math.cos(phi) * Math.cos(lam);
+      if (cosc < -0.02) return null;
+
+      const x = cx + radius * Math.cos(phi) * Math.sin(lam);
+      const y = cy - radius * (Math.cos(phi0) * Math.sin(phi) - Math.sin(phi0) * Math.cos(phi) * Math.cos(lam));
+      return { x, y, visible: cosc >= 0 };
+    }
+
+    function drawPolygon3D(coords, centerLon, centerLat, radius, cx, cy, fillStyle, strokeStyle, lineWidth) {
+      ctx.beginPath();
+      let started = false;
+      for (let i = 0; i < coords.length; i++) {
+        const pt = project3D(coords[i][0], coords[i][1], centerLon, centerLat, radius, cx, cy);
+        if (!pt || !pt.visible) continue;
+        if (!started) {
+          ctx.moveTo(pt.x, pt.y);
+          started = true;
+        } else {
+          ctx.lineTo(pt.x, pt.y);
+        }
+      }
+      if (!started) return;
+      ctx.closePath();
+      if (fillStyle) {
+        ctx.fillStyle = fillStyle;
+        ctx.fill();
+      }
+      if (strokeStyle) {
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = lineWidth || 1;
+        ctx.stroke();
+      }
+    }
+
+    function renderGlobe() {
+      ctx.clearRect(0, 0, globeWidth, globeHeight);
+
+      if (isTransitioning) {
+        transitionProgress = Math.min(1, transitionProgress + 0.02);
+        const ease = transitionProgress < 0.5
+          ? 4 * transitionProgress * transitionProgress * transitionProgress
+          : 1 - Math.pow(-2 * transitionProgress + 2, 3) / 2;
+
+        const targetLon = -70.66 - 360;
+        rotLon = rotLon + (targetLon - rotLon) * 0.09;
+        rotLat = rotLat + (-33.45 - rotLat) * 0.11;
+        zoomFactor = 1 + Math.pow(ease, 2.2) * 10.5;
+
+        if (transitionProgress >= 0.86) {
+          finishIntroTransition();
+        }
+      } else {
+        const t = performance.now() * 0.00035;
+        rotLon = -66 + Math.sin(t) * 10;
+        rotLat = -23 + Math.cos(t * 0.7) * 3;
+      }
+
+      const cx = globeWidth * (isTransitioning ? (0.68 - 0.18 * transitionProgress) : 0.68);
+      const cy = globeHeight * 0.5;
+      const baseRadius = Math.min(globeWidth, globeHeight) * 0.35;
+      const radius = baseRadius * zoomFactor;
+
+      // Soft ambient drop shadow behind globe
+      const shadowGrad = ctx.createRadialGradient(cx, cy + radius * 0.08, radius * 0.7, cx, cy + radius * 0.12, radius * 1.18);
+      shadowGrad.addColorStop(0, 'rgba(0, 0, 0, 0.08)');
+      shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = shadowGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy + radius * 0.08, radius * 1.18, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tactile daylight ocean sphere
+      const sphereGrad = ctx.createRadialGradient(cx - radius * 0.28, cy - radius * 0.28, radius * 0.08, cx, cy, radius);
+      sphereGrad.addColorStop(0, '#f2f6fa');
+      sphereGrad.addColorStop(0.65, '#e3ebf2');
+      sphereGrad.addColorStop(1, '#d3dfe9');
+      ctx.fillStyle = sphereGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Subtle latitude/longitude hairlines
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.045)';
+      ctx.lineWidth = 1;
+      for (let lon = -180; lon < 180; lon += 20) {
+        ctx.beginPath();
+        let started = false;
+        for (let lat = -80; lat <= 80; lat += 5) {
+          const p = project3D(lon, lat, rotLon, rotLat, radius, cx, cy);
+          if (p && p.visible) {
+            if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+            else ctx.lineTo(p.x, p.y);
+          } else {
+            started = false;
+          }
+        }
+        ctx.stroke();
+      }
+      for (let lat = -60; lat <= 60; lat += 20) {
+        ctx.beginPath();
+        let started = false;
+        for (let lon = -180; lon <= 180; lon += 5) {
+          const p = project3D(lon, lat, rotLon, rotLat, radius, cx, cy);
+          if (p && p.visible) {
+            if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+            else ctx.lineTo(p.x, p.y);
+          } else {
+            started = false;
+          }
+        }
+        ctx.stroke();
+      }
+
+      // Continents in clean warm white
+      drawPolygon3D(
+        NORTH_AMERICA, rotLon, rotLat, radius, cx, cy,
+        '#ffffff', 'rgba(0, 0, 0, 0.12)', 1
+      );
+      drawPolygon3D(
+        SOUTH_AMERICA, rotLon, rotLat, radius, cx, cy,
+        '#ffffff', 'rgba(0, 0, 0, 0.12)', 1
+      );
+
+      // Chile highlighted in grounded botanical green
+      drawPolygon3D(
+        CHILE_OUTLINE, rotLon, rotLat, radius, cx, cy,
+        'rgba(27, 127, 75, 0.22)', '#1b7f4b', 2.2
+      );
+
+      // Crisp globe rim
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Santiago pin
+      const stgoPt = project3D(-70.6693, -33.4489, rotLon, rotLat, radius, cx, cy);
+      if (stgoPt && stgoPt.visible) {
+        ctx.fillStyle = 'rgba(27, 127, 75, 0.18)';
+        ctx.beginPath();
+        ctx.arc(stgoPt.x, stgoPt.y, 11, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#1b7f4b';
+        ctx.beginPath();
+        ctx.arc(stgoPt.x, stgoPt.y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+
+        if (!isTransitioning) {
+          ctx.fillStyle = '#1d1d1f';
+          ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "Inter", sans-serif';
+          ctx.fillText('Santiago', stgoPt.x + 14, stgoPt.y + 4);
+        }
+      }
+
+      if (!document.getElementById('intro-screen').classList.contains('zooming-out')) {
+        requestAnimationFrame(renderGlobe);
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      globeWidth = window.innerWidth;
+      globeHeight = window.innerHeight;
+      globeCanvas.width = globeWidth;
+      globeCanvas.height = globeHeight;
+    });
+
+    const introScreen = document.getElementById('intro-screen');
+    const appScreen = document.getElementById('app-screen');
+
+    function startIntroTransition() {
+      if (isTransitioning) return;
+      isTransitioning = true;
+      transitionProgress = 0;
+    }
+
+    function finishIntroTransition() {
+      introScreen.classList.add('zooming-out');
+      appScreen.classList.add('active');
+      setTimeout(() => {
+        map.invalidateSize();
+        map.flyTo([-33.435, -70.665], 12, { duration: 0.9 });
+      }, 120);
+    }
+
+    introScreen.addEventListener('click', startIntroTransition);
+
+    document.getElementById('btn-back-globe').addEventListener('click', () => {
+      appScreen.classList.remove('active');
+      introScreen.classList.remove('zooming-out');
+      isTransitioning = false;
+      transitionProgress = 0;
+      zoomFactor = 1.0;
+      rotLon = -55;
+      rotLat = -22;
+      requestAnimationFrame(renderGlobe);
+    });
+
+    requestAnimationFrame(renderGlobe);
+
+    /* ------------------------------------------------------------------------
+       STAGE 2: APPLE-STYLE LIGHT MAP & MULTI-LAYER H3 FILTERS
+       ------------------------------------------------------------------------ */
+    const map = L.map('map', {
+      center: [-33.435, -70.665],
+      zoom: 12,
+      zoomControl: false
+    });
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    const BASEMAPS = {
+      light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
+      }),
+      sat: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '&copy; Esri'
+      }),
+      dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
+      })
+    };
+    BASEMAPS.light.addTo(map);
+
+    const comunaSelect = document.getElementById('comuna-select');
+    [...COMUNAS_DATA].sort((a, b) => a.name.localeCompare(b.name)).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.name;
+      opt.textContent = `${c.name} (${c.lst.toFixed(1)} °C · ${c.arbol.toFixed(1)}% árboles)`;
+      comunaSelect.appendChild(opt);
+    });
+
+    function createHexPolygonCoords(centerLat, centerLon, radiusDeg) {
+      const pts = [];
+      const cosLat = Math.cos(centerLat * Math.PI / 180);
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 180) * (60 * i + 30);
+        const dLat = radiusDeg * Math.sin(angle);
+        const dLon = (radiusDeg * Math.cos(angle)) / cosLat;
+        pts.push([centerLat + dLat, centerLon + dLon]);
+      }
+      return pts;
+    }
+
+    let seed = 42;
+    function seededRandom() {
+      seed = (seed * 16807) % 2147483647;
+      return (seed - 1) / 2147483646;
+    }
+
+    const ALL_HEX_CELLS = [];
+    COMUNAS_DATA.forEach((comuna, cIdx) => {
+      const ringMax = comuna.demo ? 4 : (comuna.piloto ? 3 : 2);
+      const hexStep = 0.0052;
+      let localIdx = 0;
+
+      for (let q = -ringMax; q <= ringMax; q++) {
+        for (let r = -ringMax; r <= ringMax; r++) {
+          if (Math.abs(q + r) > ringMax) continue;
+          localIdx++;
+
+          const latOffset = (r * 0.866) * hexStep;
+          const lonOffset = (q + r * 0.5) * hexStep * 1.18;
+          const lat = comuna.lat + latOffset;
+          const lon = comuna.lon + lonOffset;
+
+          const noise = (seededRandom() - 0.5);
+          const lst_c = Math.max(29.8, Math.min(41.8, comuna.lst + noise * 2.4));
+          const es_parque = (localIdx % 9 === 0) || (comuna.verde > 20 && localIdx % 6 === 0);
+          const arbol_pct = es_parque
+            ? Math.min(68, comuna.arbol * 1.9 + seededRandom() * 18)
+            : Math.max(0.8, Math.min(55, comuna.arbol + noise * 7.5));
+          const pasto_pct = Math.max(0.5, Math.min(65, comuna.pasto + seededRandom() * 14));
+          const ndvi = es_parque
+            ? Math.min(0.68, comuna.ndvi + 0.22)
+            : Math.max(0.07, Math.min(0.58, comuna.ndvi + (pasto_pct > 14 ? 0.14 : noise * 0.08)));
+
+          const baja_pob = (!es_parque && localIdx % 13 === 0);
+          const poblacion = baja_pob ? Math.round(15 + seededRandom() * 30) : Math.round(420 + seededRandom() * 1250);
+          const precordillera = Boolean(comuna.precordillera && lon > -70.545 && localIdx % 3 === 0);
+          const social = Math.max(0.12, Math.min(0.98, 1 - (comuna.metro / 5200) + noise * 0.18));
+
+          let bestDist = 999;
+          let nearestStation = LIVE_STATIONS[0];
+          LIVE_STATIONS.forEach(st => {
+            const d = Math.hypot((lat - st.lat) * 111, (lon - st.lon) * 92);
+            if (d < bestDist) { bestDist = d; nearestStation = st; }
+          });
+          const confianza = bestDist < 3.2 ? "alta" : (bestDist < 6.8 ? "media" : "baja");
+          const temp_aire_c = +(nearestStation.temp + (lst_c - 35) * 0.22).toFixed(1);
+
+          const h3_index = `89b2c55${(cIdx + 10).toString(16)}${(localIdx + 100).toString(16)}ffff`;
+
+          ALL_HEX_CELLS.push({
+            h3_index,
+            comuna: comuna.name,
+            demo: Boolean(comuna.demo),
+            piloto: Boolean(comuna.piloto),
+            crit: Boolean(comuna.crit || comuna.name === "Cerro Navia"),
+            lat,
+            lon,
+            lst_c: +lst_c.toFixed(1),
+            ndvi: +ndvi.toFixed(2),
+            arbol_pct: +arbol_pct.toFixed(1),
+            pasto_pct: +pasto_pct.toFixed(1),
+            poblacion,
+            social: +social.toFixed(2),
+            metro_m: Math.round(comuna.metro * (0.7 + seededRandom() * 0.6)),
+            es_parque,
+            precordillera,
+            baja_pob,
+            temp_aire_c,
+            confianza,
+            urgencia: 0,
+            en_corredor: false
+          });
+        }
+      }
+    });
+
+    const state = {
+      layer: 'urgencia',
+      scope: 'demo',
+      comuna: 'ALL',
+      res: 9,
+      showCorridor: true,
+      showParks: true,
+      excludePrecordillera: true,
+      excludeLowPop: true,
+      onlyFalsoVerde: false,
+      showSensors: true,
+      minLst: 30.0,
+      maxTree: 100,
+      confianzaMode: 'alta_media',
+      budgetKm: 3.0,
+      wCalor: 0.40,
+      wArbol: 0.40,
+      wPersonas: 0.20
+    };
+
+    const hexLayerGroup = L.layerGroup().addTo(map);
+    const corridorLineGroup = L.layerGroup().addTo(map);
+    const sensorsLayerGroup = L.layerGroup().addTo(map);
+
+    function computeUrgencyAndCorridor(cells) {
+      const wSum = Math.max(0.01, state.wCalor + state.wArbol + state.wPersonas);
+      const wc = state.wCalor / wSum;
+      const wa = state.wArbol / wSum;
+      const wp = state.wPersonas / wSum;
+
+      cells.forEach(c => {
+        const lstNorm = Math.max(0, Math.min(1, (c.lst_c - 30.5) / 10.0));
+        const vivoNorm = Math.max(0, Math.min(1, (c.temp_aire_c - 29.0) / 5.5));
+        const useVivo = (state.confianzaMode === 'todas') ||
+                        (state.confianzaMode === 'alta_media' && (c.confianza === 'alta' || c.confianza === 'media')) ||
+                        (state.confianzaMode === 'alta' && c.confianza === 'alta');
+        const calor = useVivo ? (0.6 * lstNorm + 0.4 * vivoNorm) : lstNorm;
+        const falta = 1 - Math.min(100, c.arbol_pct) / 100;
+        const pobNorm = Math.max(0, Math.min(1, c.poblacion / 1600));
+        const personas = 0.7 * pobNorm + 0.3 * c.social;
+        c.urgencia = +(wc * calor + wa * falta + wp * personas).toFixed(3);
+        c.en_corredor = false;
+      });
+
+      const stepKm = state.res === 9 ? 0.35 : (state.res === 8 ? 0.75 : 1.4);
+      const maxHexes = Math.max(2, Math.floor(state.budgetKm / stepKm));
+
+      const candidates = cells
+        .filter(c => !c.es_parque && c.poblacion >= 50)
+        .sort((a, b) => b.urgencia - a.urgencia);
+
+      const corridorHexes = [];
+      if (candidates.length > 0) {
+        corridorHexes.push(candidates[0]);
+        candidates[0].en_corredor = true;
+
+        while (corridorHexes.length < maxHexes) {
+          const last = corridorHexes[corridorHexes.length - 1];
+          let bestNext = null;
+          let bestScore = -1;
+          for (const cand of candidates) {
+            if (cand.en_corredor) continue;
+            const dist = Math.hypot(cand.lat - last.lat, cand.lon - last.lon);
+            if (dist < 0.018) {
+              const score = cand.urgencia / (0.003 + dist);
+              if (score > bestScore) {
+                bestScore = score;
+                bestNext = cand;
+              }
+            }
+          }
+          if (!bestNext) break;
+          bestNext.en_corredor = true;
+          corridorHexes.push(bestNext);
+        }
+      }
+
+      return { corridorHexes, stepKm };
+    }
+
+    function getColorForCell(c) {
+      const isFalsoVerde = (c.ndvi >= 0.28 && c.arbol_pct < 10 && !c.es_parque);
+
+      if (state.layer === 'urgencia') {
+        const u = c.urgencia;
+        if (u >= 0.72) return '#d9482b';
+        if (u >= 0.60) return '#e67e22';
+        if (u >= 0.48) return '#f0b429';
+        if (u >= 0.36) return '#52b788';
+        return '#2d6a4f';
+      }
+      if (state.layer === 'lst') {
+        const t = c.lst_c;
+        if (t >= 38.5) return '#c0392b';
+        if (t >= 36.8) return '#e67e22';
+        if (t >= 35.0) return '#f39c12';
+        if (t >= 33.5) return '#5dade2';
+        return '#2874a6';
+      }
+      if (state.layer === 'arbol') {
+        const a = c.arbol_pct;
+        if (a >= 25) return '#1b7f4b';
+        if (a >= 15) return '#40916c';
+        if (a >= 8) return '#74c69d';
+        if (a >= 5) return '#e9c46a';
+        return '#e76f51';
+      }
+      if (state.layer === 'falso_verde') {
+        return isFalsoVerde ? '#e67e22' : '#dfe6e9';
+      }
+      if (state.layer === 'vivo') {
+        if (c.confianza === 'baja' && state.confianzaMode !== 'todas') return '#cbd5e1';
+        if (c.temp_aire_c >= 33.0) return '#d9482b';
+        if (c.temp_aire_c >= 31.8) return '#e67e22';
+        if (c.temp_aire_c >= 30.8) return '#f0b429';
+        return '#3498db';
+      }
+      if (state.layer === 'social') {
+        if (c.social >= 0.75) return '#0071e3';
+        if (c.social >= 0.55) return '#4da3ff';
+        if (c.social >= 0.38) return '#8cc4ff';
+        return '#cbd5e1';
+      }
+      return '#1b7f4b';
+    }
+
+    function updateLegend() {
+      const titleEl = document.getElementById('legend-layer-name');
+      const unitEl = document.getElementById('legend-unit');
+      const gradEl = document.getElementById('legend-gradient');
+      const labelsEl = document.getElementById('legend-scale-labels');
+
+      const configs = {
+        urgencia: {
+          title: 'Índice de Urgencia',
+          unit: '0,0 – 1,0',
+          grad: 'linear-gradient(90deg, #2d6a4f 0%, #52b788 30%, #f0b429 60%, #d9482b 100%)',
+          labels: ['Baja (0,25)', 'Media (0,55)', 'Alta (0,80+)']
+        },
+        lst: {
+          title: 'Temperatura Superficial',
+          unit: '°C Verano',
+          grad: 'linear-gradient(90deg, #2874a6 0%, #5dade2 32%, #f39c12 66%, #c0392b 100%)',
+          labels: ['31 °C', '35,5 °C', '40,5 °C']
+        },
+        arbol: {
+          title: 'Cobertura Arbórea',
+          unit: '% Sombra',
+          grad: 'linear-gradient(90deg, #e76f51 0%, #e9c46a 32%, #74c69d 65%, #1b7f4b 100%)',
+          labels: ['< 5 %', '15 %', '> 25 %']
+        },
+        falso_verde: {
+          title: 'Falso Verde (Pasto sin Sombra)',
+          unit: 'NDVI vs. Árboles',
+          grad: 'linear-gradient(90deg, #dfe6e9 0%, #dfe6e9 48%, #e67e22 52%, #d35400 100%)',
+          labels: ['Sombra normal', 'NDVI ≥ 0,3 y Árbol < 10 %']
+        },
+        vivo: {
+          title: 'Temperatura del Aire en Vivo',
+          unit: '°C Estaciones',
+          grad: 'linear-gradient(90deg, #3498db 0%, #f0b429 50%, #d9482b 100%)',
+          labels: ['29,8 °C', '31,8 °C', '33,9 °C']
+        },
+        social: {
+          title: 'Acceso a Equipamiento Social',
+          unit: 'Salud · Educación · Metro',
+          grad: 'linear-gradient(90deg, #cbd5e1 0%, #4da3ff 50%, #0071e3 100%)',
+          labels: ['Lejos', 'Medio', 'Cercano (< 500 m)']
+        }
+      };
+
+      const cfg = configs[state.layer];
+      titleEl.textContent = cfg.title;
+      unitEl.textContent = cfg.unit;
+      gradEl.style.background = cfg.grad;
+      labelsEl.innerHTML = cfg.labels.map(l => `<span>${l}</span>`).join('');
+    }
+
+    function inspectHex(c) {
+      document.getElementById('insp-comuna').textContent = c.comuna;
+      document.getElementById('insp-lst').textContent = `${c.lst_c.toFixed(1).replace('.', ',')} °C`;
+      document.getElementById('insp-u').textContent = c.urgencia.toFixed(2).replace('.', ',');
+      document.getElementById('insp-arbol').textContent = `${c.arbol_pct.toFixed(1).replace('.', ',')} %`;
+      document.getElementById('insp-ndvi').textContent = `${c.pasto_pct.toFixed(1).replace('.', ',')}% · ${c.ndvi.toFixed(2).replace('.', ',')}`;
+      document.getElementById('insp-pob').textContent = c.poblacion.toLocaleString('es-CL');
+      document.getElementById('insp-social').textContent = `${c.metro_m} m`;
+      document.getElementById('insp-vivo').textContent = `${c.temp_aire_c.toString().replace('.', ',')} °C`;
+
+      const estadoEl = document.getElementById('insp-estado');
+      if (c.en_corredor) {
+        estadoEl.textContent = 'En Corredor';
+        estadoEl.style.color = '#1b7f4b';
+      } else if (c.es_parque) {
+        estadoEl.textContent = 'Parque';
+        estadoEl.style.color = '#1b7f4b';
+      } else if (c.ndvi >= 0.28 && c.arbol_pct < 10) {
+        estadoEl.textContent = 'Falso Verde';
+        estadoEl.style.color = '#d9822b';
+      } else {
+        estadoEl.textContent = 'Residencial';
+        estadoEl.style.color = '#1d1d1f';
+      }
+    }
+
+    function renderDashboard() {
+      hexLayerGroup.clearLayers();
+      corridorLineGroup.clearLayers();
+      sensorsLayerGroup.clearLayers();
+
+      const filtered = ALL_HEX_CELLS.filter(c => {
+        if (state.comuna !== 'ALL') {
+          if (c.comuna !== state.comuna) return false;
+        } else {
+          if (state.scope === 'demo' && !c.demo) return false;
+          if (state.scope === 'piloto' && !c.piloto) return false;
+          if (state.scope === 'criticas' && !c.crit) return false;
+        }
+
+        if (state.excludePrecordillera && c.precordillera) return false;
+        if (state.excludeLowPop && c.baja_pob) return false;
+        if (c.lst_c < state.minLst) return false;
+        if (c.arbol_pct > state.maxTree) return false;
+
+        const isFalso = (c.ndvi >= 0.28 && c.arbol_pct < 10 && !c.es_parque);
+        if (state.onlyFalsoVerde && !isFalso) return false;
+
+        return true;
+      });
+
+      const { corridorHexes, stepKm } = computeUrgencyAndCorridor(filtered);
+      const hexRadius = state.res === 9 ? 0.0028 : (state.res === 8 ? 0.0042 : 0.0062);
+
+      filtered.forEach(c => {
+        const coords = createHexPolygonCoords(c.lat, c.lon, hexRadius);
+        const fillColor = getColorForCell(c);
+        const isCorr = state.showCorridor && c.en_corredor;
+        const isPark = state.showParks && c.es_parque;
+        const isFalso = (c.ndvi >= 0.28 && c.arbol_pct < 10 && !c.es_parque);
+
+        const poly = L.polygon(coords, {
+          color: isCorr ? '#1b7f4b' : (isPark ? '#2d6a4f' : 'rgba(255, 255, 255, 0.7)'),
+          weight: isCorr ? 2.5 : (isPark ? 1.6 : 0.8),
+          fillColor: isPark && state.layer !== 'lst' ? '#2d6a4f' : fillColor,
+          fillOpacity: isCorr ? 0.82 : (state.layer === 'falso_verde' && !isFalso ? 0.25 : 0.65)
+        });
+
+        poly.on('mouseover', () => {
+          poly.setStyle({ weight: 2.5, color: '#1d1d1f' });
+          inspectHex(c);
+        });
+
+        poly.on('mouseout', () => {
+          poly.setStyle({
+            color: isCorr ? '#1b7f4b' : (isPark ? '#2d6a4f' : 'rgba(255, 255, 255, 0.7)'),
+            weight: isCorr ? 2.5 : (isPark ? 1.6 : 0.8)
+          });
+        });
+
+        poly.on('click', () => {
+          inspectHex(c);
+          poly.bindPopup(`
+            <div style="min-width:170px;line-height:1.55;">
+              <div style="font-weight:600;color:#1d1d1f;margin-bottom:3px;">${c.comuna}</div>
+              <div style="font-size:12px;color:#6e6e73;">
+                Temperatura: <b style="color:#1d1d1f;">${c.lst_c} °C</b><br>
+                Árboles: <b style="color:#1d1d1f;">${c.arbol_pct} %</b><br>
+                Urgencia: <b style="color:#1d1d1f;">${c.urgencia.toFixed(2)}</b><br>
+                Población: <b style="color:#1d1d1f;">${c.poblacion} hab</b>
+              </div>
+            </div>
+          `).openPopup();
+        });
+
+        hexLayerGroup.addLayer(poly);
+      });
+
+      if (state.showCorridor && corridorHexes.length > 1) {
+        const latlngs = corridorHexes.map(c => [c.lat, c.lon]);
+        L.polyline(latlngs, {
+          color: '#1b7f4b',
+          weight: 3.5,
+          opacity: 0.9
+        }).addTo(corridorLineGroup);
+      }
+
+      if (state.showSensors) {
+        LIVE_STATIONS.forEach(st => {
+          const marker = L.circleMarker([st.lat, st.lon], {
+            radius: 6,
+            color: '#ffffff',
+            weight: 2,
+            fillColor: '#0071e3',
+            fillOpacity: 0.95
+          });
+          marker.bindTooltip(
+            `<b>${st.name}</b><br>${st.temp} °C · Humedad ${st.hum}%`,
+            { direction: 'top' }
+          );
+          sensorsLayerGroup.addLayer(marker);
+        });
+      }
+
+      document.getElementById('active-hex-count').textContent = `${filtered.length} celdas`;
+      if (filtered.length > 0) {
+        const meanLst = filtered.reduce((acc, c) => acc + c.lst_c, 0) / filtered.length;
+        const meanTree = filtered.reduce((acc, c) => acc + c.arbol_pct, 0) / filtered.length;
+        const meanUrg = filtered.reduce((acc, c) => acc + c.urgencia, 0) / filtered.length;
+        const falsoCount = filtered.filter(c => c.ndvi >= 0.28 && c.arbol_pct < 10 && !c.es_parque).length;
+
+        document.getElementById('kpi-lst').textContent = `${meanLst.toFixed(1).replace('.', ',')} °C`;
+        document.getElementById('kpi-tree').textContent = `${meanTree.toFixed(1).replace('.', ',')} %`;
+        document.getElementById('kpi-urg').textContent = meanUrg.toFixed(2).replace('.', ',');
+        document.getElementById('kpi-falso').textContent = `${falsoCount} celdas`;
+
+        inspectHex(corridorHexes[0] || filtered[0]);
+      }
+
+      if (corridorHexes.length > 0) {
+        const kmLen = (corridorHexes.length * stepKm).toFixed(1).replace('.', ',');
+        const popCov = corridorHexes.reduce((a, c) => a + c.poblacion, 0);
+        const urgCov = corridorHexes.reduce((a, c) => a + c.urgencia, 0) / corridorHexes.length;
+        const popRand = Math.round(popCov * 0.76);
+        const urgRand = +(urgCov * 0.85).toFixed(2);
+
+        document.getElementById('corridor-km-badge').textContent = `${kmLen} km · ${corridorHexes.length} tramos`;
+        document.getElementById('corr-pop').textContent = popCov.toLocaleString('es-CL');
+        document.getElementById('corr-pop-vs').textContent = `+${Math.round(((popCov - popRand) / Math.max(1, popRand)) * 100)} % vs azar`;
+        document.getElementById('corr-urg').textContent = urgCov.toFixed(2).replace('.', ',');
+        document.getElementById('corr-urg-vs').textContent = `+${Math.round(((urgCov - urgRand) / Math.max(0.01, urgRand)) * 100)} % vs azar`;
+      }
+
+      updateLegend();
+      renderComunaComparison(filtered);
+    }
+
+    function renderComunaComparison(filteredCells) {
+      const container = document.getElementById('comuna-bars-container');
+      const byComuna = {};
+      filteredCells.forEach(c => {
+        if (!byComuna[c.comuna]) byComuna[c.comuna] = { count: 0, lst: 0, arbol: 0, urg: 0 };
+        byComuna[c.comuna].count++;
+        byComuna[c.comuna].lst += c.lst_c;
+        byComuna[c.comuna].arbol += c.arbol_pct;
+        byComuna[c.comuna].urg += c.urgencia;
+      });
+
+      const rows = Object.entries(byComuna)
+        .map(([name, d]) => ({
+          name,
+          lst: d.lst / d.count,
+          arbol: d.arbol / d.count,
+          urg: d.urg / d.count
+        }))
+        .sort((a, b) => b.urg - a.urg)
+        .slice(0, 7);
+
+      container.innerHTML = rows.map(r => {
+        const heatPct = Math.min(100, Math.max(15, ((r.lst - 30) / 11) * 100));
+        const treePct = Math.min(100, Math.max(6, r.arbol * 2.5));
+        return `
+          <div class="comuna-row">
+            <div class="comuna-row-head">
+              <span>${r.name}</span>
+              <span class="comuna-row-meta">${r.lst.toFixed(1).replace('.', ',')} °C · ${r.arbol.toFixed(1).replace('.', ',')}%</span>
+            </div>
+            <div class="track">
+              <div class="fill" style="width:${heatPct * 0.65}%;background:#e67e22;"></div>
+              <div class="fill" style="width:${treePct * 0.35}%;background:#1b7f4b;"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /* ------------------------------------------------------------------------
+       UI EVENT LISTENERS
+       ------------------------------------------------------------------------ */
+    document.querySelectorAll('.layer-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.layer-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.layer = btn.dataset.layer;
+        renderDashboard();
+      });
+    });
+
+    document.querySelectorAll('#scope-presets .preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#scope-presets .preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.scope = btn.dataset.scope;
+        state.comuna = 'ALL';
+        comunaSelect.value = 'ALL';
+        document.getElementById('selected-comuna-label').textContent = 'Todas';
+
+        if (state.scope === 'demo') map.flyTo([-33.426, -70.675], 12, { duration: 0.7 });
+        else if (state.scope === 'piloto') map.flyTo([-33.428, -70.645], 12, { duration: 0.7 });
+        else map.flyTo([-33.475, -70.655], 11, { duration: 0.8 });
+
+        renderDashboard();
+      });
+    });
+
+    comunaSelect.addEventListener('change', (e) => {
+      state.comuna = e.target.value;
+      document.getElementById('selected-comuna-label').textContent = state.comuna === 'ALL' ? 'Todas' : state.comuna;
+      if (state.comuna !== 'ALL') {
+        const found = COMUNAS_DATA.find(c => c.name === state.comuna);
+        if (found) map.flyTo([found.lat, found.lon], 13, { duration: 0.7 });
+      }
+      renderDashboard();
+    });
+
+    document.querySelectorAll('#res-control .seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#res-control .seg-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.res = parseInt(btn.dataset.res, 10);
+        const labels = { 9: 'Cuadra (174 m)', 8: 'Barrio (461 m)', 7: 'Sector (1,2 km)' };
+        document.getElementById('res-label').textContent = labels[state.res];
+        renderDashboard();
+      });
+    });
+
+    document.getElementById('chk-corridor').addEventListener('change', e => { state.showCorridor = e.target.checked; renderDashboard(); });
+    document.getElementById('chk-parks').addEventListener('change', e => { state.showParks = e.target.checked; renderDashboard(); });
+    document.getElementById('chk-precordillera').addEventListener('change', e => { state.excludePrecordillera = e.target.checked; renderDashboard(); });
+    document.getElementById('chk-lowpop').addEventListener('change', e => { state.excludeLowPop = e.target.checked; renderDashboard(); });
+    document.getElementById('chk-falso-verde').addEventListener('change', e => { state.onlyFalsoVerde = e.target.checked; renderDashboard(); });
+    document.getElementById('chk-sensors').addEventListener('change', e => { state.showSensors = e.target.checked; renderDashboard(); });
+
+    document.getElementById('slider-min-lst').addEventListener('input', e => {
+      state.minLst = parseFloat(e.target.value);
+      document.getElementById('val-min-lst').textContent = `${state.minLst.toFixed(1).replace('.', ',')} °C`;
+      renderDashboard();
+    });
+
+    document.getElementById('slider-max-tree').addEventListener('input', e => {
+      state.maxTree = parseInt(e.target.value, 10);
+      document.getElementById('val-max-tree').textContent = `${state.maxTree} %`;
+      renderDashboard();
+    });
+
+    document.getElementById('select-confianza').addEventListener('change', e => {
+      state.confianzaMode = e.target.value;
+      const mapLbl = { alta_media: 'Alta y Media', alta: 'Solo Alta', todas: 'Todas' };
+      document.getElementById('val-confianza').textContent = mapLbl[state.confianzaMode];
+      renderDashboard();
+    });
+
+    document.getElementById('slider-budget').addEventListener('input', e => {
+      state.budgetKm = parseFloat(e.target.value);
+      document.getElementById('val-budget').textContent = `${state.budgetKm.toFixed(1).replace('.', ',')} km`;
+      renderDashboard();
+    });
+
+    document.getElementById('slider-w-calor').addEventListener('input', e => {
+      state.wCalor = parseFloat(e.target.value);
+      document.getElementById('val-w-calor').textContent = `${Math.round(state.wCalor * 100)} %`;
+      renderDashboard();
+    });
+
+    document.getElementById('slider-w-arbol').addEventListener('input', e => {
+      state.wArbol = parseFloat(e.target.value);
+      document.getElementById('val-w-arbol').textContent = `${Math.round(state.wArbol * 100)} %`;
+      renderDashboard();
+    });
+
+    document.getElementById('slider-w-personas').addEventListener('input', e => {
+      state.wPersonas = parseFloat(e.target.value);
+      document.getElementById('val-w-personas').textContent = `${Math.round(state.wPersonas * 100)} %`;
+      renderDashboard();
+    });
+
+    document.querySelectorAll('#basemap-switcher .basemap-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#basemap-switcher .basemap-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const style = btn.dataset.style;
+        Object.values(BASEMAPS).forEach(layer => map.removeLayer(layer));
+        BASEMAPS[style].addTo(map);
+      });
+    });
+
+    document.getElementById('btn-reset-filters').addEventListener('click', () => {
+      state.scope = 'demo';
+      state.comuna = 'ALL';
+      state.res = 9;
+      state.showCorridor = true;
+      state.showParks = true;
+      state.excludePrecordillera = true;
+      state.excludeLowPop = true;
+      state.onlyFalsoVerde = false;
+      state.showSensors = true;
+      state.minLst = 30.0;
+      state.maxTree = 100;
+      state.confianzaMode = 'alta_media';
+      state.budgetKm = 3.0;
+      state.wCalor = 0.40;
+      state.wArbol = 0.40;
+      state.wPersonas = 0.20;
+
+      comunaSelect.value = 'ALL';
+      document.getElementById('chk-corridor').checked = true;
+      document.getElementById('chk-parks').checked = true;
+      document.getElementById('chk-precordillera').checked = true;
+      document.getElementById('chk-lowpop').checked = true;
+      document.getElementById('chk-falso-verde').checked = false;
+      document.getElementById('chk-sensors').checked = true;
+      document.getElementById('slider-min-lst').value = 30;
+      document.getElementById('val-min-lst').textContent = '30,0 °C';
+      document.getElementById('slider-max-tree').value = 100;
+      document.getElementById('val-max-tree').textContent = '100 %';
+      document.getElementById('slider-budget').value = 3.0;
+      document.getElementById('val-budget').textContent = '3,0 km';
+      document.getElementById('slider-w-calor').value = 0.40;
+      document.getElementById('val-w-calor').textContent = '40 %';
+      document.getElementById('slider-w-arbol').value = 0.40;
+      document.getElementById('val-w-arbol').textContent = '40 %';
+      document.getElementById('slider-w-personas').value = 0.20;
+      document.getElementById('val-w-personas').textContent = '20 %';
+
+      renderDashboard();
+    });
+
+    renderDashboard();
+  </script>
+</body>
+</html>
