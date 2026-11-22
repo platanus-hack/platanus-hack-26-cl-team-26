@@ -6,7 +6,7 @@ import MapaHex, { type Capa, type Foco } from "./MapaHex";
 import Cifra from "./Cifra";
 import FiltroComunas from "./FiltroComunas";
 import { formato, useRevela, useVisible } from "./movimiento";
-import { detalleHex, historico, useTerreno, type Escucha, type Estado, type HexCols, type InfoComunas } from "@/lib/terreno";
+import { detalleHex, historico, useTerreno, type Escucha, type Especie, type Estado, type HexCols, type InfoComunas } from "@/lib/terreno";
 
 type Serie = { meses: string[]; escenas_landsat: number; escenas_sentinel2: number; media_mes: (number | null)[]; lst_fecha_ultima: string };
 
@@ -37,10 +37,27 @@ const ROJO = ["#F6ECDD", "#EDB592", "#D2603F", "#96261C"];
 const NARANJO = ["#F6EFD2", "#EBD488", "#DE9A48", "#B95A24"];   // de mostaza a terracota
 // Bajo esto una cuadra no es ciudad (igual que MIN_PERSONAS_HEX del optimizador, que tampoco traza por ahí).
 const SIN_GENTE = 50;
-// Qué mide la escala de color del mapa de Planificar en cada perfil.
-const ESCALA_PERFIL: Record<string, string> = {
-  humanos: "Urgencia", fauna_aves: "Dificultad de cruce para las aves", fauna_abejas: "Dificultad de cruce para las abejas",
-  mixto: "Urgencia y dificultad de cruce para la fauna",
+// Para quién se traza el corredor. Se puede marcar más de una especie: el criterio promedia, con el mismo peso, lo
+// que rige a cada una (ecologia.py). La clave junta las elegidas en este orden: humanos, aves, abejas.
+const ESPECIES: [Especie, string][] = [["humanos", "Humanos"], ["aves", "Aves"], ["abejas", "Abejas"]];
+// Qué mide la escala de color del mapa de Planificar en cada combinación.
+const ESCALA: Record<string, string> = {
+  humanos: "Urgencia",
+  aves: "Dificultad de cruce para las aves",
+  abejas: "Dificultad de cruce para las abejas",
+  "humanos+aves": "Urgencia y dificultad para las aves",
+  "humanos+abejas": "Urgencia y dificultad para las abejas",
+  "aves+abejas": "Dificultad de cruce para aves y abejas",
+  "humanos+aves+abejas": "Urgencia y dificultad para aves y abejas",
+};
+const CRITERIO: Record<string, string> = {
+  humanos: "Sombra para las personas: va por las cuadras con más calor, menos árboles y más gente.",
+  aves: "Eje continuo para las aves: une parques por donde ya hay más copa y menos cemento y pasto abierto.",
+  abejas: "Mini islas para las abejas: puntos floridos, una cuadra por medio, que con el mismo presupuesto unen más parques.",
+  "humanos+aves": "Personas y aves: un corredor continuo que pesa por igual la urgencia de las personas y lo difícil que es el cruce para un ave.",
+  "humanos+abejas": "Personas y abejas: corredor de sombra que pesa por igual urgencia y cemento, con una mini isla florida cada tres cuadras.",
+  "aves+abejas": "Aves y abejas: corredor arbolado continuo que evita el cemento, con una mini isla florida cada tres cuadras.",
+  "humanos+aves+abejas": "Las tres: urgencia de las personas, copa para las aves y flores para las abejas pesan un tercio cada una; corredor continuo con mini islas.",
 };
 const ISLA = "#4F6E31";   // el oliva del logo
 const MORADO = ["#F3ECE6", "#D3BBD6", "#9A6BA8", "#5C2F78"];   // densidad de personas
@@ -113,7 +130,7 @@ export default function Pagina({ serie }: { serie: Serie }) {
     <main className="b">
       <header className={`b-pad${bajo ? " bajo" : ""}`}><div className="b-in">
         <a className="marca" href="#inicio"><img src="/viridis.svg" alt="" width={34} height={34} />VIRIDIS</a>
-        <nav aria-label="Secciones"><a href="#ahora">Datos clave</a><a href="#planificar">Planificar</a><a href="#historico">Histórico</a><a href="#fuentes">Fuentes</a></nav>
+        <nav aria-label="Secciones"><a href="#ahora">Datos clave</a><a href="#planificar">Planificar</a><a href="#historico">Histórico</a><a href="/fuentes">Fuentes</a></nav>
       </div></header>
 
       <section className="b-hero b-pad" id="inicio">
@@ -133,15 +150,10 @@ export default function Pagina({ serie }: { serie: Serie }) {
 
       {t.info && t.estado ? <Secciones {...t} info={t.info} estado={t.estado} serie={serie} /> : <Esqueletos error={t.error} />}
 
-      <footer className="b-pad" id="fuentes"><div className="b-in">
-        <h2>De dónde salen <em>los datos</em></h2>
-        <p><b>Calor del suelo.</b> Landsat 8 y 9, Collection 2 Level 2 (USGS), vía Microsoft Planetary Computer. Serie mensual: {serie.escenas_landsat} escenas Landsat y {serie.escenas_sentinel2} Sentinel-2, de enero de 2023 a noviembre de 2026.</p>
-        <p><b>Copa de árboles.</b> Modelo propio sobre Sentinel-2 de febrero de 2026, entrenado con la altura de copa de Meta y WRI (r = 0,92 por cuadra en comunas que el modelo no vio).</p>
-        <p><b>Personas.</b> Censo 2024 del INE por manzana, más cercanía a colegios, salud, metro y paraderos de OpenStreetMap. No es ingreso.</p>
-        <p><b>Aire en vivo y terreno.</b> DMC, SINCA y Sensor.Community por barrio (H3 resolución 7). Fotos y videos con GPS desde el teléfono (<code>/captura</code>, con la clave del equipo), validados por Claude; la foto complementa al satélite, no lo reemplaza. Mapa base: CARTO y OpenStreetMap.</p>
-        <p><b>Aves y polinizadores.</b> Aves por su canto con BirdNET (K. Lisa Yang Center for Conservation Bioacoustics, Cornell; modelo CC BY-NC-SA 4.0), filtradas por lugar y semana del año, grabando quieto o caminando con el video; cada escucha mide el ruido del tráfico, y sin aves con ruido alto queda «no concluyente». Aves, abejas, mariposas y flores vistas en las fotos, según Claude. No detectar fauna no significa que no haya.</p>
-        <p><b>Fondo del titular.</b> Sentinel-2 L2A del 6 de febrero de 2026 (Copernicus, vía Microsoft Planetary Computer), 16 m por píxel: la vegetación en verde según su NDVI y lo construido en gris.</p>
-        <p className="ver-fuentes"><a href="/fuentes">Ver todas las fuentes, con sus enlaces oficiales →</a></p>
+      {/* Las fuentes y sus notas de método viven en /fuentes; aquí solo queda el enlace. */}
+      <footer className="b-pad pie"><div className="b-in">
+        <span className="marca"><img src="/viridis.svg" alt="" width={26} height={26} />VIRIDIS</span>
+        <a href="/fuentes">Fuentes</a>
       </div></footer>
     </main>
   );
@@ -446,6 +458,14 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const anillosCorredor = () => [...enCorredor.map((i) => anillosH[i]), ...fuera.map((f) => anillo(f.h))];
   // Conectar con parques e islas verdes de las comunas vecinas (no aplica con todo Santiago elegido).
   const hayTerreno = estado.totales.cuentan + estado.totales.escuchas > 0;
+  const especies: Especie[] = p.especies?.length ? p.especies : ["humanos"];
+  const claveEspecies = ESPECIES.map(([id]) => id).filter((id) => especies.includes(id)).join("+");
+  const soloHumanos = claveEspecies === "humanos";
+  // Marcar o desmarcar una especie; siempre queda al menos una.
+  function alternarEspecie(id: Especie) {
+    const nuevas = especies.includes(id) ? especies.filter((e) => e !== id) : [...especies, id];
+    if (nuevas.length) cambiar({ especies: nuevas });
+  }
   const vecinasOn = !!p.vecinas;
   const hayVecinas = !nada;
   const kmSugerido = a0km(estado.ahora.km_min);
@@ -571,19 +591,16 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       <Seccion id="planificar">
         <div className="b-cab escalon">
           <h2>Planificar <em>el corredor</em></h2>
-          <div className="grupo" role="group" aria-label="Para quién se traza el corredor">
-            {([
-              ["humanos", "Humanos (Sombra)"],
-              ["fauna_aves", "Aves (Eje continuo)"],
-              ["fauna_abejas", "Abejas (Mini islas)"],
-              ["mixto", "Mixto (Ambos)"],
-            ] as const).map(([id, label]) => (
-              <button key={id} type="button" className="pill" disabled={ocupado}
-                aria-pressed={(p.perfil ?? "humanos") === id} onClick={() => cambiar({ perfil: id })}>
+          <div className="grupo especies" role="group" aria-label="Para quién se traza el corredor: se puede marcar más de una">
+            {ESPECIES.map(([id, label]) => (
+              <button key={id} type="button" className="pill" disabled={ocupado} aria-pressed={especies.includes(id)}
+                title={especies.length === 1 && especies[0] === id ? "Tiene que quedar al menos una" : undefined}
+                onClick={() => alternarEspecie(id)}>
                 {label}
               </button>
             ))}
           </div>
+          <p className="criterio" aria-live="polite">{CRITERIO[claveEspecies]}</p>
         </div>
         <div className={`b-controles escalon${planListo ? "" : " espera"}`} style={est(2)}>
           {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"], ["bio", "Biodiversidad (terreno)"]] as const).map(([k, nombre]) => (
@@ -624,11 +641,11 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             )}
             <div className="leyenda">
               {/* Solo lo que el mapa dibuja en este momento, según el perfil y si hay corredor o capturas. */}
-              {planListo && <span><i className="barra" style={{ background: grad(ROJO) }} />{ESCALA_PERFIL[p.perfil ?? "humanos"] ?? "Urgencia"}</span>}
-              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: "#22301A" }} />{(p.perfil ?? "humanos") === "fauna_abejas" ? "Ruta entre mini islas" : "Corredor"}</span>}
+              {planListo && <span><i className="barra" style={{ background: grad(ROJO) }} />{ESCALA[claveEspecies]}</span>}
+              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: "#22301A" }} />{claveEspecies === "abejas" ? "Ruta entre mini islas" : "Corredor"}</span>}
               {verCorredor && (a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: "#C026D3" }} />Mini isla</span>}
               <span><i className="cuadro" style={{ background: ISLA }} />Islas verdes: cerros y parques</span>
-              {verCorredor && hayTerreno && (p.perfil ?? "humanos") === "humanos" && <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Corredor sin los datos de terreno</span>}
+              {verCorredor && hayTerreno && soloHumanos && <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Corredor sin los datos de terreno</span>}
               {hayTerreno && <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno: un clic para ver sus fotos y aves</span>}
             </div>
           </div>
@@ -652,7 +669,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
               <>
                 <div className="cifra escalon" style={est(4)}>
                   <b><Cifra valor={a.personas_cubiertas} /></b>
-                  <span>personas viven junto al corredor.{(p.perfil ?? "humanos") === "humanos" && <> Con un trazado al azar del mismo largo serían <strong className="num"><Cifra valor={a.personas_azar} /></strong>.</>}</span>
+                  <span>personas viven junto al corredor.{soloHumanos && <> Con un trazado al azar del mismo largo serían <strong className="num"><Cifra valor={a.personas_azar} /></strong>.</>}</span>
                 </div>
                 <div className="cifra escalon" style={est(5)}>
                   <b><Cifra valor={a.km} dec={2} sufijo={" km"} /></b>
@@ -661,7 +678,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
                 {(a.checkpoints ?? 0) > 0 && (
                   <div className="cifra escalon" style={est(5)}>
                     <b><Cifra valor={a.checkpoints ?? 0} /></b>
-                    <span>mini islas (checkpoints) conectando {a.parques_conectados ?? 0} parques separados para aves y abejas.</span>
+                    <span>mini islas floridas para abejas{claveEspecies === "abejas" ? `, que conectan ${a.parques_conectados ?? 0} parques` : " sobre el corredor"}.</span>
                   </div>
                 )}
               </>

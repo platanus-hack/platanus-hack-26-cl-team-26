@@ -4,9 +4,11 @@
 // el corredor con y sin capturas en terreno, y la serie histórica.
 import { useCallback, useEffect, useRef, useState } from "react";
 
+// Para quién se traza el corredor: una o más.
+export type Especie = "humanos" | "aves" | "abejas";
 export type Parametros = {
   comunas: string[]; distritos: string[]; zona: number; km: number; w_calor: number; w_arbol: number; w_personas: number;
-  w_bio?: number; vecinas?: boolean; perfil?: string; birdnet?: string;
+  w_bio?: number; vecinas?: boolean; perfil?: string; especies?: Especie[]; birdnet?: string;
 };
 export type InfoComunas = {
   comunas: string[]; vecinas: Record<string, string[]>; geo: Record<string, number[][][][]>;
@@ -50,7 +52,7 @@ export type DetalleHex = {
   h3_index: string; comuna: string | null; n_fotos: number; n_escuchas: number; fotos: Captura[]; escuchas: Escucha[];
   especies?: string[]; polinizadores?: number; flores?: number | null;
 };
-export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number; w_bio: number; vecinas: boolean; perfil: string }>;
+export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number; w_bio: number; vecinas: boolean; perfil: string; especies: Especie[] }>;
 
 const SONDEO_MS = 3000;
 // Sesión de este navegador en el servidor: área, presupuesto y pesos son solo suyos y se pierden al recargar.

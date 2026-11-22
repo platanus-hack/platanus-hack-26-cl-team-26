@@ -692,3 +692,37 @@ def test_perfiles_de_corredor():
         assert c.get("/api/estado").json()["parametros"]["perfil"] == "humanos"   # la sesión compartida no cambió
         assert c.post(f"/api/seleccion?s={s}", json={"perfil": "humanos"}).status_code == 200
         assert c.get(f"/api/estado?s={s}").json()["ahora"]["personas_cubiertas"] == base["ahora"]["personas_cubiertas"]
+
+
+def test_especies_combinadas():
+    """Se puede elegir más de una especie: el criterio promedia el de cada una y la forma sale de quiénes son."""
+    from fastapi.testclient import TestClient
+    from ecologia import criterio_por_especies
+    from terreno.servidor import crear_app
+
+    df = pd.read_parquet(GS)
+    sub = df[df["comuna"].isin(["Santiago", "Providencia", "Ñuñoa"])]
+    solo = {e: criterio_por_especies(sub, [e]) for e in ("humanos", "aves", "abejas")}
+    for combo in (["humanos", "abejas"], ["humanos", "aves"], ["aves", "abejas"], ["humanos", "aves", "abejas"]):
+        prioridad, costo, _, _ = criterio_por_especies(sub, combo)
+        assert np.allclose(prioridad, sum(solo[e][0] for e in combo) / len(combo))   # promedio simple de prioridades
+        assert np.allclose(costo, (sum(solo[e][1] for e in combo) / len(combo)).clip(lower=0.01))
+        assert prioridad.between(0, 1).all()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(GS, Path(tmp), usar_claude=False, comunas=["Santiago", "Providencia", "Ñuñoa"]))
+        s = "navegadorESPE"
+        assert c.get(f"/api/estado?s={s}").json()["parametros"]["especies"] == ["humanos"]
+        for combo, islas in ((["aves", "humanos"], False), (["humanos", "abejas"], True), (["abejas", "aves"], True),
+                             (["humanos", "aves", "abejas"], True)):
+            assert c.post(f"/api/seleccion?s={s}", json={"especies": combo}).status_code == 200
+            e = c.get(f"/api/estado?s={s}").json()
+            assert e["parametros"]["especies"] == [x for x in ("humanos", "aves", "abejas") if x in combo]   # orden fijo
+            assert e["ahora"]["hexes"] > 0 and e["ahora"]["km"] <= 3.0 + 1e-6      # corredor continuo dentro del presupuesto
+            assert (e["ahora"]["checkpoints"] > 0) == islas                         # mini islas solo con abejas
+            assert all(a or not cp for a, cp in zip(e["hex"]["ahora"], e["hex"]["checkpoint"]))   # las islas van sobre el corredor
+        assert c.post(f"/api/seleccion?s={s}", json={"especies": []}).status_code == 422
+        assert c.post(f"/api/seleccion?s={s}", json={"especies": ["gatos"]}).status_code == 422
+        # La forma antigua sigue funcionando: «mixto» equivale a las tres especies.
+        c.post(f"/api/seleccion?s={s}", json={"perfil": "mixto"})
+        assert c.get(f"/api/estado?s={s}").json()["parametros"]["especies"] == ["humanos", "aves", "abejas"]

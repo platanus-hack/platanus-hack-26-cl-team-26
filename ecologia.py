@@ -188,3 +188,82 @@ def resolver_corredor_por_perfil(
         "parques_conectados": len(parques_cubiertos),
         "resistencia_media": float(res_eco.iloc[sel].mean()) if sel else float(res_eco.mean()),
     }
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Varias especies a la vez. Cada especie aporta su propio criterio, ya llevado a la misma escala 0..1, y los
+# elegidos se promedian con el mismo peso:
+#   humanos: prioridad = urgencia (calor, falta de árboles y personas);  costo de paso = 0,05 / (0,05 + urgencia)
+#   aves:    prioridad = resistencia para aves normalizada (árbol fácil, pasto y cemento difíciles);  costo = resistencia / 100
+#   abejas:  prioridad = resistencia para abejas normalizada (pasto con flores fácil, cemento difícil); costo = resistencia / 100
+# La forma del resultado también sale de las especies: con humanos o aves hay un corredor continuo (sombra para
+# caminar, copa para volar de árbol en árbol); con abejas hay mini islas floridas. Con abejas y otra especie van
+# las dos cosas: el corredor y, cada tres cuadras, una mini isla en la más difícil de cruzar para una abeja.
+ESPECIES = ("humanos", "aves", "abejas")
+PERFIL_DE = {frozenset({"humanos"}): "humanos", frozenset({"aves"}): "fauna_aves", frozenset({"abejas"}): "fauna_abejas"}
+ESPECIES_DE = {"humanos": ("humanos",), "fauna_aves": ("aves",), "fauna_abejas": ("abejas",), "mixto": ESPECIES}
+
+
+def criterio_por_especies(df: pd.DataFrame, especies, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None):
+    """(prioridad, costo, urgencia humana, resistencia de abejas) para un conjunto de especies. Prioridad y costo
+    son el promedio simple de los de cada especie elegida, todos en 0..1."""
+    especies = [e for e in ESPECIES if e in set(especies)]
+    if not especies:
+        raise ValueError("Elige al menos una especie")
+    u_hum = urgencia(df, w_calor, w_arbol, w_personas, live)
+    res = {g: calcular_resistencia_ecologica(df, g) for g in ("aves", "abejas")}
+    prioridades, costos = [], []
+    for e in especies:
+        if e == "humanos":
+            prioridades.append(u_hum)
+            costos.append(0.05 / (0.05 + u_hum))
+        else:
+            prioridades.append(_norm(res[e]))
+            costos.append(res[e] / 100.0)
+    prioridad = (sum(prioridades) / len(especies)).rename("prioridad")
+    costo = (sum(costos) / len(especies)).clip(lower=0.01)
+    return prioridad, costo, u_hum, res["abejas"]
+
+
+def resolver_corredor_por_especies(df: pd.DataFrame, especies, budget_km: float = 3.0, w_calor: float = 0.4,
+                                   w_arbol: float = 0.4, w_personas: float = 0.2, live=None) -> dict:
+    """Corredor para una combinación de especies (dos o tres, o una de fauna). Mismo formato de salida que
+    resolver_corredor_por_perfil. Una sola especie usa el perfil de siempre."""
+    elegidas = frozenset(e for e in ESPECIES if e in set(especies))
+    if elegidas in PERFIL_DE:
+        return resolver_corredor_por_perfil(df, PERFIL_DE[elegidas], budget_km, w_calor, w_arbol, w_personas, live)
+    prioridad, costo, u_hum, res_abejas = criterio_por_especies(df, elegidas, w_calor, w_arbol, w_personas, live)
+    hexs = df["h3_index"].tolist()
+    parque, pob = df["es_parque"].to_numpy(), df["poblacion"].to_numpy()
+    idx = {h: i for i, h in enumerate(hexs)}
+    vec = [[idx[v] for v in h3.grid_disk(h, 1) if v != h and v in idx] for h in hexs]
+    dist, etiq, prev = _dijkstra(vec, np.where(parque, 0.0, costo.to_numpy()), parque)
+    tramos = _tramos(vec, dist, etiq, prev, parque, prioridad.to_numpy())
+    paso = math.sqrt(3) * h3.average_hexagon_edge_length(9, unit="km")
+    sel, usado, parques_cubiertos, tramos_sel = [], set(), set(), []
+    for k in _red_continua(tramos, paso, budget_km):
+        a, b, cam, _ = tramos[k]
+        nuevos = [i for i in cam if i not in usado]
+        usado.update(nuevos)
+        sel += nuevos
+        tramos_sel.append([hexs[i] for i in cam])
+        parques_cubiertos.update((a, b))
+    # Con abejas: una mini isla cada tres cuadras del corredor, en la de mayor resistencia para ellas.
+    islas = []
+    if "abejas" in elegidas:
+        r = res_abejas.to_numpy()
+        islas = [max(sel[k:k + 3], key=lambda i: r[i]) for k in range(0, len(sel), 3)]
+    return {
+        "perfil": "+".join(e for e in ESPECIES if e in elegidas),
+        "hexes_corredor": [hexs[i] for i in sel],
+        "hexes_checkpoints": [hexs[i] for i in islas],
+        "tramos": tramos_sel,
+        "length_km": len(sel) * paso,
+        "score_mapa": prioridad,
+        "urgencia_cubierta": float(u_hum.iloc[sel].mean()) if sel else 0.0,
+        "urgencia_azar": float(u_hum.mean()),
+        "personas_cubiertas": int(pob[sel].sum()) if sel else 0,
+        "personas_azar": 0,
+        "parques_conectados": len(parques_cubiertos),
+        "resistencia_media": float(prioridad.iloc[sel].mean() * 100) if sel else None,
+    }

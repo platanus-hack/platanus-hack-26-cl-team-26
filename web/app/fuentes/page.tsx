@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { Metadata } from "next";
 
 // Todas las fuentes de datos de Viridis, ordenadas por tema: qué es cada una, para qué se usa y su sitio oficial.
@@ -11,7 +13,7 @@ type Fuente = { nombre: string; quien: string; uso: string; url: string; enlace:
 const TEMAS: { id: string; titulo: string; acento: string; nota?: string; fuentes: Fuente[] }[] = [
   {
     id: "calor", titulo: "Calor", acento: "del suelo",
-    nota: "El mapa y el índice usan la escena de verano del 19 de febrero de 2026; el histórico, la serie mensual desde enero de 2023.",
+    nota: "El mapa y el índice usan la escena de verano del 19 de febrero de 2026. El histórico usa la serie mensual: {landsat} escenas Landsat y {sentinel} Sentinel-2, de enero de 2023 a noviembre de 2026.",
     fuentes: [
       { nombre: "Landsat 8 y 9, Collection 2 Level 2", quien: "USGS y NASA",
         uso: "Temperatura de la superficie a 30 m (banda térmica a 100 m). Es el calor de cada cuadra y la serie del histórico.",
@@ -23,7 +25,7 @@ const TEMAS: { id: string; titulo: string; acento: string; nota?: string; fuente
   },
   {
     id: "arboles", titulo: "Árboles", acento: "y vegetación",
-    nota: "El modelo de copa es propio: sigue al mapa de Meta con correlación 0,92 por cuadra en comunas que no vio al entrenar.",
+    nota: "El modelo de copa es propio, sobre Sentinel-2 de febrero de 2026: sigue al mapa de Meta con correlación 0,92 por cuadra en comunas que no vio al entrenar. El fondo del titular es la misma imagen del 6 de febrero de 2026 a 16 m por píxel, con la vegetación en verde según su NDVI y lo construido en gris.",
     fuentes: [
       { nombre: "Sentinel-2 L2A", quien: "ESA · Copernicus",
         uso: "Imagen de 10 m del 6 de febrero de 2026: entrada del modelo de copa, índice de vegetación (NDVI) y fondo del titular.",
@@ -38,7 +40,7 @@ const TEMAS: { id: string; titulo: string; acento: string; nota?: string; fuente
   },
   {
     id: "personas", titulo: "Personas", acento: "y servicios",
-    nota: "La capa de personas es 70 % habitantes de la cuadra y 30 % cercanía a servicios. No es ingreso.",
+    nota: "La capa de personas es 70 % habitantes de la cuadra y 30 % cercanía a colegios, salud, metro y paraderos. No es ingreso.",
     fuentes: [
       { nombre: "Censo de Población y Vivienda 2024", quien: "Instituto Nacional de Estadísticas (INE)",
         uso: "Habitantes por manzana, repartidos a cada cuadra según el área que comparten.",
@@ -50,7 +52,7 @@ const TEMAS: { id: string; titulo: string; acento: string; nota?: string; fuente
   },
   {
     id: "aire", titulo: "Aire", acento: "en vivo",
-    nota: "El aire entra al índice de calor solo donde hay al menos 5 barrios medidos con confianza alta o media, y pesa 30 % frente al suelo.",
+    nota: "Las lecturas se reparten por barrio (H3 resolución 7). El aire entra al índice de calor solo donde hay al menos 5 barrios medidos con confianza alta o media, y pesa 30 % frente al suelo.",
     fuentes: [
       { nombre: "SINCA", quien: "Ministerio del Medio Ambiente",
         uso: "Temperatura y humedad horarias de 9 estaciones oficiales de Santiago.",
@@ -65,7 +67,7 @@ const TEMAS: { id: string; titulo: string; acento: string; nota?: string; fuente
   },
   {
     id: "biodiversidad", titulo: "Biodiversidad", acento: "y terreno",
-    nota: "No detectar fauna no significa que no haya: una cuadra sin visitar vale 0, por eso su peso en el índice es bajo.",
+    nota: "Las aves se graban quieto o caminando con el video; cada escucha mide el ruido del tráfico, y si no se oyen aves con ruido alto queda «no concluyente». Aves, abejas, mariposas y flores de las fotos son las que reconoce Claude. No detectar fauna no significa que no haya: una cuadra sin visitar vale 0, por eso su peso en el índice es bajo.",
     fuentes: [
       { nombre: "BirdNET", quien: "K. Lisa Yang Center for Conservation Bioacoustics, Cornell · modelo CC BY-NC-SA 4.0",
         uso: "Identifica aves por su canto en los audios grabados desde el teléfono, filtrando por lugar y semana del año.",
@@ -95,6 +97,9 @@ const TEMAS: { id: string; titulo: string; acento: string; nota?: string; fuente
 ];
 
 export default function Fuentes() {
+  // Las cuentas de escenas salen del mismo archivo que usa el histórico de la página principal.
+  const serie = JSON.parse(readFileSync(path.join(process.cwd(), "public", "data", "historico.json"), "utf8"));
+  const conCifras = (t: string) => t.replace("{landsat}", String(serie.escenas_landsat)).replace("{sentinel}", String(serie.escenas_sentinel2));
   return (
     <main className="b fuentes">
       <header className="b-pad bajo"><div className="b-in">
@@ -125,7 +130,7 @@ export default function Fuentes() {
               </li>
             ))}
           </ul>
-          {t.nota && <p className="nota f-nota">{t.nota}</p>}
+          {t.nota && <p className="nota f-nota">{conCifras(t.nota)}</p>}
         </div></section>
       ))}
 

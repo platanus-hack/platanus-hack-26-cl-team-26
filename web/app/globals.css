@@ -292,5 +292,11 @@ section[id], footer[id] { scroll-margin-top: 76px; }
 .f-lista a { align-self: flex-start; font-size: 14px; font-weight: 700; color: var(--oliva); overflow-wrap: anywhere; }
 .f-nota { max-width: 75ch; font-size: 14px; }
 .b header nav a[aria-current="page"] { background-size: 100% 2px; }
-.b footer .ver-fuentes { grid-column: 1 / -1; }
-.b footer .ver-fuentes a { font-weight: 700; color: var(--oliva); }
+/* Pie de la página principal: solo la marca y el enlace a /fuentes. */
+.b footer.pie .b-in { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding-block: 26px 30px; }
+.b footer.pie .marca { font-size: 18px; }
+.b footer.pie .marca img { width: 26px; height: 26px; }
+.b footer.pie a { font-weight: 700; font-size: 16px; color: var(--oliva); }
+
+/* Planificar: especies del corredor (se marca más de una) y el criterio que resulta. */
+.b-cab .criterio { flex-basis: 100%; max-width: 80ch; margin: 0; font-family: var(--f-cuerpo); font-style: normal; font-size: 15px; line-height: 1.45; color: var(--texto2); }
