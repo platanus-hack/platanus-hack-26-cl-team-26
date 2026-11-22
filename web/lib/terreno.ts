@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type Parametros = {
-  comunas: string[]; distritos: string[]; zona: number; km: number; w_calor: number; w_arbol: number; w_personas: number;
+  comunas: string[]; distritos: string[]; zona: number; km: number; w_calor: number; w_arbol: number; w_personas: number; perfil?: string;
 };
 export type InfoComunas = {
   comunas: string[]; vecinas: Record<string, string[]>; geo: Record<string, number[][][][]>;
@@ -14,11 +14,11 @@ export type InfoComunas = {
 export type HexCols = {
   h: string[]; comuna: string[]; distrito: string[]; u: (number | null)[]; lst: (number | null)[]; vivo: (number | null)[];
   ndvi: (number | null)[]; copa: (number | null)[]; pob: number[]; social: (number | null)[];
-  parque: boolean[]; antes: boolean[]; ahora: boolean[]; verificado: boolean[];
+  parque: boolean[]; antes: boolean[]; ahora: boolean[]; checkpoint?: boolean[]; verificado: boolean[];
 };
 export type ResumenCorredor = {
   hexes: number; km: number; urgencia_cubierta: number; urgencia_azar: number; personas_cubiertas: number;
-  personas_azar: number; verificados: number;
+  personas_azar: number; verificados: number; checkpoints?: number; parques_conectados?: number; resistencia_media?: number | null;
 };
 export type Captura = {
   id: string; lat: number; lon: number; validacion: string; cuenta: boolean; fuente?: string; arbol_pct?: number;
@@ -30,7 +30,7 @@ export type Estado = {
   version: number; sel_id: number; seleccion: string[]; parametros: Parametros; hex: HexCols;
   capturas: Captura[]; recorridos: Recorrido[]; en_vivo: boolean; antes: ResumenCorredor; ahora: ResumenCorredor;
 };
-export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number }>;
+export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number; perfil: string }>;
 
 const SONDEO_MS = 3000;
 

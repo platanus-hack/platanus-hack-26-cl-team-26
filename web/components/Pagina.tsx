@@ -340,11 +340,14 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   }, [H, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
   const anillosH = useMemo(() => H.h.map(anillo), [H.h]);
   // El corredor solo se rearma si cambian sus cuadras (no cada vez que llega un estado nuevo del servidor).
-  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("");
+  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.checkpoint?.[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+!!H.checkpoint?.[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("");
   const corredor = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
     features: H.h.flatMap((h, i) => [
-      ...(H.ahora[i] ? ["ahora"] : []), ...(H.antes[i] ? ["antes"] : []), ...(H.verificado[i] ? ["verificado"] : []),
+      ...(H.ahora[i] ? ["ahora"] : []),
+      ...(H.checkpoint?.[i] ? ["checkpoint"] : []),
+      ...(H.antes[i] ? ["antes"] : []),
+      ...(H.verificado[i] ? ["verificado"] : []),
     ].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: h, comuna: H.comuna[i] }, geometry: { type: "Polygon" as const, coordinates: [anillosH[i]] } }))),
   }), [firmaCorredor, anillosH]); // eslint-disable-line react-hooks/exhaustive-deps
   const enCorredor = H.h.flatMap((_, i) => (H.ahora[i] ? [i] : []));
@@ -468,7 +471,23 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       </Seccion>
 
       <Seccion id="planificar">
-        <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2><p>Elige dónde, mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes de lo elegido.</p></div>
+        <div className="b-cab escalon">
+          <h2>Planificar <em>el corredor</em></h2>
+          <p>Elige dónde, mueve los pesos y el presupuesto; elige si optimizar para sombra humana o conectividad de fauna (corredores continuos o mini islas como checkpoints).</p>
+          <div className="grupo" role="group" aria-label="Objetivo de la automatización" style={{ marginTop: 10 }}>
+            {([
+              ["humanos", "Humanos (Sombra)"],
+              ["fauna_aves", "Aves (Eje continuo)"],
+              ["fauna_abejas", "Abejas (Mini islas)"],
+              ["mixto", "Mixto (Ambos)"],
+            ] as const).map(([id, label]) => (
+              <button key={id} type="button" className="pill" disabled={ocupado}
+                aria-pressed={(p.perfil ?? "humanos") === id} onClick={() => cambiar({ perfil: id })}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className={`b-controles escalon${planListo ? "" : " espera"}`} style={est(2)}>
           {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"]] as const).map(([k, nombre]) => (
             <div className="peso" key={k}>
@@ -503,6 +522,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             <div className="leyenda">
               <span><i className="barra" style={{ background: grad(VERDE) }} />Urgencia</span>
               <span><i className="cuadro" style={{ background: "#22301A" }} />Corredor</span>
+              {(a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: "#C026D3" }} />Mini Isla (Checkpoint)</span>}
               <span><i className="cuadro" style={{ background: "#7FA35A" }} />Islas verdes: cerros y parques</span>
               <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Sin datos de terreno</span>
               <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno</span>
@@ -534,6 +554,12 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
                   <b><Cifra valor={a.km} dec={2} sufijo={" km"} /></b>
                   <span>en {a.hexes} cuadras{comunasCorredor.length ? `, en ${comunasCorredor.join(", ")}` : ""}. Urgencia cubierta {formato(a.urgencia_cubierta, 3)}, contra {formato(a.urgencia_azar, 3)} al azar.</span>
                 </div>
+                {(a.checkpoints ?? 0) > 0 && (
+                  <div className="cifra escalon" style={est(5)}>
+                    <b><Cifra valor={a.checkpoints ?? 0} /></b>
+                    <span>mini islas (checkpoints) conectando {a.parques_conectados ?? 0} parques separados para aves y abejas.</span>
+                  </div>
+                )}
               </>
             ) : <p className="aviso">Sin corredor: el área no tiene un parque consolidado desde donde partir. Suma una comuna vecina.</p>}
             <table className="terreno num">
