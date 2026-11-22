@@ -539,7 +539,10 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
     <>
       <Seccion id="ahora" alt>
         <div className="b-cab escalon">
-          <h2>Datos <em>clave</em></h2>
+          <div className="titulo">
+            <h2>Datos <em>clave</em></h2>
+            <small>Haz doble clic en una comuna para fijarla, o encierra cuadras con el lápiz.</small>
+          </div>
           <div className="grupo" role="group" aria-label="Capa del mapa">
             {CAPAS_AHORA.map((c) => <button key={c.id} type="button" className="pill" aria-pressed={capa === c.id} onClick={() => setCapa(c.id)}>{NOMBRE_CAPA[c.id]}</button>)}
           </div>
