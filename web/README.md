@@ -29,14 +29,10 @@ Producción: `npm run build && npm start`. Si el servidor está en otra máquina
   de `public/data/fauna.json` (GBIF, `python fauna_gbif.py` desde la raíz).
 - **Planificar**: largo y pesos del corredor (los recalcula el servidor), para humanos, aves, abejas o mixto,
   la fauna registrada en los barrios que cruza y exportar los tramos en GeoJSON.
-- **El viaje del picaflor**: un cortometraje en SVG de unos 45 s (parte solo al llegar). Acto 1: el picaflor
-  cruza del Cerro Renca al San Cristóbal por la ciudad real en línea recta (cada cuadra es un edificio o un árbol
-  según su copa), con calor y cansancio que crecen con las cuadras seguidas sin árboles. Acto 2: la ruta para
-  aves con el corredor plantado, árboles que brotan y flores (`public/data/viaje.json`).
 - **Santiago conectado**: un control de 0 a 100 km y «Ver crecer la red» sobre todo Santiago, con las islas que une,
   las personas a una cuadra y la fauna registrada (`public/data/red.json`, de `python red_conectada.py`).
 
-`historico.json` (lo usa `/fuentes`), `fauna.json`, `red.json` y `viaje.json` son estáticos. Para regenerar el primero, desde la raíz del repo:
+`historico.json` (lo usa `/fuentes`), `fauna.json` y `red.json` son estáticos. Para regenerar el primero, desde la raíz del repo:
 
 ```bash
 python web/scripts/exportar_datos.py

@@ -91,9 +91,6 @@ La página (Next, en `web/`) muestra los datos y traza el corredor; `python -m t
 - *Planificar*: corredor con presupuesto (km) y pesos de calor, árboles y personas, para humanos, aves, abejas
   o mixto (`ecologia.py`), con las cifras contra un trazado al azar y la fauna registrada en los barrios que
   cruza.
-- *El viaje del picaflor*: cortometraje animado del picaflor chico del Cerro Renca al San Cristóbal: hoy, en
-  línea recta, cruza 16 cuadras seguidas sin árboles; con el corredor plantado, ninguna. Lo arma
-  `python viaje_picaflor.py` en `web/public/data/viaje.json`.
 - *Santiago conectado*: la red completa sobre todo Santiago, de 0 a 100 km, para personas, aves, abejas o las tres:
   hectáreas de hábitat unido (islas que dejan de estar solas), personas con un espacio verde a menos de 300 m
   (indicador de la OMS Europa, 2016; hoy el 14 %), barrios con aves y mini islas para abejas. La precalcula
