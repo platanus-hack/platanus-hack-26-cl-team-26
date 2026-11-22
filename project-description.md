@@ -23,7 +23,8 @@ conecta y alivia más.
 - Traza el corredor óptimo que une islas verdes y deja elegir para quién: sombra para las personas, copa continua
   para las aves o mini islas floridas para las abejas, o las tres a la vez.
 - Se puede elegir una comuna o encerrar una zona con un lápiz, mover los pesos y el presupuesto en kilómetros, y
-  exportar los tramos.
+  exportar el corredor en GeoJSON, listo para abrir en QGIS: qué plantar en cada cuadra (árboles o flores para
+  las abejas), sus datos y el criterio usado.
 
 ## Impacto
 

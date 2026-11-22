@@ -498,8 +498,43 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const encuadrePlan = useMemo(() => (cerca && enCorredor.length ? encuadreDe(anillosCorredor(), 0.025) : encuadreArea),
     [cerca, claveCorredor, encuadreArea]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // GeoJSON para quien va a plantar (QGIS, un municipio): cada cuadra del corredor con qué plantar ahí y por qué
+  // entró (los datos de la cuadra), y en "viridis" con qué criterio, cuánto cubre y contra qué se compara.
   function exportar() {
-    const fc = { type: "FeatureCollection", features: corredor.features.filter((f) => f.properties?.tipo === "ahora") };
+    const r = (x: number | null | undefined, d: number) => (x == null ? null : Number(x.toFixed(d)));
+    const soloAbejas = claveEspecies === "abejas";
+    const plantar = (isla: boolean) => (isla ? (soloAbejas ? "flores (mini isla)" : "árboles y flores (mini isla)") : soloAbejas ? "nada: ruta de vuelo entre mini islas" : "árboles");
+    const propias = H.h.flatMap((_, i) => (H.ahora[i] || H.checkpoint?.[i] ? [i] : []));
+    const wTot = p.w_calor + p.w_arbol + p.w_personas + (p.w_vuln ?? 0) || 1;
+    const pct = (w: number | undefined) => Math.round((100 * (w ?? 0)) / wTot);
+    const fc = {
+      type: "FeatureCollection",
+      viridis: {
+        generado: new Date().toISOString(), sitio: window.location.origin, especies,
+        pesos_urgencia_pct: especies.includes("humanos")
+          ? { calor: pct(p.w_calor), falta_de_arboles: pct(p.w_arbol), personas: pct(p.w_personas), vulnerabilidad: pct(p.w_vuln) }
+          : null,
+        km: r(a.km, 2), cuadras: a.hexes, mini_islas: a.checkpoints ?? 0, comunas: comunasCorredor,
+        personas_junto_al_corredor: a.personas_cubiertas, personas_con_un_trazado_al_azar: a.personas_azar,
+        campos: "prioridad: 0 a 1 entre lo elegido, según las especies (para personas, la urgencia); suelo_c: temperatura del suelo (Landsat); aire_max_c: máxima de ayer del barrio; copa_pct: copa de árboles (modelo propio); personas: Censo 2024; vulnerabilidad al calor 0 a 1 (Censo 2024)",
+      },
+      features: [
+        ...propias.map((i) => ({
+          type: "Feature",
+          properties: {
+            h3: H.h[i], comuna: H.comuna[i], plantar: plantar(!!H.checkpoint?.[i]), prioridad: r(H.u[i], 3), suelo_c: r(H.lst[i], 1),
+            aire_max_c: r(H.vivo[i], 1), copa_pct: r(H.copa[i], 1), personas: H.pob[i], vulnerabilidad: r(H.vuln?.[i], 2),
+          },
+          geometry: { type: "Polygon", coordinates: [anillosH[i]] },
+        })),
+        // Con «comunas vecinas»: cuadras fuera de lo elegido, sin sus datos (el servidor solo manda cuáles son).
+        ...fuera.map((f) => ({
+          type: "Feature",
+          properties: { h3: f.h, comuna: f.comuna ?? "", plantar: plantar(!!f.isla), comuna_vecina: true },
+          geometry: { type: "Polygon", coordinates: [anillo(f.h)] },
+        })),
+      ],
+    };
     const blob = new Blob([JSON.stringify(fc)], { type: "application/geo+json" });
     const enlace = document.createElement("a");
     enlace.href = URL.createObjectURL(blob);

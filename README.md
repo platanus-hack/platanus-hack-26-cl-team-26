@@ -17,8 +17,9 @@ Los cerros y parques de Santiago son islas: ahí viven aves y abejas, pero el ce
 solo el 14 % de la gente vive a menos de 300 m de un espacio verde. Viridis divide las 34 comunas del Gran
 Santiago en 13.172 cuadras (grilla H3), mide en cada una el calor, la copa de árboles, cuánta gente vive ahí y qué
 tan vulnerable es al calor, y traza el corredor que une isla con isla donde más se necesita. Se elige para quién
-(personas, aves, abejas o todas), dónde (comunas o una zona dibujada) y cuántos kilómetros, y los tramos se
-exportan en GeoJSON.
+(personas, aves, abejas o todas), dónde (comunas o una zona dibujada) y cuántos kilómetros. El corredor se
+exporta en GeoJSON, listo para QGIS: qué plantar en cada cuadra (árboles o flores) y sus datos, con el criterio
+usado y la comparación con un trazado al azar.
 
 ## Cómo funciona
 
