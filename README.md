@@ -156,8 +156,9 @@ cloudflared tunnel --url http://localhost:8000     # entrega https://<algo>.tryc
 - Solo las fotos válidas cambian el corredor. Sin credenciales, las fotos quedan «sin validar» (el índice de
   verde no distingue una oficina de una calle) y no cuentan; `--aceptar-sin-validar` las deja contar en una
   demo sin red.
-- Las fotos se guardan sin EXIF en `data/terreno/fotos/` (no se versionan); `data/terreno/capturas.jsonl` sí,
-  para repetir la demo con datos reales grabados.
+- Las fotos se guardan sin EXIF en `data/terreno/fotos/`. Ni las fotos ni los registros
+  (`data/terreno/*.jsonl`, con la posición GPS de cada captura y recorrido) ni `data/terreno_h3.parquet` se
+  versionan: quedan en el computador que corre el servidor.
 - Prueba offline: `python -m tests.test_terreno`.
 
 Honestidad: una foto de calle muestra parte de un hexágono de ~0,1 km²; complementa al satélite (el déficit de

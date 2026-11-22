@@ -17,6 +17,11 @@ datos/cache/red_cruda_*.pkl
 data/terreno/fotos/
 data/terreno/videos/
 data/terreno/audios/
+# registros de terreno de cada computador (posición GPS de cada captura y recorrido) y su agregado
+data/terreno/*.jsonl
+data/terreno_h3.parquet
+# maqueta de diseño local
+mockup.html
 # API key local de Anthropic para terreno/servidor.py
 .anthropic_key
 # credenciales locales (DMC_USUARIO, DMC_TOKEN) que lee fuentes.py
