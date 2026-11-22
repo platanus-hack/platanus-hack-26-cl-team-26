@@ -41,14 +41,14 @@ function tenir(mapa: MapaML) {
   }
 }
 
-// Corredor en lima (personas y aves) o negro con mini islas amarillas si el plan incluye abejas.
-export const COLOR_CORREDOR = "#B8E02E", COLOR_MINI_ISLA = "#F4C430";
-export const TONO_CORREDOR = { lima: { fondo: COLOR_CORREDOR, borde: "#3F5A00" }, abeja: { fondo: "#1F1F1A", borde: "#000000" } };
+// Corredor en verde hoja con contorno crema, para que se lea como camino sobre el rojo y no como otra isla (personas y aves) o negro con mini islas amarillas si el plan incluye abejas.
+export const COLOR_CORREDOR = "#6BAE45", COLOR_MINI_ISLA = "#F4C430";
+export const TONO_CORREDOR = { verde: { fondo: COLOR_CORREDOR, borde: "#FFFDF6" }, abeja: { fondo: "#1F1F1A", borde: "#000000" } };
 export type TonoCorredor = keyof typeof TONO_CORREDOR;
 const TESELA_Z = 9;   // zoom de tesela único para cuadras, sectores y comunas (calzan entre sí y no se recargan)
 
 export default function MapaHex({ datos, capas, activa, corredor, comunas, distritos, capturas, recorridos, popupCaptura,
-  popupHex, datoHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, tono = "lima", children }: {
+  popupHex, datoHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, tono = "verde", children }: {
   datos: GeoJSON.FeatureCollection;
   capas: Capa[];
   activa: string;
@@ -67,7 +67,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   alComuna?: (c: string) => void;            // doble clic en una cuadra o comuna: suma o quita su comuna
   alLazo?: (anillo: [number, number][] | null, pintadas?: number[]) => void;  // contorno cerrado en [lng, lat] (o null) y cuadras pintadas con el pincel
   etiqueta: string;
-  tono?: TonoCorredor;                       // colores del corredor: lima, o negro si el plan incluye abejas
+  tono?: TonoCorredor;                       // colores del corredor: verde, o negro si el plan incluye abejas
   children?: React.ReactNode;                 // controles que flotan sobre el mapa
 }) {
   const [cont, visible] = useVisible<HTMLDivElement>();
@@ -178,12 +178,12 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         nuevo.addSource("corredor", { type: "geojson", data: VACIO });
         nuevo.addLayer({
           id: "corredor", type: "fill", source: "corredor", filter: ["==", ["get", "tipo"], "ahora"],
-          paint: { "fill-color": COLOR_CORREDOR, "fill-opacity": 0.92, "fill-opacity-transition": { duration: menosMovimiento() ? 0 : 700 } },
+          paint: { "fill-color": COLOR_CORREDOR, "fill-opacity": 1, "fill-opacity-transition": { duration: menosMovimiento() ? 0 : 700 } },
         });
         // Contorno grueso para que el corredor se distinga aun con el área completa a la vista.
         nuevo.addLayer({
           id: "corredor-borde", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "ahora"],
-          paint: { "line-color": "#2F4520", "line-width": ["interpolate", ["linear"], ["zoom"], 9, 3, 13, 1.6] },
+          paint: { "line-color": TONO_CORREDOR.verde.borde, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 2.2, 13, 3] },
         });
         nuevo.addLayer({
           id: "corredor-antes", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "antes"],
@@ -561,7 +561,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
     if (clave === claveCorredor.current || menosMovimiento()) { claveCorredor.current = clave; return; }
     claveCorredor.current = clave;
     m.setPaintProperty("corredor", "fill-opacity", 0);
-    const t = setTimeout(() => m.getLayer("corredor") && m.setPaintProperty("corredor", "fill-opacity", 0.92), 60);
+    const t = setTimeout(() => m.getLayer("corredor") && m.setPaintProperty("corredor", "fill-opacity", 1), 60);
     return () => clearTimeout(t);
   }, [corredor, listo]);
 
