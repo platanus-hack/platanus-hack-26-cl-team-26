@@ -12,7 +12,7 @@ const exportar = process.env.npm_lifecycle_event === "exportar" || process.env.E
 
 /** @type {import('next').NextConfig} */
 const nextConfig = exportar
-  ? { reactStrictMode: true, output: "export", images: { unoptimized: true } }
+  ? { reactStrictMode: true, output: "export", trailingSlash: true, images: { unoptimized: true } }
   : {
       reactStrictMode: true,
       async rewrites() {
