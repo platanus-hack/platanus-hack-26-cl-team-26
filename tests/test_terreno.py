@@ -129,7 +129,7 @@ def test_servidor_validacion():
     form = {"lat": str(lat), "lon": str(lon)}
     foto = {"foto": ("c.jpg", jpeg((128, 128, 128)), "image/jpeg")}
     with tempfile.TemporaryDirectory() as tmp:
-        c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO))
+        c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, captura=True))
         for resultado, esperado in ((obs(False, "ninguno", "Interior"), "descartada"), (None, "sin_validar")):
             deshacer = con_claude(resultado)
             try:
@@ -158,7 +158,7 @@ def test_servidor():
     hx = solve_corridor(df)["hexes"][0]
     lat, lon = h3.cell_to_latlng(hx)
     with tempfile.TemporaryDirectory() as tmp:
-        c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, clave="secreta", usar_claude=False, aceptar_sin_validar=True))
+        c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, clave="secreta", usar_claude=False, aceptar_sin_validar=True, captura=True))
         assert c.get("/").status_code == 200 and c.get("/mapa").status_code == 200
         form = {"lat": str(lat), "lon": str(lon), "precision_m": "8"}
         foto = {"foto": ("c.jpg", jpeg((128, 128, 128)), "image/jpeg")}
@@ -203,7 +203,7 @@ def test_video():
     archivos = [("cuadros", (f"c{i}.jpg", jpeg((128, 128, 128)), "image/jpeg")) for i in range(3)]
     archivos.append(("video", ("r.webm", b"video falso", "video/webm")))
     with tempfile.TemporaryDirectory() as tmp:
-        c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO))
+        c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, captura=True))
         deshacer = con_claude(obs(True, "mucho"))
         try:
             r = c.post("/api/video", data={"meta": meta}, files=archivos)
@@ -231,13 +231,27 @@ def test_video():
 
 
 
+def test_captura_apagada_por_omision():
+    """Sin --captura el servidor no ofrece la API de subida del experimento de captura en terreno."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, usar_claude=False))
+        for ruta in ("/api/captura", "/api/video", "/api/audio"):
+            assert c.post(ruta).status_code in (404, 405), ruta
+        for ruta in ("/api/capturas", "/fotos/x.jpg", "/videos/x.webm", "/audios/x.wav"):
+            assert c.get(ruta).status_code in (404, 405), ruta
+        assert c.get("/api/salud").json() == {"ok": True}
+
+
 def test_seleccion_comunas():
     """34 comunas: el corredor se calcula en las elegidas; se suman vecinas; por el túnel pide clave."""
     from fastapi.testclient import TestClient
     from terreno.servidor import crear_app
 
     with tempfile.TemporaryDirectory() as tmp:
-        c = TestClient(crear_app(GS, Path(tmp), clave="secreta", usar_claude=False))
+        c = TestClient(crear_app(GS, Path(tmp), clave="secreta", usar_claude=False, captura=True))
         info = c.get("/api/comunas").json()
         assert len(info["comunas"]) == 34 and info["seleccion"] == info["comunas"]  # al abrir, todas
         df = pd.read_parquet(GS)
@@ -445,7 +459,7 @@ def test_audio():
     aves.detectar = falso
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, clave="secreta", usar_claude=False))
+            c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, clave="secreta", usar_claude=False, captura=True))
             v0 = c.get("/api/version").json()["version"]
             assert c.get("/captura").status_code == 404  # la página del teléfono se retiró
             datos = {"lat": la, "lon": lo, "precision_m": 8, "tomado_en": "2026-11-21T15:00:00-03:00"}
@@ -529,7 +543,7 @@ def test_paseo_con_audio():
     aves.detectar_crudo = falso
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO))
+            c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, captura=True))
             deshacer = con_claude(obs(True, "medio"))
             try:
                 r = c.post("/api/video", data={"meta": meta},
@@ -575,7 +589,7 @@ def test_hexagono():
                                       "confianza": 0.9, "inicio_s": 0, "fin_s": 3}]
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO))  # Claude simulado con con_claude
+            c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, captura=True))  # Claude simulado con con_claude
             foto = lambda: {"foto": ("f.jpg", jpeg((90, 90, 90)), "image/jpeg")}
             for o in (obs(True, "medio", fauna=[{"grupo": "abeja", "nombre": "", "cantidad": 2}]),
                       obs(True, "mucho"), obs(False, motivo="interior")):

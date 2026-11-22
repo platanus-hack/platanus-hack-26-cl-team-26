@@ -109,7 +109,8 @@ especie ahí: no haber registro no significa que no esté, y hay más observador
 La página del teléfono se retiró. Lo ya capturado sigue contando: `data/terreno/*.jsonl` se agrega en
 `data/terreno_h3.parquet` (ver `CONTRATO.md`) y entra al corredor (árboles, espacio para plantar y
 biodiversidad con el peso «Biodiversidad (terreno)»). La API de subida (`/api/captura`, `/api/video`,
-`/api/audio`, protegida con `TERRENO_CLAVE`) sigue para scripts y pruebas: `python -m tests.test_terreno`.
+`/api/audio`, protegida con `TERRENO_CLAVE`) queda apagada; se activa con `python -m terreno.servidor --captura`, y
+sus tests son `python -m tests.test_terreno`.
 Nada de `data/terreno/` se versiona. BirdNET: K. Lisa Yang Center for Conservation Bioacoustics (Cornell),
 modelo CC BY-NC-SA 4.0 (uso no comercial).
 

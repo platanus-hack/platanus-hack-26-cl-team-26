@@ -106,8 +106,9 @@ Las fuentes de cada dato están en la página [/fuentes](https://viridis-w7yj.on
 [CONTRATO.md](CONTRATO.md).
 
 **Experimento retirado:** la captura en terreno desde el teléfono (fotos validadas con Claude y aves reconocidas
-por su canto con BirdNET). Quitamos la página para enfocarnos en el sitio; su API (`/api/captura`, `/api/video`,
-`/api/audio`, protegida con `TERRENO_CLAVE`) y sus tests siguen en `terreno/`.
+por su canto con BirdNET). Quitamos la página para enfocarnos en el sitio. Su API de subida (`/api/captura`,
+`/api/video`, `/api/audio`) queda apagada; se activa con `python -m terreno.servidor --captura`, y sus tests siguen
+en `tests/test_terreno.py`.
 
 ## Equipo
 

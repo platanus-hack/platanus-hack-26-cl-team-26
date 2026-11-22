@@ -2,8 +2,8 @@ services:
   - type: web
     name: viridis
     runtime: docker
-    # standard: 2 GB de RAM. El modelo de aves (BirdNET, del experimento de captura en terreno) más los datos de
-    # las 34 comunas no caben con holgura en los 512 MB de starter.
+    # standard: 2 GB de RAM. Con --captura se carga además el modelo de aves (BirdNET, del experimento de captura en
+    # terreno), que junto a los datos de las 34 comunas no cabe con holgura en los 512 MB de starter.
     plan: standard
     region: oregon
     healthCheckPath: /api/salud
@@ -16,7 +16,7 @@ services:
       - key: PORT
         value: 8000
       # Secretos: se escriben en el panel de Render (Environment), nunca en este archivo.
-      - key: TERRENO_CLAVE        # clave de la API de subida (/api/captura, /api/video, /api/audio)
+      - key: TERRENO_CLAVE        # sesión compartida del mapa de respaldo y, con --captura, la API de subida
         sync: false
       - key: ANTHROPIC_API_KEY    # Claude valida las fotos subidas (experimento de captura en terreno)
         sync: false

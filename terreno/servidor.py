@@ -4,8 +4,9 @@
 
 Sitio Viridis: si existe web/out (cd web && npm run exportar), se sirve en «/» desde este mismo servidor: un
 solo servicio y un solo enlace (así se despliega en Render, ver Dockerfile). Sin web/out, «/» lleva a /mapa.
-La página del teléfono se retiró; la API de subida (/api/captura, /api/video, /api/audio) sigue y lo ya
-capturado cuenta (biodiversidad por hexágono con el peso w_bio, fotos validadas por Claude).
+La página del teléfono se retiró. Su API de subida (/api/captura, /api/video, /api/audio, con Claude y BirdNET)
+queda apagada salvo con --captura; lo ya capturado en data/terreno/ se lee igual (biodiversidad por hexágono con el
+peso w_bio, fotos validadas por Claude).
 El mapa filtra por comuna, distrito (barrio H3 res 7) o una zona dibujada, mueve presupuesto y pesos del
 corredor, y muestra la serie histórica satelital (data/historico_h3.parquet). Si existe data/live_h3.parquet
 (máxima del día por barrio, Rol 2: lo escribe maximas.py cada noche) entra al calor de la urgencia; se relee
@@ -180,7 +181,9 @@ def sin_islas(df: pd.DataFrame) -> pd.DataFrame:
 def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path = Path("data"),
               km: float = 3.0, clave: str | None = None, usar_claude: bool = True,
               aceptar_sin_validar: bool = False, comunas: list[str] | None = None,
-              web: Path | None = WEB) -> FastAPI:
+              web: Path | None = WEB, captura: bool = False) -> FastAPI:
+    """`captura`: activa la API de subida del experimento de captura en terreno (fotos, videos y audio, con Claude y
+    BirdNET). Apagada por omisión: el sitio no la usa. Los datos de terreno ya guardados se leen igual."""
     df = sin_islas(pd.read_parquet(datos))
     nombres = distritos(df)
     df["distrito"] = [nombres[k] for k in zip(df["comuna"], df["h3_padre"])]
@@ -407,135 +410,136 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     def mapa_html():
         return FileResponse(ESTATICO / "mapa.html")
 
-    @app.post("/api/captura")
-    def captura(foto: UploadFile = File(...), lat: float = Form(...), lon: float = Form(...),
-                precision_m: float | None = Form(None), rumbo: float | None = Form(None),
-                nota: str = Form(""), tomado_en: str | None = Form(None), k: str | None = Query(None)):
-        revisar_clave(k)
-        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
-            raise HTTPException(422, "Coordenadas fuera de rango")
-        datos_foto = foto.file.read(MAX_FOTO_BYTES + 1)
-        if len(datos_foto) > MAX_FOTO_BYTES:
-            raise HTTPException(413, "Foto de más de 15 MB")
-        try:
-            obs = analizar(datos_foto, usar_claude)
-        except Exception:
-            raise HTTPException(422, "No se pudo leer la imagen")
-        with lock:
-            previo = estado["ahora"]
-            cap = alm.guardar(datos_foto, lat, lon, precision_m, rumbo, nota, obs, tomado_en)
-            recalcular()
-            ahora = estado["ahora"]
-        return {
-            "captura": cap,
-            "validacion": estado_validacion(cap),
-            "cuenta": cuenta(cap, aceptar_sin_validar),
-            "fuera_de_area": cap["h3_index"] not in hex_area,
-            "comuna": comuna_de.get(cap["h3_index"]),
-            "fuera_de_seleccion": cap["h3_index"] not in set(estado["sub"]["h3_index"]),
-            "en_corredor": cap["h3_index"] in ahora["hexes"],
-            "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
-            "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
-        }
-
-    @app.post("/api/video")
-    def subir_video(cuadros: list[UploadFile] = File(...), meta: str = Form(...),
-                    video: UploadFile | None = File(None), audio: UploadFile | None = File(None),
-                    k: str | None = Query(None)):
-        """Video grabado en la página: cuadros JPEG con su posición y hora, más el trazado GPS del recorrido.
-        Si trae audio (WAV del micrófono mientras se caminaba), BirdNET lo escucha entero y cada ave queda en el
-        hexágono donde iba el teléfono cuando cantó; cada tramo también mide el ruido de la calle."""
-        revisar_clave(k)
-        try:
-            m = json.loads(meta)
-            info = [_punto(c) for c in m["cuadros"]]
-            track = [x for x in (_punto(p) for p in m.get("track", [])[:5000]) if x]
-        except (ValueError, KeyError, TypeError, AttributeError):
-            raise HTTPException(422, "meta inválido")
-        if not cuadros or len(cuadros) != len(info) or len(cuadros) > MAX_CUADROS_RECIBIDOS:
-            raise HTTPException(422, f"Entre 1 y {MAX_CUADROS_RECIBIDOS} cuadros, cada uno con su posición")
-        validos = [i for i, c in enumerate(info) if c]
-        if not validos:
-            raise HTTPException(422, "Ningún cuadro trae posición GPS")
-        vbytes, ext = None, None
-        if video is not None:
-            ext = EXT_VIDEO.get((video.content_type or "").split(";")[0])
-            if ext is None:
-                raise HTTPException(415, "Formato de video no soportado (webm, mp4 o mov)")
-            vbytes = video.file.read(MAX_VIDEO_BYTES + 1)
-            if len(vbytes) > MAX_VIDEO_BYTES:
-                raise HTTPException(413, "Video de más de 80 MB")
-        sel = [validos[i] for i in elegir_cuadros([info[i] for i in validos])]
-        imgs = [cuadros[i].file.read(MAX_FOTO_BYTES + 1) for i in sel]
-
-        def analizar_seguro(b):
+    if captura:  # experimento de captura en terreno (retirado del sitio): apagado salvo con --captura
+        @app.post("/api/captura")
+        def subir_captura(foto: UploadFile = File(...), lat: float = Form(...), lon: float = Form(...),
+                    precision_m: float | None = Form(None), rumbo: float | None = Form(None),
+                    nota: str = Form(""), tomado_en: str | None = Form(None), k: str | None = Query(None)):
+            revisar_clave(k)
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise HTTPException(422, "Coordenadas fuera de rango")
+            datos_foto = foto.file.read(MAX_FOTO_BYTES + 1)
+            if len(datos_foto) > MAX_FOTO_BYTES:
+                raise HTTPException(413, "Foto de más de 15 MB")
             try:
-                return analizar(b, usar_claude) if len(b) <= MAX_FOTO_BYTES else None
+                obs = analizar(datos_foto, usar_claude)
             except Exception:
-                return None
+                raise HTTPException(422, "No se pudo leer la imagen")
+            with lock:
+                previo = estado["ahora"]
+                cap = alm.guardar(datos_foto, lat, lon, precision_m, rumbo, nota, obs, tomado_en)
+                recalcular()
+                ahora = estado["ahora"]
+            return {
+                "captura": cap,
+                "validacion": estado_validacion(cap),
+                "cuenta": cuenta(cap, aceptar_sin_validar),
+                "fuera_de_area": cap["h3_index"] not in hex_area,
+                "comuna": comuna_de.get(cap["h3_index"]),
+                "fuera_de_seleccion": cap["h3_index"] not in set(estado["sub"]["h3_index"]),
+                "en_corredor": cap["h3_index"] in ahora["hexes"],
+                "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
+                "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
+            }
 
-        paseo = None
-        if audio is not None:
-            wav = audio.file.read(MAX_AUDIO_PASEO + 1)
+        @app.post("/api/video")
+        def subir_video(cuadros: list[UploadFile] = File(...), meta: str = Form(...),
+                        video: UploadFile | None = File(None), audio: UploadFile | None = File(None),
+                        k: str | None = Query(None)):
+            """Video grabado en la página: cuadros JPEG con su posición y hora, más el trazado GPS del recorrido.
+            Si trae audio (WAV del micrófono mientras se caminaba), BirdNET lo escucha entero y cada ave queda en el
+            hexágono donde iba el teléfono cuando cantó; cada tramo también mide el ruido de la calle."""
+            revisar_clave(k)
             try:
-                if len(wav) > MAX_AUDIO_PASEO:
-                    raise ValueError("audio de más de 24 MB")
-                x, tasa = aves.leer_wav(wav)
-            except ValueError as e:
-                paseo = {"error": str(e)}
-            else:
-                t = hora(m.get("inicio"))
-                fecha = pd.Timestamp(t).to_pydatetime().replace(tzinfo=None) if t else None
-                p0 = track[0] if track else info[validos[0]]
-                paseo = {"wav": wav, "dur": len(x) / tasa, "dbs": aves.ruido_por_segundo(x, tasa),
-                         "crudas": aves.detectar_crudo(x, tasa, p0["lat"], p0["lon"], fecha),
-                         "tramos": aves.tramos_por_hexagono(track, len(x) / tasa)}
-        with ThreadPoolExecutor(4) as ex:
-            resultados = list(ex.map(analizar_seguro, imgs))
-        with lock:
-            previo = estado["ahora"]
-            rec = alm.guardar_video(vbytes, ext, m.get("inicio"), track, len(sel), str(m.get("nota", "")))
-            caps = []
-            for i, img, obs in zip(sel, imgs, resultados):
-                if obs is None:
-                    continue
-                c = info[i]
-                caps.append(alm.guardar(img, c["lat"], c["lon"], c["precision_m"], None, "", obs, c["tomado_en"],
-                                        extra={"video_id": rec["id"], "t_video_s": c["t_s"]}))
-            escuchas = []
-            if paseo and "wav" in paseo:
-                archivo = alm.guardar_wav(paseo["wav"], rec["id"])
-                crudas = paseo["crudas"]
-                for tr in paseo["tramos"]:
-                    dets = None if crudas is None else aves.agrupar(
-                        [d for d in crudas if tr["desde_s"] <= (d["inicio_s"] + d["fin_s"]) / 2 < tr["hasta_s"]])
-                    dbs = paseo["dbs"][int(tr["desde_s"]):max(int(tr["desde_s"]) + 1, int(tr["hasta_s"]))]
-                    cuando = pd.Timestamp(hora(m.get("inicio"))) + pd.Timedelta(seconds=tr["desde_s"]) if hora(m.get("inicio")) else None
-                    escuchas.append(alm.guardar_audio(
-                        None, tr["lat"], tr["lon"], tr["precision_m"], cuando.isoformat() if cuando is not None else None,
-                        dets, tr["hasta_s"] - tr["desde_s"], aves.resumir_ruido(dbs), archivo,
-                        extra={"video_id": rec["id"], "desde_s": tr["desde_s"], "hasta_s": tr["hasta_s"]}))
-            recalcular()
-            ahora = estado["ahora"]
-        estados = [estado_validacion(c) for c in caps]
-        return {
-            "recorrido": {k2: rec[k2] for k2 in ("id", "inicio", "duracion_s", "archivo")},
-            "cuadros_recibidos": len(cuadros), "cuadros_analizados": len(caps),
-            "validos": estados.count("valida"), "descartados": estados.count("descartada"),
-            "sin_validar": estados.count("sin_validar"),
-            "hexagonos": sorted({c["h3_index"] for c in caps if cuenta(c, aceptar_sin_validar)}),
-            "fuera_de_area": sum(c["h3_index"] not in hex_area for c in caps),
-            "fuera_de_seleccion": sum(c["h3_index"] not in set(estado["sub"]["h3_index"]) for c in caps),
-            "motivos_descarte": sorted({c.get("motivo_rechazo", "") for c in caps if c.get("valida") is False} - {""}),
-            "aves": None if paseo is None else {
-                "error": paseo.get("error"), "analizada": bool(escuchas) and escuchas[0]["analizada"],
-                "tramos": len(escuchas),
-                "especies": aves.agrupar([d for e in escuchas for d in e["detecciones"]]),
-                "ruido": aves.resumir_ruido(paseo.get("dbs", [])),
-                "no_concluyentes": sum(not e["concluyente"] for e in escuchas)},
-            "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
-            "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
-        }
+                m = json.loads(meta)
+                info = [_punto(c) for c in m["cuadros"]]
+                track = [x for x in (_punto(p) for p in m.get("track", [])[:5000]) if x]
+            except (ValueError, KeyError, TypeError, AttributeError):
+                raise HTTPException(422, "meta inválido")
+            if not cuadros or len(cuadros) != len(info) or len(cuadros) > MAX_CUADROS_RECIBIDOS:
+                raise HTTPException(422, f"Entre 1 y {MAX_CUADROS_RECIBIDOS} cuadros, cada uno con su posición")
+            validos = [i for i, c in enumerate(info) if c]
+            if not validos:
+                raise HTTPException(422, "Ningún cuadro trae posición GPS")
+            vbytes, ext = None, None
+            if video is not None:
+                ext = EXT_VIDEO.get((video.content_type or "").split(";")[0])
+                if ext is None:
+                    raise HTTPException(415, "Formato de video no soportado (webm, mp4 o mov)")
+                vbytes = video.file.read(MAX_VIDEO_BYTES + 1)
+                if len(vbytes) > MAX_VIDEO_BYTES:
+                    raise HTTPException(413, "Video de más de 80 MB")
+            sel = [validos[i] for i in elegir_cuadros([info[i] for i in validos])]
+            imgs = [cuadros[i].file.read(MAX_FOTO_BYTES + 1) for i in sel]
+
+            def analizar_seguro(b):
+                try:
+                    return analizar(b, usar_claude) if len(b) <= MAX_FOTO_BYTES else None
+                except Exception:
+                    return None
+
+            paseo = None
+            if audio is not None:
+                wav = audio.file.read(MAX_AUDIO_PASEO + 1)
+                try:
+                    if len(wav) > MAX_AUDIO_PASEO:
+                        raise ValueError("audio de más de 24 MB")
+                    x, tasa = aves.leer_wav(wav)
+                except ValueError as e:
+                    paseo = {"error": str(e)}
+                else:
+                    t = hora(m.get("inicio"))
+                    fecha = pd.Timestamp(t).to_pydatetime().replace(tzinfo=None) if t else None
+                    p0 = track[0] if track else info[validos[0]]
+                    paseo = {"wav": wav, "dur": len(x) / tasa, "dbs": aves.ruido_por_segundo(x, tasa),
+                             "crudas": aves.detectar_crudo(x, tasa, p0["lat"], p0["lon"], fecha),
+                             "tramos": aves.tramos_por_hexagono(track, len(x) / tasa)}
+            with ThreadPoolExecutor(4) as ex:
+                resultados = list(ex.map(analizar_seguro, imgs))
+            with lock:
+                previo = estado["ahora"]
+                rec = alm.guardar_video(vbytes, ext, m.get("inicio"), track, len(sel), str(m.get("nota", "")))
+                caps = []
+                for i, img, obs in zip(sel, imgs, resultados):
+                    if obs is None:
+                        continue
+                    c = info[i]
+                    caps.append(alm.guardar(img, c["lat"], c["lon"], c["precision_m"], None, "", obs, c["tomado_en"],
+                                            extra={"video_id": rec["id"], "t_video_s": c["t_s"]}))
+                escuchas = []
+                if paseo and "wav" in paseo:
+                    archivo = alm.guardar_wav(paseo["wav"], rec["id"])
+                    crudas = paseo["crudas"]
+                    for tr in paseo["tramos"]:
+                        dets = None if crudas is None else aves.agrupar(
+                            [d for d in crudas if tr["desde_s"] <= (d["inicio_s"] + d["fin_s"]) / 2 < tr["hasta_s"]])
+                        dbs = paseo["dbs"][int(tr["desde_s"]):max(int(tr["desde_s"]) + 1, int(tr["hasta_s"]))]
+                        cuando = pd.Timestamp(hora(m.get("inicio"))) + pd.Timedelta(seconds=tr["desde_s"]) if hora(m.get("inicio")) else None
+                        escuchas.append(alm.guardar_audio(
+                            None, tr["lat"], tr["lon"], tr["precision_m"], cuando.isoformat() if cuando is not None else None,
+                            dets, tr["hasta_s"] - tr["desde_s"], aves.resumir_ruido(dbs), archivo,
+                            extra={"video_id": rec["id"], "desde_s": tr["desde_s"], "hasta_s": tr["hasta_s"]}))
+                recalcular()
+                ahora = estado["ahora"]
+            estados = [estado_validacion(c) for c in caps]
+            return {
+                "recorrido": {k2: rec[k2] for k2 in ("id", "inicio", "duracion_s", "archivo")},
+                "cuadros_recibidos": len(cuadros), "cuadros_analizados": len(caps),
+                "validos": estados.count("valida"), "descartados": estados.count("descartada"),
+                "sin_validar": estados.count("sin_validar"),
+                "hexagonos": sorted({c["h3_index"] for c in caps if cuenta(c, aceptar_sin_validar)}),
+                "fuera_de_area": sum(c["h3_index"] not in hex_area for c in caps),
+                "fuera_de_seleccion": sum(c["h3_index"] not in set(estado["sub"]["h3_index"]) for c in caps),
+                "motivos_descarte": sorted({c.get("motivo_rechazo", "") for c in caps if c.get("valida") is False} - {""}),
+                "aves": None if paseo is None else {
+                    "error": paseo.get("error"), "analizada": bool(escuchas) and escuchas[0]["analizada"],
+                    "tramos": len(escuchas),
+                    "especies": aves.agrupar([d for e in escuchas for d in e["detecciones"]]),
+                    "ruido": aves.resumir_ruido(paseo.get("dbs", [])),
+                    "no_concluyentes": sum(not e["concluyente"] for e in escuchas)},
+                "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
+                "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
+            }
 
     def es_local(request: Request) -> bool:
         """El mapa abierto en el mismo computador (no por el túnel, que agrega cf-connecting-ip)."""
@@ -559,43 +563,44 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         especies = sorted({e for x in t["especies_aves"] for e in x.split("; ") if e})
         return {"especies": especies, "polinizadores": int(t["n_polinizadores"].sum())}
 
-    @app.post("/api/audio")
-    def subir_audio(audio: UploadFile = File(...), lat: float = Form(...), lon: float = Form(...),
-                    precision_m: float | None = Form(None), tomado_en: str | None = Form(None),
-                    k: str | None = Query(None)):
-        """Escucha de aves: WAV de la página del teléfono, con su posición y hora. BirdNET identifica especies."""
-        revisar_clave(k)
-        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
-            raise HTTPException(422, "Coordenadas fuera de rango")
-        wav = audio.file.read(MAX_AUDIO_BYTES + 1)
-        if len(wav) > MAX_AUDIO_BYTES:
-            raise HTTPException(413, "Audio de más de 6 MB")
-        try:
-            x, tasa = aves.leer_wav(wav)
-        except ValueError as e:
-            raise HTTPException(422, str(e))
-        t = hora(tomado_en)
-        detecciones = aves.detectar(wav, lat, lon, pd.Timestamp(t).to_pydatetime().replace(tzinfo=None) if t else None)
-        ruido = aves.resumir_ruido(aves.ruido_por_segundo(x, tasa))
-        with lock:
-            previo = estado["ahora"]
-            esc = alm.guardar_audio(wav, lat, lon, precision_m, tomado_en, detecciones, len(x) / tasa, ruido)
-            recalcular()
-            ahora = estado["ahora"]
-        return {
-            "escucha": esc, "analizada": detecciones is not None,
-            "fuera_de_area": esc["h3_index"] not in hex_area, "comuna": comuna_de.get(esc["h3_index"]),
-            "fuera_de_seleccion": esc["h3_index"] not in set(estado["sub"]["h3_index"]),
-            "en_corredor": esc["h3_index"] in ahora["hexes"],
-            "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
-            "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
-        }
+    if captura:  # experimento de captura en terreno (retirado del sitio): apagado salvo con --captura
+        @app.post("/api/audio")
+        def subir_audio(audio: UploadFile = File(...), lat: float = Form(...), lon: float = Form(...),
+                        precision_m: float | None = Form(None), tomado_en: str | None = Form(None),
+                        k: str | None = Query(None)):
+            """Escucha de aves: WAV de la página del teléfono, con su posición y hora. BirdNET identifica especies."""
+            revisar_clave(k)
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise HTTPException(422, "Coordenadas fuera de rango")
+            wav = audio.file.read(MAX_AUDIO_BYTES + 1)
+            if len(wav) > MAX_AUDIO_BYTES:
+                raise HTTPException(413, "Audio de más de 6 MB")
+            try:
+                x, tasa = aves.leer_wav(wav)
+            except ValueError as e:
+                raise HTTPException(422, str(e))
+            t = hora(tomado_en)
+            detecciones = aves.detectar(wav, lat, lon, pd.Timestamp(t).to_pydatetime().replace(tzinfo=None) if t else None)
+            ruido = aves.resumir_ruido(aves.ruido_por_segundo(x, tasa))
+            with lock:
+                previo = estado["ahora"]
+                esc = alm.guardar_audio(wav, lat, lon, precision_m, tomado_en, detecciones, len(x) / tasa, ruido)
+                recalcular()
+                ahora = estado["ahora"]
+            return {
+                "escucha": esc, "analizada": detecciones is not None,
+                "fuera_de_area": esc["h3_index"] not in hex_area, "comuna": comuna_de.get(esc["h3_index"]),
+                "fuera_de_seleccion": esc["h3_index"] not in set(estado["sub"]["h3_index"]),
+                "en_corredor": esc["h3_index"] in ahora["hexes"],
+                "corredor_cambio": set(previo["hexes"]) != set(ahora["hexes"]),
+                "antes": _resumen(estado["antes"]), "previo": _resumen(previo), "ahora": _resumen(ahora),
+            }
 
-    @app.get("/audios/{nombre}")
-    def audios(nombre: str):
-        if not AUDIO_OK.match(nombre) or not (alm.audios / nombre).exists():
-            raise HTTPException(404)
-        return FileResponse(alm.audios / nombre, media_type="audio/wav")
+        @app.get("/audios/{nombre}")
+        def audios(nombre: str):
+            if not AUDIO_OK.match(nombre) or not (alm.audios / nombre).exists():
+                raise HTTPException(404)
+            return FileResponse(alm.audios / nombre, media_type="audio/wav")
 
     @app.get("/api/salud")
     def salud():
@@ -716,13 +721,14 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         return {"h3_index": h, "comuna": comuna_de.get(h), "n_fotos": len(fotos), "n_escuchas": len(escs),
                 "fotos": [{k2: c.get(k2) for k2 in claves} for c in fotos[:n]], "escuchas": escs[:5], **fila}
 
-    @app.get("/api/capturas")
-    def api_capturas():
-        """Todas las capturas y escuchas con su estado de validación (para revisar o exportar; el mapa no lo usa)."""
-        with lock:
-            caps = [{**c, "validacion": estado_validacion(c), "cuenta": cuenta(c, aceptar_sin_validar)}
-                    for c in alm.capturas()]
-            return {"capturas": caps, "escuchas": alm.escuchas()}
+    if captura:  # experimento de captura en terreno (retirado del sitio): apagado salvo con --captura
+        @app.get("/api/capturas")
+        def api_capturas():
+            """Todas las capturas y escuchas con su estado de validación (para revisar o exportar; el mapa no lo usa)."""
+            with lock:
+                caps = [{**c, "validacion": estado_validacion(c), "cuenta": cuenta(c, aceptar_sin_validar)}
+                        for c in alm.capturas()]
+                return {"capturas": caps, "escuchas": alm.escuchas()}
 
     @app.get("/api/historico")
     def api_historico(desde: str = Query(...), hasta: str = Query(...), s: str | None = Query(None)):
@@ -749,17 +755,18 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
                 "meta": {k2: m.get(k2) for k2 in ("meses_totales", "mes_min", "mes_max", "escenas_landsat",
                                                    "escenas_sentinel2")}}
 
-    @app.get("/videos/{nombre}")
-    def videos(nombre: str):
-        if not VIDEO_OK.match(nombre) or not (alm.videos / nombre).exists():
-            raise HTTPException(404)
-        return FileResponse(alm.videos / nombre)
+    if captura:  # experimento de captura en terreno (retirado del sitio): apagado salvo con --captura
+        @app.get("/videos/{nombre}")
+        def videos(nombre: str):
+            if not VIDEO_OK.match(nombre) or not (alm.videos / nombre).exists():
+                raise HTTPException(404)
+            return FileResponse(alm.videos / nombre)
 
-    @app.get("/fotos/{nombre}")
-    def fotos(nombre: str):
-        if not FOTO_OK.match(nombre) or not (alm.fotos / nombre).exists():
-            raise HTTPException(404)
-        return FileResponse(alm.fotos / nombre, media_type="image/jpeg")
+        @app.get("/fotos/{nombre}")
+        def fotos(nombre: str):
+            if not FOTO_OK.match(nombre) or not (alm.fotos / nombre).exists():
+                raise HTTPException(404)
+            return FileResponse(alm.fotos / nombre, media_type="image/jpeg")
 
     if sitio:  # al final: las rutas de arriba (API, fotos, audios, /captura, /mapa) tienen prioridad
         app.mount("/", StaticFiles(directory=sitio, html=True), name="sitio")
@@ -787,6 +794,8 @@ def main():
     p.add_argument("--puerto", type=int, default=int(os.environ.get("PORT", 8000)))
     p.add_argument("--host", default="127.0.0.1", help="127.0.0.1 basta para cloudflared; 0.0.0.0 abre la red local")
     p.add_argument("--clave", default=os.environ.get("TERRENO_CLAVE"))
+    p.add_argument("--captura", action="store_true",
+                   help="activa la API de subida del experimento de captura en terreno (fotos, videos y audio)")
     p.add_argument("--sin-claude", action="store_true", help="solo índice de verde, sin llamar a Claude")
     p.add_argument("--archivo-clave", type=Path, default=Path(".anthropic_key"),
                    help="archivo con la API key de Anthropic, si no está en ANTHROPIC_API_KEY")
@@ -794,12 +803,14 @@ def main():
                    help="las fotos sin validar (sin Claude) también cambian el corredor; solo para demos sin red")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO)
-    if not a.sin_claude:
-        log.info("Claude: %s", "API key encontrada" if cargar_clave_anthropic(a.archivo_clave)
-                 else "sin API key (se probará un perfil de `ant`; si no hay, fotos sin validar)")
-    aves.precargar()  # el modelo de BirdNET tarda unos segundos: que la primera escucha no espere
+    if a.captura:
+        if not a.sin_claude:
+            log.info("Claude: %s", "API key encontrada" if cargar_clave_anthropic(a.archivo_clave)
+                     else "sin API key (se probará un perfil de `ant`; si no hay, fotos sin validar)")
+        aves.precargar()  # el modelo de BirdNET tarda unos segundos: que la primera escucha no espere
     import uvicorn
-    uvicorn.run(crear_app(a.datos, a.data, a.km, a.clave, not a.sin_claude, a.aceptar_sin_validar, a.comunas), host=a.host, port=a.puerto)
+    uvicorn.run(crear_app(a.datos, a.data, a.km, a.clave, not a.sin_claude, a.aceptar_sin_validar, a.comunas,
+                          captura=a.captura), host=a.host, port=a.puerto)
 
 
 if __name__ == "__main__":

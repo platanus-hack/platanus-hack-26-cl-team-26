@@ -32,5 +32,6 @@ EXPOSE 8000
 
 HEALTHCHECK CMD curl --fail http://localhost:${PORT}/api/salud
 
-# TERRENO_CLAVE (API de subida del experimento de captura en terreno) llega como variable de entorno, nunca en la imagen.
+# TERRENO_CLAVE (opcional: protege la sesión compartida del mapa de respaldo y, con --captura, la API de subida del
+# experimento de captura en terreno) llega como variable de entorno, nunca en la imagen.
 CMD ["sh", "-c", "python -m terreno.servidor --host 0.0.0.0 --puerto ${PORT}"]
