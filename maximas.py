@@ -5,15 +5,22 @@ temp_aire_c es la máxima de ayer y medido_en la hora en que se midió.
 Uso:
   python maximas.py               # ayer, en hora de Santiago
   python maximas.py 2026-11-21    # otro día (la DMC solo guarda 12 h: sirve hasta el mediodía siguiente)
+  python maximas.py --completar   # suma SINCA a los días de las últimas 2 semanas que no lo tienen
+                                  # (desde Chile; lo corre scripts/completar_sinca.sh con un timer de systemd)
 
 Fuentes: solo estaciones oficiales. DMC (getDatosRecientesEma/{codigo}, minuto a minuto, 12 h) y SINCA
 (promedio horario). sensor.community no guarda el día y RedMeteo no tiene acceso confirmado.
 Huecos: una estación entra solo si tiene datos en al menos 3 de las 4 horas más calientes (14 a 18 h);
 con menos, su máxima podría quedar baja, así que se deja fuera y el barrio usa las vecinas o queda «sin dato».
-Duplicados: una fila por estación; estaciones a menos de 50 m se promedian (calidad); volver a correr el
-mismo día reescribe los archivos, no agrega filas.
-También guarda data/maximas/AAAA-MM-DD.csv (la máxima de cada estación), como historial.
+Duplicados: una fila por estación; estaciones a menos de 50 m se promedian (calidad). Volver a correr un día
+junta lo nuevo con data/maximas/AAAA-MM-DD.csv: cada estación queda una vez (la lectura nueva reemplaza a la
+anterior) y las que ya no se pueden pedir se conservan.
+SINCA bloquea las conexiones desde fuera de Chile (403 desde GitHub Actions, que corre en EE. UU.). La tarea
+diaria trae la DMC; SINCA guarda su historial, así que se suma después desde un PC en Chile con
+`python maximas.py AAAA-MM-DD` sin perder la DMC del día. live_h3.parquet solo se reescribe con el día más
+reciente del historial.
 """
+import datetime as dt
 import io
 import sys
 from pathlib import Path
@@ -28,6 +35,7 @@ import vivo
 
 HORAS_CALOR = range(14, 18)   # 14:00 a 17:59 de Santiago
 MIN_HORAS = 3
+DIAS_COMPLETAR = 14
 HISTORIAL = vivo.DATA / "maximas"
 
 
@@ -62,7 +70,9 @@ def dmc_dia(dia):
 
 def _sinca_serie(key, var, dia):
     url = fuentes.SINCA_URL.format(key=key, var=var, desde=f"{dia:%y%m%d}", hasta=f"{dia:%y%m%d}")
-    df = pd.read_csv(io.StringIO(requests.get(url, timeout=30).text), sep=";", decimal=",", header=0,
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()  # desde fuera de Chile: 403
+    df = pd.read_csv(io.StringIO(r.text), sep=";", decimal=",", header=0,
                      names=["fecha", "hora", "valor", "_"], dtype={"fecha": str, "hora": str}).dropna(subset=["valor"])
     return pd.Series(df.valor.values, index=[fuentes.hora_sinca(f, h).tz_convert("UTC") for f, h in zip(df.fecha, df.hora)])
 
@@ -85,21 +95,68 @@ def sinca_dia(dia):
     return filas
 
 
+def pendientes(hoy, n=DIAS_COMPLETAR):
+    """Días de los últimos n, desde el primero del historial, sin ninguna estación SINCA, del más antiguo al
+    más reciente. Ayer entra solo si la tarea de la noche ya dejó su archivo, para no escribir los dos a la vez."""
+    archivos = sorted(HISTORIAL.glob("*.csv"))
+    if not archivos:
+        return []
+    primero = dt.date.fromisoformat(archivos[0].stem)
+    dias = []
+    for k in range(n, 0, -1):
+        d = hoy - dt.timedelta(days=k)
+        if d < primero:
+            continue
+        ruta = HISTORIAL / f"{d}.csv"
+        if ruta.exists():
+            if not pd.read_csv(ruta).source.str.startswith("SINCA_").any():
+                dias.append(d)
+        elif k >= 2:
+            dias.append(d)
+    return dias
+
+
 def main(args):
-    dia = (pd.Timestamp(args[0]) if args else pd.Timestamp.now(tz=fuentes.TZ) - pd.Timedelta(days=1)).date()
-    filas = dmc_dia(dia) + sinca_dia(dia)
+    hoy = pd.Timestamp.now(tz=fuentes.TZ).date()
+    if args[:1] == ["--completar"]:
+        dias = pendientes(hoy, int(args[1]) if len(args) > 1 else DIAS_COMPLETAR)
+        print(f"Días sin SINCA: {', '.join(map(str, dias)) or 'ninguno'}")
+        for d in dias:
+            guardar(d, sinca_dia(d))
+        return 0
+    dia = pd.Timestamp(args[0]).date() if args else hoy - dt.timedelta(days=1)
+    return guardar(dia, dmc_dia(dia) + sinca_dia(dia))
+
+
+def guardar(dia, filas):
+    """Junta las máximas nuevas con el historial del día y, si es el día más reciente, reescribe live_h3."""
     if not filas:
         print(f"{dia}: ninguna estación con datos de las horas de calor; no se escribe nada")
         return 1
-    est, n_dup = calidad._duplicados(pd.DataFrame(filas)[fuentes.COLUMNAS].reset_index(drop=True))
+    ruta = HISTORIAL / f"{dia}.csv"
+    nuevas = pd.DataFrame(filas)[fuentes.COLUMNAS]
+    est = juntar(pd.read_csv(ruta, parse_dates=["medido_en"]) if ruta.exists() else None, nuevas)
+    HISTORIAL.mkdir(parents=True, exist_ok=True)
+    est.sort_values("source").to_csv(ruta, index=False)
+    est, n_dup = calidad._duplicados(est)
+    print(f"{dia}: {len(est)} estaciones ({len(nuevas)} nuevas, {n_dup} duplicadas), máxima {est.temp_c.max():.1f} °C")
+    if max(HISTORIAL.glob("*.csv")).stem != str(dia):
+        print("Hay un día más reciente en el historial: live_h3.parquet no se toca")
+        return 0
     live = interpolar.por_barrio(est, interpolar.barrios(pd.read_parquet(vivo.grilla())))
     live["alerta"] = vivo.alerta(live, ())
     vivo.escribir(vivo.DATA / "live_h3.parquet", lambda p: live.to_parquet(p, index=False))
-    HISTORIAL.mkdir(parents=True, exist_ok=True)
-    est.sort_values("source").to_csv(HISTORIAL / f"{dia}.csv", index=False)
-    print(f"{dia}: {len(est)} estaciones ({n_dup} duplicadas), máxima {est.temp_c.max():.1f} °C; "
-          f"barrios {live.confianza.value_counts().to_dict()}")
+    print(f"barrios {live.confianza.value_counts().to_dict()}")
     return 0
+
+
+def juntar(previas, nuevas):
+    """Una fila por estación: la nueva reemplaza a la anterior; las anteriores que no volvieron se quedan."""
+    if previas is None or not len(previas):
+        return nuevas.reset_index(drop=True)
+    previas = previas[fuentes.COLUMNAS].assign(medido_en=pd.to_datetime(previas.medido_en, utc=True))
+    quedan = previas[~previas.source.isin(nuevas.source)]
+    return pd.concat([quedan, nuevas], ignore_index=True).astype({"oficial": bool, "bajo_techo": bool})
 
 
 if __name__ == "__main__":
