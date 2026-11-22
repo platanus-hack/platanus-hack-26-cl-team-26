@@ -1,0 +1,31 @@
+"""Máxima del día: regla de huecos y una fila por estación. Uso: python -m pytest tests/test_maximas.py"""
+import datetime as dt
+
+import pandas as pd
+
+import maximas
+
+DIA = dt.date(2026, 11, 21)
+
+
+def lecturas(horas_temp, dia="2026-11-21"):
+    """{hora de Santiago: temp} → lecturas de una estación."""
+    t = [pd.Timestamp(f"{dia} {h:02d}:30", tz="America/Santiago").tz_convert("UTC") for h in horas_temp]
+    return pd.DataFrame({"source": "DMC_1", "lat": -33.45, "lon": -70.65, "temp_c": list(horas_temp.values()),
+                         "humedad_pct": 30.0, "medido_en": t, "oficial": True, "bajo_techo": False})
+
+
+def test_maxima_del_dia_y_hora():
+    m = maximas.maxima(lecturas({10: 18.0, 14: 26.0, 15: 28.5, 16: 27.0, 17: 25.0}), DIA)
+    assert m.temp_c == 28.5 and m.medido_en.tz_convert("America/Santiago").hour == 15
+
+
+def test_hueco_en_horas_de_calor_deja_fuera_la_estacion():
+    assert maximas.maxima(lecturas({10: 18.0, 11: 20.0, 14: 26.0, 15: 27.0}), DIA) is None  # solo 2 de 4 horas
+
+
+def test_no_mezcla_otro_dia_ni_valores_fuera_de_rango():
+    hoy = lecturas({14: 26.0, 15: 50.0, 16: 27.0, 17: 25.0})
+    ayer = lecturas({14: 33.0, 15: 33.0, 16: 33.0}, dia="2026-11-20")
+    m = maximas.maxima(pd.concat([hoy, ayer], ignore_index=True), DIA)
+    assert m.temp_c == 27.0

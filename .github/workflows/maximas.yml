@@ -1,0 +1,32 @@
+# Máxima del día por barrio (maximas.py). Corre a las 04:05 UTC: 01:05 de Santiago en verano y 00:05 en
+# invierno, siempre pasada la medianoche. La DMC entrega las últimas 12 h, así que la tarde de ayer está.
+# Secretos del repo (Settings → Secrets and variables → Actions): DMC_USUARIO y DMC_TOKEN. Sin ellos usa solo SINCA.
+name: Maximas del dia
+on:
+  schedule:
+    - cron: "5 4 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: maximas
+jobs:
+  maximas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas numpy pyarrow h3 requests
+      - run: python maximas.py
+        env:
+          DMC_USUARIO: ${{ secrets.DMC_USUARIO }}
+          DMC_TOKEN: ${{ secrets.DMC_TOKEN }}
+      - name: Subir live_h3.parquet y el historial
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/live_h3.parquet data/maximas
+          git diff --cached --quiet && exit 0
+          git commit -m "Maximas del dia $(TZ=America/Santiago date -d yesterday +%F)"
+          git pull --rebase && git push
