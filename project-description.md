@@ -1,24 +1,44 @@
 # Viridis
 
-**Donde se necesita el verde: calor, copa de árboles y personas, cuadra por cuadra, para decidir por dónde plantar el próximo corredor verde de Santiago.**
+**Conectamos las islas verdes de Santiago: corredores que unen cerros y parques para las personas, las aves y las abejas.**
 
 ## El problema
 
-Santiago se calienta de forma desigual. El oriente tiene copa de árboles y parques; el poniente y el sur tienen asfalto, menos sombra y más gente expuesta. Los municipios plantan con presupuestos chicos y sin una forma simple de ver dónde un árbol alivia más.
+Los cerros y parques de Santiago son islas. Ahí viven aves y abejas, pero entre una isla y otra hay cuadras y
+cuadras de cemento y calor que no pueden cruzar. Las mismas cuadras son las que tienen menos sombra y más gente
+expuesta: hoy solo el 14 % de los santiaguinos vive a menos de 300 m de un espacio verde, la distancia que
+recomienda la OMS. Los municipios plantan con presupuestos chicos y sin una forma simple de saber dónde un árbol
+conecta y alivia más.
 
 ## Cómo funciona
 
 - Divide las 34 comunas del Gran Santiago en una grilla hexagonal H3, del tamaño de una cuadra.
-- En cada cuadra junta el calor del suelo (Landsat), la copa de árboles (modelo propio sobre Sentinel-2) y la población (Censo 2024), más la cercanía a colegios, consultorios, metro y paraderos.
-- Con eso calcula un índice de urgencia: 40 % calor, 40 % falta de copa y 20 % personas, con pesos que se pueden mover.
-- Traza el corredor verde óptimo que une parques existentes pasando por las cuadras más urgentes, y muestra cuánto cambia el promedio de lo elegido.
-- Se puede filtrar por comuna o encerrar una zona con un lápiz sobre el mapa, y comparar cada comuna contra el promedio de Santiago.
-- En terreno, una foto desde el celular corrige la copa estimada; Claude revisa que la foto sirva antes de usarla.
+- En cada cuadra cruza el calor del suelo (Landsat), la copa de árboles (modelo propio sobre Sentinel-2, que sigue
+  al mapa de referencia de Meta con correlación 0,92), las personas (Censo 2024) y la cercanía a colegios,
+  consultorios, metro y paraderos.
+- Suma la temperatura máxima del aire de cada día, de las estaciones oficiales de la Dirección Meteorológica y del
+  SINCA, que se actualiza sola cada noche.
+- Muestra dónde se han registrado aves y abejas nativas: 655.000 registros de aves y 1.600 de abejas desde 2015,
+  de eBird, iNaturalist y museos (GBIF).
+- Traza el corredor óptimo que une islas verdes y deja elegir para quién: sombra para las personas, copa continua
+  para las aves o mini islas floridas para las abejas, o las tres a la vez.
+- Se puede elegir una comuna o encerrar una zona con un lápiz, mover los pesos y el presupuesto en kilómetros, y
+  exportar los tramos.
+
+## Impacto
+
+- Entre Providencia y Cerro Navia, con 3 km, el corredor de Viridis llega a 13.295 personas, contra 8.334 de un
+  trazado al azar del mismo largo: 60 % más.
+- Con 100 km de corredores sobre todo Santiago, 30 islas verdes dejan de estar solas (4.055 hectáreas de hábitat
+  unido) y 764.000 personas más quedan a menos de 300 m de un espacio verde: del 14 % al 26 % de la ciudad.
+- No prometemos grados de enfriamiento: no hay un coeficiente publicado para Santiago que podamos citar.
 
 ## Para quién
 
-Equipos de medio ambiente y planificación de municipios, juntas de vecinos y organizaciones que impulsan arbolado urbano y necesitan justificar dónde plantar primero.
+Equipos de medio ambiente y planificación de municipios, juntas de vecinos y organizaciones que impulsan el
+arbolado urbano y necesitan justificar dónde plantar primero, y para quién.
 
 ## Por qué importa
 
-Cada metro de sombra cuenta más donde hace más calor, hay menos árboles y vive más gente. Viridis pone esa cuenta a la vista, cuadra por cuadra, para que el verde llegue donde se necesita.
+Un corredor verde no es solo sombra: es el camino por el que la vida vuelve a moverse entre cerros y parques.
+Viridis pone a la vista dónde conectar primero, cuadra por cuadra, para que el verde llegue donde se necesita.
