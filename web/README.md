@@ -1,7 +1,7 @@
 # Viridis (antes VerdeH3) · página web (experimental)
 
 Concepto B, "página que se recorre": portada con la rama ilustrada, y las secciones Datos clave,
-Planificar, Histórico y Fuentes, con la paleta Bioentidad (crema, oliva #4F6E31, salvia) y la capa de
+Planificar, Santiago conectado y Fuentes, con la paleta Bioentidad (crema, oliva #4F6E31, salvia) y la capa de
 calor en ocre. Next.js 16 + MapLibre, sobre Carto Positron teñido.
 
 ## Correr
@@ -28,10 +28,10 @@ Producción: `npm run build && npm start`. Si el servidor está en otra máquina
   de `public/data/fauna.json` (GBIF, `python fauna_gbif.py` desde la raíz).
 - **Planificar**: largo y pesos del corredor (los recalcula el servidor), para humanos, aves, abejas o mixto,
   la fauna registrada en los barrios que cruza y exportar los tramos en GeoJSON.
-- **Histórico**: barras mensuales del suelo (`public/data/historico.json`); al elegir un mes el servidor
-  promedia desde ahí hasta hoy.
+- **Santiago conectado**: un control de 0 a 100 km y «Ver crecer la red» sobre todo Santiago, con las islas que une,
+  las personas a una cuadra y la fauna registrada (`public/data/red.json`, de `python red_conectada.py`).
 
-`historico.json` y `fauna.json` son estáticos. Para regenerarlo, desde la raíz del repo:
+`historico.json` (lo usa `/fuentes`), `fauna.json` y `red.json` son estáticos. Para regenerar el primero, desde la raíz del repo:
 
 ```bash
 python web/scripts/exportar_datos.py
