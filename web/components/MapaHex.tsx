@@ -16,7 +16,7 @@ const VACIO: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: 
 export type Capa = { id: string; color: ExpressionSpecification };
 // Lo elegido: índices de comuna (propiedad c de cada cuadra) o cuadras sueltas (propiedad i). null = todo Santiago.
 export type Foco = { comunas: number[]; hexes: number[] } | null;
-const TENUE = 0.22;
+const TENUE = 0.5, VELO = 0.42;   // lo no elegido: capa más transparente y un velo oscuro encima
 
 function tenir(mapa: MapaML) {
   for (const l of mapa.getStyle().layers ?? []) {
@@ -38,7 +38,7 @@ function tenir(mapa: MapaML) {
 }
 
 export default function MapaHex({ datos, capas, activa, corredor, comunas, distritos, capturas, recorridos, popupCaptura,
-  popupHex, encuadre, foco = null, alPasar, alComuna, alLazo, etiqueta, children }: {
+  popupHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, children }: {
   datos: GeoJSON.FeatureCollection;
   capas: Capa[];
   activa: string;
@@ -51,6 +51,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   popupHex?: (i: number) => Promise<string> | null;  // ficha de la cuadra; null si no tiene datos de terreno
   encuadre: LngLatBoundsLike;
   foco?: Foco;
+  hitos?: GeoJSON.FeatureCollection;         // puntos con propiedad n: nombres de cerros isla y parques
   alPasar?: (i: number | null) => void;      // cuadra bajo el puntero
   alComuna?: (c: string) => void;            // tocar una cuadra o comuna: suma o quita su comuna
   alLazo?: (anillo: [number, number][]) => void;  // zona dibujada punto a punto, en [lng, lat]
@@ -74,7 +75,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   const sinClicHasta = useRef(0);   // al cerrar la zona el mapa dispara un clic que no debe elegir comuna
   const cb = useRef({ alPasar, alComuna, alLazo, popupCaptura, popupHex, activa, datos, lapiz });
   cb.current = { alPasar, alComuna, alLazo, popupCaptura, popupHex, activa, datos, lapiz };
-  const inicial = useRef({ datos, capas, activa, encuadre });
+  const inicial = useRef({ datos, capas, activa, encuadre, hitos });
   const hayComunas = useRef(false), hayCuadras = useRef(false), claveCorredor = useRef("");
 
   useEffect(() => {
@@ -128,6 +129,11 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
           id: "borde", type: "line", source: "hex", minzoom: 11,
           paint: { "line-color": "#F6F1E4", "line-width": 0.35, "line-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0, 12, 1] },
         });
+        // Velo oscuro sobre las cuadras no elegidas; apagado mientras se ve todo Santiago.
+        nuevo.addLayer({
+          id: "velo", type: "fill", source: "hex", layout: { visibility: "none" },
+          paint: { "fill-color": "#22281A", "fill-opacity": 0, "fill-antialias": false },
+        });
         nuevo.addSource("elegida", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "elegida", type: "line", source: "elegida", paint: { "line-color": "#22281A", "line-width": 2.2 } });
         // Sectores: raya fina punteada entre distritos de una misma comuna, más visible al acercar.
@@ -175,6 +181,14 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         });
         nuevo.addSource("recorridos", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "recorridos", type: "line", source: "recorridos", paint: { "line-color": "#6B3FA0", "line-width": 4, "line-opacity": 0.85 } });
+        // Nombres de los cerros isla y parques grandes, con la misma fuente de letras del mapa base.
+        const letra = (nuevo.getStyle().layers ?? []).flatMap((l) => (l.type === "symbol" && Array.isArray(l.layout?.["text-font"]) ? [l.layout["text-font"] as string[]] : []))[0];
+        nuevo.addSource("hitos", { type: "geojson", data: inicial.current.hitos ?? VACIO });
+        if (letra) nuevo.addLayer({
+          id: "hitos", type: "symbol", source: "hitos",
+          layout: { "text-field": ["get", "n"], "text-font": letra, "text-size": ["interpolate", ["linear"], ["zoom"], 9, 11, 13, 14], "text-max-width": 7 },
+          paint: { "text-color": "#22301A", "text-halo-color": "#FFFDF6", "text-halo-width": 1.8 },
+        });
         nuevo.addSource("lazo", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "lazo-relleno", type: "fill", source: "lazo", filter: ["==", ["get", "tipo"], "zona"], paint: { "fill-color": "#966222", "fill-opacity": 0.14 } });
         nuevo.addLayer({ id: "lazo", type: "line", source: "lazo", filter: ["==", ["get", "tipo"], "borde"], layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#22281A", "line-width": 2.4 } });
@@ -260,14 +274,15 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   }, [datos, listo]);
 
   // Lo elegido a color pleno; lo demás atenuado, nunca oculto.
-  const claveFoco = foco ? `${foco.comunas.join()}|${foco.hexes.length}:${foco.hexes.slice(0, 50).join()}` : "";
+  const claveFoco = foco ? `f:${foco.comunas.join()}|${foco.hexes.length}:${foco.hexes.slice(0, 50).join()}` : "";
   useEffect(() => {
     const m = mapa.current;
     if (!listo || !m) return;
-    const op: ExpressionSpecification | number = foco
-      ? ["case", ["any", ["in", ["get", "c"], ["literal", foco.comunas]], ["in", ["get", "i"], ["literal", foco.hexes]]], OPACIDAD, TENUE]
-      : OPACIDAD;
-    for (const c of capas) if (m.getLayer(c.id)) m.setPaintProperty(c.id, "fill-opacity", op);
+    // Los parques (propiedad k, solo en Planificar) nunca se apagan: son las islas verdes que une el corredor.
+    const dentro: ExpressionSpecification = ["any", ["boolean", ["get", "k"], false], ["in", ["get", "c"], ["literal", foco?.comunas ?? []]], ["in", ["get", "i"], ["literal", foco?.hexes ?? []]]];
+    for (const c of capas) if (m.getLayer(c.id)) m.setPaintProperty(c.id, "fill-opacity", foco ? ["case", dentro, 0.95, TENUE] : OPACIDAD);
+    m.setPaintProperty("velo", "fill-opacity", foco ? ["case", dentro, 0, VELO] : 0);
+    m.setLayoutProperty("velo", "visibility", foco ? "visible" : "none");
   }, [claveFoco, capas, listo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

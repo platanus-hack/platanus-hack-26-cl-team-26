@@ -11,8 +11,6 @@ import { detalleHex, historico, useTerreno, type Escucha, type Estado, type HexC
 type Serie = { meses: string[]; escenas_landsat: number; escenas_sentinel2: number; media_mes: (number | null)[]; lst_fecha_ultima: string };
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-const MESES_LARGOS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
-const fechaLarga = (iso: string) => { const [a, m, d] = iso.split("-").map(Number); return `${d} de ${MESES_LARGOS[m - 1]} de ${a}`; };
 const esVerano = (ym: string) => [12, 1, 2].includes(Number(ym.slice(5)));
 const mesCorto = (ym: string) => { const [a, m] = ym.split("-").map(Number); return `${MESES[m - 1]} ${a}`; };
 const sinNulos = (xs: (number | null)[]) => xs.filter((x): x is number => x != null);
@@ -49,9 +47,18 @@ const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Copa de ár
 const LEYENDA: Record<string, [string, string]> = {
   calor: [grad(OCRE), "Índice de calor: 60 % suelo y 40 % aire donde hay sensores con confianza alta o media; si no, solo suelo"],
   copa: [grad(VERDE), "Copa de árboles, de 0 % a 25 % o más"],
-  personas: [grad(VERDE), "Personas: 50 % densidad del Censo y 50 % cercanía a servicios"],
+  personas: [grad(VERDE), "Personas: 70 % habitantes del Censo en la cuadra y 30 % cercanía a colegios, salud, metro y paraderos"],
 };
-const CAPAS_PLAN: Capa[] = [{ id: "urg", color: ["case", ["get", "k"], "#B7C298", ["==", ["get", "u"], null], "#E4DFCC", escala("u", VERDE, 0, 0.85)] }];
+// Cerros isla y parques grandes de Santiago: las islas verdes que el corredor busca unir.
+const ISLAS: [string, number, number][] = [
+  ["Cerro San Cristóbal", -70.632, -33.422], ["Cerro Renca", -70.713, -33.392], ["Cerro Santa Lucía", -70.6436, -33.4405],
+  ["Parque O'Higgins", -70.66, -33.4645], ["Quinta Normal", -70.682, -33.441], ["Cerro Blanco", -70.6445, -33.4195],
+];
+const HITOS: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: ISLAS.map(([n, lng, lat]) => ({ type: "Feature", properties: { n }, geometry: { type: "Point", coordinates: [lng, lat] } })),
+};
+const CAPAS_PLAN: Capa[] = [{ id: "urg", color: ["case", ["get", "k"], "#7FA35A", ["==", ["get", "u"], null], "#E4DFCC", escala("u", VERDE, 0, 0.85)] }];
 const CAPAS_HIST: Capa[] = [{ id: "hist", color: ["case", ["==", ["get", "hn"], null], "#E4DFCC", escala("hn", OCRE, 0, 1)] }];
 
 function encuadreDe(anillos: number[][][], margen = 0.006): LngLatBoundsLike {
@@ -79,10 +86,17 @@ function Seccion({ id, alt, children }: { id: string; alt?: boolean; children: R
 
 export default function Pagina({ serie }: { serie: Serie }) {
   const t = useTerreno();
+  // La barra queda fija; al bajar de la portada se le marca el borde para separarla del contenido.
+  const [bajo, setBajo] = useState(false);
+  useEffect(() => {
+    const mira = () => setBajo(window.scrollY > 8);
+    mira();
+    window.addEventListener("scroll", mira, { passive: true });
+    return () => window.removeEventListener("scroll", mira);
+  }, []);
   return (
     <main className="b">
-      <p className="banda">Gran Santiago: 34 comunas y 13.172 cuadras. Calor de la escena Landsat más reciente, del {fechaLarga(serie.lst_fecha_ultima)}.</p>
-      <header className="b-pad"><div className="b-in">
+      <header className={`b-pad${bajo ? " bajo" : ""}`}><div className="b-in">
         <a className="marca" href="#inicio"><img src="/viridis.svg" alt="" width={34} height={34} />VIRIDIS</a>
         <nav aria-label="Secciones"><a href="#ahora">El calor ahora</a><a href="#planificar">Planificar</a><a href="#historico">Histórico</a><a href="#fuentes">Fuentes</a></nav>
       </div></header>
@@ -116,6 +130,10 @@ export default function Pagina({ serie }: { serie: Serie }) {
     </main>
   );
 }
+
+const SIN_CORREDOR: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+// Planificar sin nada elegido: todo el mapa con el velo de lo no elegido, detrás de la invitación.
+const TODO_GRIS: Foco = { comunas: [], hexes: [] };
 
 function Esqueletos({ error }: { error: string | null }) {
   return (
@@ -224,7 +242,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
     setElegidas((ant) => (ant.includes(c) ? ant.filter((x) => x !== c) : [...ant, c]));
   }
   function sumar(cs: string[]) { setZona(null); setElegidas((ant) => [...new Set([...ant, ...cs])]); }
-  function reiniciar() { setZona(null); setElegidas([]); }
+  function reiniciar() { setZona(null); setElegidas([]); setPlanTodo(false); }
   // Lápiz: las cuadras que toca el contorno dibujado; cada trazo se suma a la zona anterior.
   function lazo(contorno: [number, number][]) {
     const res = getResolution(B.h[0]);
@@ -323,7 +341,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   }, [B]);
   const personas = useMemo(() => {
     const p = norm(B.pob);
-    return p.map((x, i) => 0.5 * (x ?? 0.5) + 0.5 * Math.min(1, Math.max(0, B.social[i] ?? 0.5)));
+    return p.map((x, i) => 0.7 * (x ?? 0.5) + 0.3 * Math.min(1, Math.max(0, B.social[i] ?? 0.5)));   // igual que optimizer.urgencia
   }, [B]);
   const datosAhora = useMemo(() => coleccion((i) => ({ calor: calor[i], copa: B.copa[i], personas: personas[i] })), [calor, personas, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
   // Cifras de lo elegido: el total y, debajo, cada comuna (o cada comuna que toca la zona dibujada).
@@ -380,6 +398,13 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const claveCorredor = enCorredor.map((i) => H.h[i]).join();
   // Por defecto se ve el área completa (las 34 comunas si están todas); el corredor se acerca a pedido.
   const [cerca, setCerca] = useState(false);
+  // Planificar viene después del filtro: sin nada elegido el mapa invita a elegir (o a usar todo Santiago a propósito).
+  const [planTodo, setPlanTodo] = useState(false);
+  const planListo = !nada || planTodo;
+  // El corredor que se muestra tiene que ser el de lo elegido ahora, no el del área anterior del servidor.
+  const esperadas = elegidas.length ? elegidas : info.comunas;
+  const alDia = !ocupado && estado.seleccion.length === esperadas.length && esperadas.every((c) => estado.seleccion.includes(c)) && estado.parametros.zona === zonaIdx.length;
+  const verCorredor = planListo && alDia;
   useEffect(() => setCerca(false), [encuadreArea]);
   const encuadrePlan = useMemo(() => (cerca && enCorredor.length ? encuadreDe(enCorredor.map((i) => anillosH[i]), 0.025) : encuadreArea),
     [cerca, claveCorredor, encuadreArea]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -490,8 +515,8 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       </Seccion>
 
       <Seccion id="planificar">
-        <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2><p>Mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes del área elegida.</p></div>
-        <div className="b-controles escalon" style={est(2)}>
+        <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2><p>Elige dónde, mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes de lo elegido.</p></div>
+        <div className={`b-controles escalon${planListo ? "" : " espera"}`} style={est(2)}>
           {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"], ["bio", "Biodiversidad (terreno)"]] as const).map(([k, nombre]) => (
             <div className="peso" key={k}>
               <label htmlFor={`p-${k}`}><span>{nombre}</span><b>{Math.round((100 * pesos[k]) / total)} %</b></label>
@@ -505,9 +530,19 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
         <div className="b-plan">
           <div className="izq escalon" style={est(3)}>
-            <MapaHex {...mapaComun} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={corredor} encuadre={encuadrePlan}
-              etiqueta="Corredor propuesto sobre la urgencia de cada cuadra">{filtro}</MapaHex>
-            {enCorredor.length > 0 && (
+            <MapaHex {...mapaComun} foco={planListo ? foco : TODO_GRIS} hitos={HITOS} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={verCorredor ? corredor : SIN_CORREDOR} encuadre={encuadrePlan}
+              etiqueta="Corredor propuesto sobre la urgencia de cada cuadra">
+              {filtro}
+              {!planListo && <div className="gris" aria-hidden="true" />}
+              {!planListo && (
+                <div className="invita" role="status">
+                  <b>Primero elige dónde</b>
+                  <span>Toca comunas en este mapa o encierra cuadras con el lápiz. El corredor se traza solo dentro de lo que elijas.</span>
+                  <button type="button" className="mini" onClick={() => setPlanTodo(true)}>Trazar en todo Santiago</button>
+                </div>
+              )}
+            </MapaHex>
+            {verCorredor && enCorredor.length > 0 && (
               <button type="button" className="pill zoom-corredor" aria-pressed={cerca} onClick={() => setCerca(!cerca)}>
                 {cerca ? (nada ? "Ver las 34 comunas" : "Ver toda el área") : "Acercar al corredor"}
               </button>
@@ -515,12 +550,27 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             <div className="leyenda">
               <span><i className="barra" style={{ background: grad(VERDE) }} />Urgencia</span>
               <span><i className="cuadro" style={{ background: "#22301A" }} />Corredor</span>
-              <span><i className="cuadro" style={{ background: "#B7C298" }} />Parque</span>
+              <span><i className="cuadro" style={{ background: "#7FA35A" }} />Islas verdes: cerros y parques</span>
               <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Sin datos de terreno</span>
               <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno</span>
               <span>Toca una cuadra verificada para ver sus fotos y aves</span>
             </div>
           </div>
+          {!planListo ? (
+            <div className="cifras pasos">
+              <b>Cómo se planifica</b>
+              <ol>
+                <li><b>Elige dónde.</b> Una o varias comunas, o una zona dibujada con el lápiz.</li>
+                <li><b>Ajusta los pesos</b> de calor, falta de árboles y personas, y el presupuesto en kilómetros.</li>
+                <li><b>Revisa el corredor</b> que aparece en el mapa y expórtalo.</li>
+              </ol>
+            </div>
+          ) : !alDia ? (
+            <div className="cifras" role="status" aria-label="Trazando el corredor">
+              <span className="nota">Trazando el corredor en {zona ? "la zona dibujada" : nada ? "todo Santiago" : elegidas.length === 1 ? elegidas[0] : `${elegidas.length} comunas`}…</span>
+              <div className="sk" style={{ height: 64, width: "70%" }} /><div className="sk sk-linea" /><div className="sk" style={{ height: 64, width: "55%" }} /><div className="sk sk-linea" /><div className="sk" style={{ height: 120 }} />
+            </div>
+          ) : (
           <div className="cifras">
             {a.hexes ? (
               <>
@@ -557,6 +607,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             )}
             <p className="nota">{estado.totales.capturas} {estado.totales.capturas === 1 ? "captura" : "capturas"} en terreno; {estado.totales.cuentan} cuentan{estado.totales.escuchas ? `; ${estado.totales.escuchas} ${estado.totales.escuchas === 1 ? "escucha" : "escuchas"} de aves` : ""}. El mapa se actualiza solo cuando llega una foto o escucha nueva.</p>
           </div>
+          )}
         </div>
       </Seccion>
 

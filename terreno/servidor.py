@@ -8,7 +8,9 @@ Aves por sonido: el teléfono graba 15 s (WAV) y BirdNET identifica especies (te
 (fauna y flores según Claude) arman la biodiversidad por hexágono, que entra al corredor con el peso w_bio.
 El mapa filtra por comuna, distrito (barrio H3 res 7) o una zona dibujada, mueve presupuesto y pesos del
 corredor, y muestra la serie histórica satelital (data/historico_h3.parquet). Si existe data/live_h3.parquet
-(sensores en vivo, Rol 2) entra al calor de la urgencia; se relee cuando cambia.
+(sensores en vivo, Rol 2) entra al calor de la urgencia; se relee cuando cambia. Mientras alguien mira el mapa,
+si ese archivo tiene más de REFRESCO_VIVO_MIN minutos (10 por omisión; 0 lo apaga) se corre un ciclo de vivo.py
+en otro hilo, así que no hace falta dejar vivo.py corriendo. La DMC usa DMC_USUARIO y DMC_TOKEN del entorno.
 Si TERRENO_CLAVE (o --clave) está definida, subir fotos exige ?k=<clave>, porque la URL del túnel es pública.
 Solo cuentan las fotos que Claude valida como exteriores de calle; sin Claude quedan «sin validar» y no cambian
 el corredor, salvo con --aceptar-sin-validar (demo sin red).
@@ -24,6 +26,7 @@ import logging
 import os
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -161,7 +164,10 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     lst_hoy = df["lst_c_ultima"].fillna(df["lst_c"]) if "lst_c_ultima" in df else df["lst_c"]
     copa = df["copa_modelo_pct"] if "copa_modelo_pct" in df else df["arbol_pct"]
     lock = threading.Lock()
-    estado: dict = {"version": 0, "sel_id": 0, "live_mtime": None, "live": None,
+    refresco_s = float(os.getenv("REFRESCO_VIVO_MIN", "10")) * 60
+    if Path(data_dir).resolve() != Path("data").resolve():
+        refresco_s = 0  # vivo.py escribe en ./data
+    estado: dict = {"version": 0, "sel_id": 0, "live_mtime": None, "live": None, "intento_vivo": 0.0,
                     "p": {"comunas": [], "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2, W_BIO)}}
 
     def leer_live() -> bool:
@@ -225,7 +231,25 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         estado["ahora"] = resolver(terreno)
         estado["version"] += 1
 
+    def refrescar_vivo():
+        """Lanza un ciclo de vivo.py si live_h3.parquet está viejo; leer_live() lo toma en un próximo sondeo.
+        Tras un intento espera refresco_s antes del siguiente, aunque haya fallado."""
+        mt = ruta_live.stat().st_mtime if ruta_live.exists() else 0
+        if not refresco_s or time.time() - max(mt, estado["intento_vivo"]) < refresco_s:
+            return
+        estado["intento_vivo"] = time.time()
+
+        def correr():
+            try:
+                import vivo
+                vivo.una_vez()
+            except Exception as e:  # sin red o sin token: el mapa sigue con el último dato
+                log.warning("Ciclo en vivo falló: %r", e)
+
+        threading.Thread(target=correr, daemon=True).start()
+
     def revisar_live():
+        refrescar_vivo()
         if leer_live():
             estado["antes"] = resolver()
             recalcular()
