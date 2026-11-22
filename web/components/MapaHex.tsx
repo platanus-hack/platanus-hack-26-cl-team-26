@@ -41,15 +41,14 @@ function tenir(mapa: MapaML) {
   }
 }
 
-// Corredor en verde hoja (más claro que las islas, con borde oliva oscuro) y mini islas de abejas en amarillo.
-// Si el plan incluye abejas, el corredor va negro con las mini islas amarillas.
-export const COLOR_CORREDOR = "#62A83C", COLOR_MINI_ISLA = "#F4C430";
-export const TONO_CORREDOR = { verde: { fondo: COLOR_CORREDOR, borde: "#2F4520" }, abeja: { fondo: "#1F1F1A", borde: "#000000" } };
+// Corredor en azul marino (personas y aves) o negro con mini islas amarillas si el plan incluye abejas.
+export const COLOR_CORREDOR = "#1F3A6B", COLOR_MINI_ISLA = "#F4C430";
+export const TONO_CORREDOR = { marino: { fondo: COLOR_CORREDOR, borde: "#0E1F3F" }, abeja: { fondo: "#1F1F1A", borde: "#000000" } };
 export type TonoCorredor = keyof typeof TONO_CORREDOR;
 const TESELA_Z = 9;   // zoom de tesela único para cuadras, sectores y comunas (calzan entre sí y no se recargan)
 
 export default function MapaHex({ datos, capas, activa, corredor, comunas, distritos, capturas, recorridos, popupCaptura,
-  popupHex, datoHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, tono = "verde", children }: {
+  popupHex, datoHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, tono = "marino", children }: {
   datos: GeoJSON.FeatureCollection;
   capas: Capa[];
   activa: string;
@@ -68,7 +67,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   alComuna?: (c: string) => void;            // doble clic en una cuadra o comuna: suma o quita su comuna
   alLazo?: (anillo: [number, number][] | null, pintadas?: number[]) => void;  // contorno cerrado en [lng, lat] (o null) y cuadras pintadas con el pincel
   etiqueta: string;
-  tono?: TonoCorredor;                       // colores del corredor: verde, o negro si el plan incluye abejas
+  tono?: TonoCorredor;                       // colores del corredor: azul marino, o negro si el plan incluye abejas
   children?: React.ReactNode;                 // controles que flotan sobre el mapa
 }) {
   const [cont, visible] = useVisible<HTMLDivElement>();
