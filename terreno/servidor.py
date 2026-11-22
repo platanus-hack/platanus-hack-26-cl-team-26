@@ -8,9 +8,9 @@ Aves por sonido: el teléfono graba 15 s (WAV) y BirdNET identifica especies (te
 (fauna y flores según Claude) arman la biodiversidad por hexágono, que entra al corredor con el peso w_bio.
 El mapa filtra por comuna, distrito (barrio H3 res 7) o una zona dibujada, mueve presupuesto y pesos del
 corredor, y muestra la serie histórica satelital (data/historico_h3.parquet). Si existe data/live_h3.parquet
-(sensores en vivo, Rol 2) entra al calor de la urgencia; se relee cuando cambia. Mientras alguien mira el mapa,
-si ese archivo tiene más de REFRESCO_VIVO_MIN minutos (10 por omisión; 0 lo apaga) se corre un ciclo de vivo.py
-en otro hilo, así que no hace falta dejar vivo.py corriendo. La DMC usa DMC_USUARIO y DMC_TOKEN del entorno.
+(máxima del día por barrio, Rol 2: lo escribe maximas.py cada noche) entra al calor de la urgencia; se relee
+cuando cambia. Con REFRESCO_VIVO_MIN > 0 (apagado por omisión), mientras alguien mira el mapa y ese archivo
+tiene más de esos minutos, se corre un ciclo de vivo.py (lectura del momento) en otro hilo.
 Si TERRENO_CLAVE (o --clave) está definida, subir fotos exige ?k=<clave>, porque la URL del túnel es pública.
 Solo cuentan las fotos que Claude valida como exteriores de calle; sin Claude quedan «sin validar» y no cambian
 el corredor, salvo con --aceptar-sin-validar (demo sin red).
@@ -170,7 +170,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     lst_fecha = df["lst_fecha"].mode().iat[0] if "lst_fecha" in df and df["lst_fecha"].notna().any() else None
     copa = df["copa_modelo_pct"] if "copa_modelo_pct" in df else df["arbol_pct"]
     lock = threading.Lock()
-    refresco_s = float(os.getenv("REFRESCO_VIVO_MIN", "10")) * 60
+    refresco_s = float(os.getenv("REFRESCO_VIVO_MIN", "0")) * 60
     if Path(data_dir).resolve() != Path("data").resolve():
         refresco_s = 0  # vivo.py escribe en ./data
     # `estado` guarda lo que es de todos (capturas en terreno, lectura en vivo) y además es la sesión por defecto,

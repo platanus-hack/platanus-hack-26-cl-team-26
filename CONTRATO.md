@@ -83,19 +83,22 @@ No se informan °C de enfriamiento, porque no hay un coeficiente publicado que c
 
 ## `data/live_h3.parquet` (Rol 2)
 
-Una fila por barrio (H3 resolución 7), no por cuadra.
+Una fila por barrio (H3 resolución 7), no por cuadra. Desde el 21-11-2026 es la **máxima del día anterior**,
+no la lectura del momento: lo escribe `maximas.py` una vez al día (GitHub Actions, pasada la medianoche) con
+estaciones oficiales (DMC y SINCA). Una estación entra solo si tiene datos en al menos 3 de las 4 horas más
+calientes (14 a 18 h); el historial por estación queda en `data/maximas/AAAA-MM-DD.csv`.
 
 | Columna | Tipo | Qué es |
 |---|---|---|
 | `h3_padre` | str | barrio H3 resolución 7 |
-| `temp_aire_c` | float | temperatura del aire, °C |
-| `humedad_pct` | float | humedad relativa, % |
+| `temp_aire_c` | float | temperatura máxima del aire del día, °C |
+| `humedad_pct` | float | humedad relativa a la hora de la máxima, % |
 | `indice_calor_c` | float | índice de calor, °C (informativo) |
 | `anomalia_c` | float | diferencia contra lo esperable, °C |
 | `n_sensores` | int | sensores que aportan al barrio |
 | `dist_min_km` | float | distancia al sensor más cercano |
 | `confianza` | str | "alta", "media", "baja" o "sin dato" |
-| `medido_en` | timestamp | hora de la medición |
+| `medido_en` | timestamp | hora de la máxima (la más reciente entre las estaciones del barrio) |
 | `alerta` | bool | opcional |
 
 ## `data/terreno_h3.parquet` (captura en terreno)
