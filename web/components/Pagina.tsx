@@ -31,7 +31,7 @@ function norm(xs: (number | null)[]) {
 }
 
 const VERDE = ["#EFE9DA", "#C5CDA6", "#8C9A63", "#4F6E31"];
-// Calor en rojos (de crema a terracota y rojo ladrillo), urgencia de amarillo a naranjo, e islas en verde hoja:
+// Calor de amarillo a naranjo (mostaza a terracota), urgencia en rojos (crema a rojo ladrillo), e islas en oliva:
 // tonos algo terrosos para que convivan con el crema y el oliva de la página.
 const ROJO = ["#F6ECDD", "#EDB592", "#D2603F", "#96261C"];
 const NARANJO = ["#F6EFD2", "#EBD488", "#DE9A48", "#B95A24"];   // de mostaza a terracota
@@ -44,13 +44,13 @@ const escala = (prop: string, cols: string[], lo: number, hi: number): Expressio
 };
 
 const CAPAS_AHORA: Capa[] = [
-  { id: "calor", color: escala("calor", ROJO, 0, 1) },
+  { id: "calor", color: escala("calor", NARANJO, 0, 1) },
   { id: "copa", color: escala("copa", VERDE, 0, 25) },
   { id: "personas", color: escala("personas", MORADO, 0, 1) },
 ];
 const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Copa de árboles", personas: "Personas" };
 const LEYENDA: Record<string, [string, string]> = {
-  calor: [grad(ROJO), "Índice de calor: temperatura del suelo; donde hay sensores de aire confiables en al menos 5 barrios, 70 % suelo y 30 % aire"],
+  calor: [grad(NARANJO), "Índice de calor: temperatura del suelo; donde hay sensores de aire confiables en al menos 5 barrios, 70 % suelo y 30 % aire"],
   copa: [grad(VERDE), "Copa de árboles, de 0 % a 25 % o más"],
   personas: [grad(MORADO), "Personas: 70 % habitantes del Censo en la cuadra y 30 % cercanía a colegios, salud, metro y paraderos"],
 };
@@ -63,8 +63,8 @@ const HITOS: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
   features: ISLAS.map(([n, lng, lat]) => ({ type: "Feature", properties: { n }, geometry: { type: "Point", coordinates: [lng, lat] } })),
 };
-const CAPAS_PLAN: Capa[] = [{ id: "urg", color: ["case", ["get", "k"], ISLA, ["==", ["get", "u"], null], "#E4DFCC", escala("u", NARANJO, 0, 0.85)] }];
-const CAPAS_HIST: Capa[] = [{ id: "hist", color: ["case", ["==", ["get", "hn"], null], "#E4DFCC", escala("hn", ROJO, 0, 1)] }];
+const CAPAS_PLAN: Capa[] = [{ id: "urg", color: ["case", ["get", "k"], ISLA, ["==", ["get", "u"], null], "#E4DFCC", escala("u", ROJO, 0, 0.85)] }];
+const CAPAS_HIST: Capa[] = [{ id: "hist", color: ["case", ["==", ["get", "hn"], null], "#E4DFCC", escala("hn", NARANJO, 0, 1)] }];
 
 function encuadreDe(anillos: number[][][], margen = 0.006): LngLatBoundsLike {
   let w = 180, s = 90, e = -180, n = -90;
@@ -596,7 +596,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
               </button>
             )}
             <div className="leyenda">
-              <span><i className="barra" style={{ background: grad(NARANJO) }} />Urgencia</span>
+              <span><i className="barra" style={{ background: grad(ROJO) }} />Urgencia</span>
               <span><i className="cuadro" style={{ background: "#22301A" }} />Corredor</span>
               <span><i className="cuadro" style={{ background: ISLA }} />Islas verdes: cerros y parques</span>
               <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Sin datos de terreno</span>
@@ -691,7 +691,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         <div className="b-hist">
           <div className="izq escalon" style={est(2)}>
             <MapaHex {...mapaComun} datos={datosHist} capas={CAPAS_HIST} activa="hist" corredor={terrenoGeo} encuadre={encuadreArea} etiqueta="Promedio del calor del suelo por cuadra en el rango elegido">{filtro}</MapaHex>
-            <div className="leyenda" style={{ marginTop: 10 }}><span><i className="barra" style={{ background: grad(ROJO) }} />{hist ? <span className="num">Suelo medio de {formato(escalaHist[0], 1)} °C a {formato(escalaHist[1], 1)} °C</span> : <span className="sk sk-linea" style={{ display: "inline-block", width: 190, height: 14 }} aria-label="Calculando el promedio" />}</span></div>
+            <div className="leyenda" style={{ marginTop: 10 }}><span><i className="barra" style={{ background: grad(NARANJO) }} />{hist ? <span className="num">Suelo medio de {formato(escalaHist[0], 1)} °C a {formato(escalaHist[1], 1)} °C</span> : <span className="sk sk-linea" style={{ display: "inline-block", width: 190, height: 14 }} aria-label="Calculando el promedio" />}</span></div>
           </div>
           <div className="cifras">
             <p style={{ margin: 0, fontSize: 16, color: "var(--oliva-osc)" }}>Rango elegido: <b>{mesCorto(serie.meses[desde])} a nov 2026</b>, {mesesHist} meses con escenas. Las barras altas son los veranos, que son los que usa el índice de calor.</p>
