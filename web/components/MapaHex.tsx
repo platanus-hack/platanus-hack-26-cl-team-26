@@ -41,9 +41,9 @@ function tenir(mapa: MapaML) {
   }
 }
 
-// Corredor en verde hoja con contorno crema, para que se lea como camino sobre el rojo y no como otra isla (personas y aves) o negro con mini islas amarillas si el plan incluye abejas.
-export const COLOR_CORREDOR = "#6BAE45", COLOR_MINI_ISLA = "#F4C430";
-export const TONO_CORREDOR = { verde: { fondo: COLOR_CORREDOR, borde: "#FFFDF6" }, abeja: { fondo: "#1F1F1A", borde: "#000000" } };
+// Corredor en el verde más oscuro (#386641), sobre islas más claras, para que se lea como camino (personas y aves) o negro con mini islas amarillas si el plan incluye abejas.
+export const COLOR_CORREDOR = "#386641", COLOR_MINI_ISLA = "#F4C430";
+export const TONO_CORREDOR = { verde: { fondo: COLOR_CORREDOR, borde: "#1F3A25" }, abeja: { fondo: "#1F1F1A", borde: "#000000" } };
 export type TonoCorredor = keyof typeof TONO_CORREDOR;
 const TESELA_Z = 9;   // zoom de tesela único para cuadras, sectores y comunas (calzan entre sí y no se recargan)
 
@@ -141,7 +141,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         // Con todo el Gran Santiago a la vista los bordes de 13 mil cuadras solo ensucian y cuestan; aparecen al acercar.
         nuevo.addLayer({
           id: "borde", type: "line", source: "hex", minzoom: 11,
-          paint: { "line-color": "#F6F1E4", "line-width": 0.35, "line-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0, 12, 1] },
+          paint: { "line-color": "#F6F1E4", "line-width": 0.3, "line-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0, 13, 0.25] },
         });
         // Velo oscuro sobre las cuadras no elegidas; apagado mientras se ve todo Santiago.
         nuevo.addLayer({
@@ -183,7 +183,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         // Contorno grueso para que el corredor se distinga aun con el área completa a la vista.
         nuevo.addLayer({
           id: "corredor-borde", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "ahora"],
-          paint: { "line-color": TONO_CORREDOR.verde.borde, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 2.2, 13, 3] },
+          paint: { "line-color": TONO_CORREDOR.verde.borde, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.4, 13, 1.8] },
         });
         nuevo.addLayer({
           id: "corredor-antes", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "antes"],
