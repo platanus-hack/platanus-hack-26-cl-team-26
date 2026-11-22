@@ -37,6 +37,11 @@ const ROJO = ["#F6ECDD", "#EDB592", "#D2603F", "#96261C"];
 const NARANJO = ["#F6EFD2", "#EBD488", "#DE9A48", "#B95A24"];   // de mostaza a terracota
 // Bajo esto una cuadra no es ciudad (igual que MIN_PERSONAS_HEX del optimizador, que tampoco traza por ahí).
 const SIN_GENTE = 50;
+// Qué mide la escala de color del mapa de Planificar en cada perfil.
+const ESCALA_PERFIL: Record<string, string> = {
+  humanos: "Urgencia", fauna_aves: "Dificultad de cruce para las aves", fauna_abejas: "Dificultad de cruce para las abejas",
+  mixto: "Urgencia y dificultad de cruce para la fauna",
+};
 const ISLA = "#4F6E31";   // el oliva del logo
 const MORADO = ["#F3ECE6", "#D3BBD6", "#9A6BA8", "#5C2F78"];   // densidad de personas
 const grad = (c: string[]) => `linear-gradient(90deg,${c.join(",")})`;
@@ -440,6 +445,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const claveCorredor = enCorredor.map((i) => H.h[i]).join() + fuera.map((f) => f.h).join();
   const anillosCorredor = () => [...enCorredor.map((i) => anillosH[i]), ...fuera.map((f) => anillo(f.h))];
   // Conectar con parques e islas verdes de las comunas vecinas (no aplica con todo Santiago elegido).
+  const hayTerreno = estado.totales.cuentan + estado.totales.escuchas > 0;
   const vecinasOn = !!p.vecinas;
   const hayVecinas = !nada;
   const kmSugerido = a0km(estado.ahora.km_min);
@@ -617,13 +623,13 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
               </button>
             )}
             <div className="leyenda">
-              <span><i className="barra" style={{ background: grad(ROJO) }} />Urgencia</span>
-              <span><i className="cuadro" style={{ background: "#22301A" }} />Corredor</span>
-              {(a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: "#C026D3" }} />Mini Isla (Checkpoint)</span>}
+              {/* Solo lo que el mapa dibuja en este momento, según el perfil y si hay corredor o capturas. */}
+              {planListo && <span><i className="barra" style={{ background: grad(ROJO) }} />{ESCALA_PERFIL[p.perfil ?? "humanos"] ?? "Urgencia"}</span>}
+              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: "#22301A" }} />{(p.perfil ?? "humanos") === "fauna_abejas" ? "Ruta entre mini islas" : "Corredor"}</span>}
+              {verCorredor && (a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: "#C026D3" }} />Mini isla</span>}
               <span><i className="cuadro" style={{ background: ISLA }} />Islas verdes: cerros y parques</span>
-              <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Sin datos de terreno</span>
-              <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno</span>
-              <span>Toca una cuadra verificada para ver sus fotos y aves</span>
+              {verCorredor && hayTerreno && (p.perfil ?? "humanos") === "humanos" && <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Corredor sin los datos de terreno</span>}
+              {hayTerreno && <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno: un clic para ver sus fotos y aves</span>}
             </div>
           </div>
           {!planListo ? (
