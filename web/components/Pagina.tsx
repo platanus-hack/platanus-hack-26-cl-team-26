@@ -352,6 +352,9 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
 
   const filtro = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
     sueloComuna={sueloComuna} ocupado={ocupado} error={error} />;
+  // El primer mapa va sin el panel de arriba a la derecha: lo elegido ya se lee en las cifras de abajo.
+  const filtroSolo = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
+    sueloComuna={sueloComuna} ocupado={ocupado} error={error} sinResumen />;
 
   // ---- El calor ahora (sobre las 34 comunas: la escala de color no cambia al elegir)
   const [capa, setCapa] = useState("calor");
@@ -504,7 +507,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
         <div className="escalon" style={est(1)}>
           <MapaHex {...mapaComun} datos={datosAhora} capas={CAPAS_AHORA} activa={capa} corredor={terrenoGeo} encuadre={encuadreArea} alPasar={setPasada}
-            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Un clic en una cuadra muestra sus datos; doble clic suma o quita su comuna.`}>{filtro}</MapaHex>
+            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Un clic en una cuadra muestra sus datos; doble clic suma o quita su comuna.`}>{filtroSolo}</MapaHex>
         </div>
         <div className="leyenda">
           <span><i className="barra" style={{ background: LEYENDA[capa][0] }} />{LEYENDA[capa][1]}</span>

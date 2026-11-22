@@ -237,6 +237,8 @@ section[id], footer[id] { scroll-margin-top: 76px; }
 .resumen-mapa .chip.zona { background: var(--tinta); color: var(--crema2); }
 .resumen-mapa .chip.zona button { color: var(--crema2); }
 .resumen-mapa .volver { min-height: 32px; font-size: 13px; }
+.resumen-mapa.solo { padding: 6px; background: transparent; box-shadow: none; }
+.resumen-mapa.solo .volver { background: var(--papel); box-shadow: 0 10px 24px -16px rgba(47, 69, 32, 0.7); }
 .resumen-mapa .nota { font-size: 13px; }
 
 /* Cifras de lo elegido: total grande y una fila por comuna */
