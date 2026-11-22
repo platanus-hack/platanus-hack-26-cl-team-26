@@ -2,10 +2,10 @@
 // corredor con y sin capturas en terreno y sirve las fotos y los audios de aves.
 //
 // Dos formas de correrla:
-// · Desarrollo (npm run dev / npm start): Next reenvía /api, /fotos, /videos, /audios y /captura al servidor de
+// · Desarrollo (npm run dev / npm start): Next reenvía /api, /fotos, /videos y /audios al servidor de
 //   terreno (TERRENO_URL, por defecto http://127.0.0.1:8000).
 // · Despliegue (npm run exportar): la página se exporta como archivos estáticos en web/out y el mismo servidor de
-//   terreno los sirve en «/». Un solo servicio y un solo enlace: la página, la API y /captura (el teléfono).
+//   terreno los sirve en «/». Un solo servicio y un solo enlace: la página y la API.
 const TERRENO = process.env.TERRENO_URL ?? "http://127.0.0.1:8000";
 // npm pone el nombre del script en npm_lifecycle_event: así funciona igual en Windows, Mac y Linux.
 const exportar = process.env.npm_lifecycle_event === "exportar" || process.env.EXPORTAR === "1";
@@ -16,7 +16,7 @@ const nextConfig = exportar
   : {
       reactStrictMode: true,
       async rewrites() {
-        return ["/api/:ruta*", "/fotos/:ruta*", "/videos/:ruta*", "/audios/:ruta*", "/captura"].map((source) => ({
+        return ["/api/:ruta*", "/fotos/:ruta*", "/videos/:ruta*", "/audios/:ruta*"].map((source) => ({
           source, destination: `${TERRENO}${source}`,
         }));
       },

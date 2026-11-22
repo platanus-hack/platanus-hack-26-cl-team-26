@@ -95,20 +95,20 @@ La página (Next, en `web/`) muestra los datos y traza el corredor; `python -m t
   islas verdes unidas, personas a una cuadra, barrios con aves y mini islas para abejas. La precalcula
   `python red_conectada.py` en `web/public/data/red.json` (cada presupuesto son los primeros tramos de la red de
   100 km, así crece sin cambiar de lugar).
+- `/` lleva al sitio Viridis si está exportado (`web/out`), si no a `/mapa`. La página del teléfono
+  (`/captura`) se retiró: el equipo decidió quedarse solo con el sitio.
 
 ### Despliegue en Render (un solo servicio)
 
 El `Dockerfile` compila el sitio Viridis (`web/`, `npm run exportar` → archivos estáticos en `web/out`) y lo
-sirve desde el mismo servidor de terreno. Un solo enlace: `/` el sitio, `/api` los datos, `/captura` el teléfono
-(HTTPS de Render, que el GPS exige) y `/mapa` el mapa de respaldo.
+sirve desde el mismo servidor de terreno. Un solo enlace: `/` el sitio, `/api` los datos y `/mapa` el mapa de
+respaldo.
 
-1. En Render: **New → Blueprint**, elegir este repositorio (rama `main`); `render.yaml` crea el servicio
-   `viridis` (plan standard, 2 GB: el modelo de aves no cabe holgado en 512 MB) con un disco de 1 GB en
-   `data/terreno/` para que las capturas sobrevivan a cada despliegue.
-2. En **Environment**, escribir los secretos (nunca en el repo): `TERRENO_CLAVE` (clave de subida del
-   teléfono), `ANTHROPIC_API_KEY` (Claude valida las fotos), `DMC_USUARIO` y `DMC_TOKEN` (estaciones DMC del
-   aire en vivo).
-3. Health check: `/api/salud`. Cada push a `main` vuelve a desplegar.
+1. En Render: **New → Blueprint**, elegir este repositorio; `render.yaml` crea el servicio `viridis` (plan
+   standard, 2 GB: el modelo de aves no cabe holgado en 512 MB) con un disco de 1 GB en `data/terreno/`.
+2. En **Environment**, escribir los secretos (nunca en el repo): `TERRENO_CLAVE` (clave de la API de subida),
+   `ANTHROPIC_API_KEY` (Claude valida las fotos), `DMC_USUARIO` y `DMC_TOKEN` (estaciones DMC del aire en vivo).
+3. Health check: `/api/salud`.
 
 Para probarlo igual en local: `cd web && npm run exportar`, y luego `python -m terreno.servidor` sirve todo en
 http://localhost:8000.
@@ -128,6 +128,15 @@ iNaturalist, museos) y escribe `data/fauna_h3.parquet` y `web/public/data/fauna.
 de aves y las abejas nativas (sin la abeja de miel ni el abejorro europeo, que van aparte). Es por barrio y no
 por cuadra porque muchas ubicaciones tienen un margen de cientos de metros. Un registro dice que alguien vio la
 especie ahí: no haber registro no significa que no esté, y hay más observadores en parques y cerros.
+
+## Datos de terreno (sin página del teléfono)
+
+La página del teléfono se retiró. Lo ya capturado sigue contando: `data/terreno/*.jsonl` se agrega en
+`data/terreno_h3.parquet` (ver `CONTRATO.md`) y entra al corredor (árboles, espacio para plantar y
+biodiversidad con el peso «Biodiversidad (terreno)»). La API de subida (`/api/captura`, `/api/video`,
+`/api/audio`, protegida con `TERRENO_CLAVE`) sigue para scripts y pruebas: `python -m tests.test_terreno`.
+Nada de `data/terreno/` se versiona. BirdNET: K. Lisa Yang Center for Conservation Bioacoustics (Cornell),
+modelo CC BY-NC-SA 4.0 (uso no comercial).
 
 # Corredores Verdes · Bloque 1
 

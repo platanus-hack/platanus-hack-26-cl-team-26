@@ -8,6 +8,7 @@ calor en ocre. Next.js 16 + MapLibre, sobre Carto Positron teñido.
 
 El mapa, las comunas y el corredor vienen del servidor (`terreno/servidor.py`), que cruza los datos por
 comuna. Next reenvía `/api` a ese servidor (`TERRENO_URL`, por defecto `http://127.0.0.1:8000`).
+La página del teléfono (`/captura`) se retiró.
 
 ```bash
 pip install -r requirements.txt               # desde la raíz del repo

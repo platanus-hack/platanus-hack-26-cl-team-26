@@ -1,14 +1,12 @@
-"""Servidor de VerdeH3: el mapa (tiempo real, corredor Dijkstra, histórico) y la captura en terreno desde el teléfono.
+"""Servidor de VerdeH3: el mapa (tiempo real, corredor Dijkstra, histórico) y la API del sitio web/.
 
     python -m terreno.servidor --puerto 8000          # 34 comunas; el corredor se calcula en las elegidas
     cloudflared tunnel --url http://localhost:8000      # HTTPS público: el GPS del teléfono lo exige
 
 Sitio Viridis: si existe web/out (cd web && npm run exportar), se sirve en «/» desde este mismo servidor: un
-solo servicio y un solo enlace (así se despliega en Render, ver Dockerfile). Sin web/out, «/» es la página del
-teléfono, como antes.
-Teléfono: https://<túnel>/captura?k=<clave>   ·   Mapa de respaldo: /mapa
-Aves por sonido: el teléfono graba 15 s (WAV) y BirdNET identifica especies (terreno/aves.py). Con las fotos
-(fauna y flores según Claude) arman la biodiversidad por hexágono, que entra al corredor con el peso w_bio.
+solo servicio y un solo enlace (así se despliega en Render, ver Dockerfile). Sin web/out, «/» lleva a /mapa.
+La página del teléfono se retiró; la API de subida (/api/captura, /api/video, /api/audio) sigue y lo ya
+capturado cuenta (biodiversidad por hexágono con el peso w_bio, fotos validadas por Claude).
 El mapa filtra por comuna, distrito (barrio H3 res 7) o una zona dibujada, mueve presupuesto y pesos del
 corredor, y muestra la serie histórica satelital (data/historico_h3.parquet). Si existe data/live_h3.parquet
 (máxima del día por barrio, Rol 2: lo escribe maximas.py cada noche) entra al calor de la urgencia; se relee
@@ -37,7 +35,7 @@ from pathlib import Path
 import h3
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -400,12 +398,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
 
     @app.get("/")
     def inicio():
-        """El sitio Viridis si está exportado; si no, la página del teléfono (como antes)."""
-        return FileResponse(Path(sitio) / "index.html" if sitio else ESTATICO / "captura.html")
-
-    @app.get("/captura")
-    def captura_html():
-        return FileResponse(ESTATICO / "captura.html")
+        """El sitio Viridis si está exportado; si no, el mapa."""
+        return FileResponse(Path(sitio) / "index.html") if sitio else RedirectResponse("/mapa")
 
     @app.get("/mapa")
     def mapa_html():
