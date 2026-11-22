@@ -6,7 +6,7 @@ import MapaHex, { type Capa, type Foco } from "./MapaHex";
 import Cifra from "./Cifra";
 import FiltroComunas from "./FiltroComunas";
 import { formato, useRevela, useVisible } from "./movimiento";
-import { detalleHex, historico, useTerreno, type Escucha, type Estado, type HexCols, type InfoComunas } from "@/lib/terreno";
+import { detalleHex, historico, useTerreno, type Escucha, type Especie, type Estado, type HexCols, type InfoComunas } from "@/lib/terreno";
 
 type Serie = { meses: string[]; escenas_landsat: number; escenas_sentinel2: number; media_mes: (number | null)[]; lst_fecha_ultima: string };
 
@@ -31,11 +31,46 @@ function norm(xs: (number | null)[]) {
 }
 
 const VERDE = ["#EFE9DA", "#C5CDA6", "#8C9A63", "#4F6E31"];
-// Calor en rojos (de crema a terracota y rojo ladrillo), urgencia de amarillo a naranjo, e islas en verde hoja:
+// Calor de amarillo a naranjo (mostaza a terracota), urgencia en rojos (crema a rojo ladrillo), e islas en oliva:
 // tonos algo terrosos para que convivan con el crema y el oliva de la página.
 const ROJO = ["#F6ECDD", "#EDB592", "#D2603F", "#96261C"];
-const NARANJO = ["#FBF4CC", "#F6D873", "#EE9B3B", "#D4601C"];
-const ISLA = "#5A9A46";
+const NARANJO = ["#F6EFD2", "#EBD488", "#DE9A48", "#B95A24"];   // de mostaza a terracota
+// Bajo esto una cuadra no es ciudad (igual que MIN_PERSONAS_HEX del optimizador, que tampoco traza por ahí).
+const SIN_GENTE = 50;
+// Para quién se traza el corredor. Se puede marcar más de una especie: el criterio promedia, con el mismo peso, lo
+// que rige a cada una (ecologia.py). La clave junta las elegidas en este orden: humanos, aves, abejas.
+const ESPECIES: [Especie, string][] = [["humanos", "Humanos"], ["aves", "Aves"], ["abejas", "Abejas"]];
+// Qué mide la escala de color del mapa de Planificar en cada combinación.
+const ESCALA: Record<string, string> = {
+  humanos: "Urgencia",
+  aves: "Dificultad de cruce para las aves",
+  abejas: "Dificultad de cruce para las abejas",
+  "humanos+aves": "Urgencia y dificultad para las aves",
+  "humanos+abejas": "Urgencia y dificultad para las abejas",
+  "aves+abejas": "Dificultad de cruce para aves y abejas",
+  "humanos+aves+abejas": "Urgencia y dificultad para aves y abejas",
+};
+const CRITERIO: Record<string, string> = {
+  humanos: "Sombra para las personas: va por las cuadras con más calor, menos árboles y más gente.",
+  aves: "Eje continuo para las aves: une parques por donde ya hay más copa y menos cemento y pasto abierto.",
+  abejas: "Mini islas para las abejas: puntos floridos, una cuadra por medio, que con el mismo presupuesto unen más parques.",
+  "humanos+aves": "Personas y aves: un corredor continuo que pesa por igual la urgencia de las personas y lo difícil que es el cruce para un ave.",
+  "humanos+abejas": "Personas y abejas: corredor de sombra que pesa por igual urgencia y cemento, con una mini isla florida cada tres cuadras.",
+  "aves+abejas": "Aves y abejas: corredor arbolado continuo que evita el cemento, con una mini isla florida cada tres cuadras.",
+  "humanos+aves+abejas": "Las tres: urgencia de las personas, copa para las aves y flores para las abejas pesan un tercio cada una; corredor continuo con mini islas.",
+};
+// Día en que se bajó el extracto de OpenStreetMap (Geofabrik) con parques, servicios y vías.
+const OSM_EXTRACTO = "2026-11-21";
+// "2026-02-19" → "19 feb 2026"; con hora, en la hora de Santiago.
+const fechaDia = (f?: string | null) => { if (!f) return null; const [a, m, d] = f.slice(0, 10).split("-").map(Number); return `${d} ${MESES[m - 1]} ${a}`; };
+const fechaHora = (f?: string | null) => {
+  if (!f) return null;
+  const t = new Date(f);
+  if (Number.isNaN(t.getTime())) return null;
+  const p = Object.fromEntries(new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(t).map((x) => [x.type, x.value]));
+  return `${Number(p.day)} ${MESES[Number(p.month) - 1]} ${p.year}, ${p.hour}:${p.minute} h`;
+};
+const ISLA = "#4F6E31";   // el oliva del logo
 const MORADO = ["#F3ECE6", "#D3BBD6", "#9A6BA8", "#5C2F78"];   // densidad de personas
 const grad = (c: string[]) => `linear-gradient(90deg,${c.join(",")})`;
 const escala = (prop: string, cols: string[], lo: number, hi: number): ExpressionSpecification => {
@@ -44,13 +79,13 @@ const escala = (prop: string, cols: string[], lo: number, hi: number): Expressio
 };
 
 const CAPAS_AHORA: Capa[] = [
-  { id: "calor", color: escala("calor", ROJO, 0, 1) },
+  { id: "calor", color: escala("calor", NARANJO, 0, 1) },
   { id: "copa", color: escala("copa", VERDE, 0, 25) },
   { id: "personas", color: escala("personas", MORADO, 0, 1) },
 ];
-const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Copa de árboles", personas: "Personas" };
+const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Árboles", personas: "Personas" };
 const LEYENDA: Record<string, [string, string]> = {
-  calor: [grad(ROJO), "Índice de calor: temperatura del suelo; donde hay sensores de aire confiables en al menos 5 barrios, 70 % suelo y 30 % aire"],
+  calor: [grad(NARANJO), "Índice de calor: temperatura del suelo; donde hay sensores de aire confiables en al menos 5 barrios, 70 % suelo y 30 % aire"],
   copa: [grad(VERDE), "Copa de árboles, de 0 % a 25 % o más"],
   personas: [grad(MORADO), "Personas: 70 % habitantes del Censo en la cuadra y 30 % cercanía a colegios, salud, metro y paraderos"],
 };
@@ -63,8 +98,8 @@ const HITOS: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
   features: ISLAS.map(([n, lng, lat]) => ({ type: "Feature", properties: { n }, geometry: { type: "Point", coordinates: [lng, lat] } })),
 };
-const CAPAS_PLAN: Capa[] = [{ id: "urg", color: ["case", ["get", "k"], ISLA, ["==", ["get", "u"], null], "#E4DFCC", escala("u", NARANJO, 0, 0.85)] }];
-const CAPAS_HIST: Capa[] = [{ id: "hist", color: ["case", ["==", ["get", "hn"], null], "#E4DFCC", escala("hn", ROJO, 0, 1)] }];
+const CAPAS_PLAN: Capa[] = [{ id: "urg", color: ["case", ["get", "k"], ISLA, ["==", ["get", "u"], null], "#E4DFCC", escala("u", ROJO, 0, 0.85)] }];
+const CAPAS_HIST: Capa[] = [{ id: "hist", color: ["case", ["==", ["get", "hn"], null], "#E4DFCC", escala("hn", NARANJO, 0, 1)] }];
 
 function encuadreDe(anillos: number[][][], margen = 0.006): LngLatBoundsLike {
   let w = 180, s = 90, e = -180, n = -90;
@@ -79,9 +114,6 @@ function Dif({ v, base, u, bueno }: { v: number; base: number; u: string; bueno?
   const peor = bueno ? d < 0 : d > 0;
   return <span className={`dif${peor ? " peor" : " mejor"}`}>{d > 0 ? "+" : "−"}{formato(Math.abs(d), 1)}{u}</span>;
 }
-
-const MESES_L = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
-const fechaLst = (f: string) => { const [a, m, d] = f.split("-").map(Number); return `${d} de ${MESES_L[m - 1]} de ${a}`; };
 
 // Presupuesto mínimo para que salga un corredor, redondeado hacia arriba al paso del control (0,5 km); 0 si no hay.
 const a0km = (km?: number | null) => (km ? Math.min(20, Math.ceil(km * 2) / 2) : 0);
@@ -109,7 +141,7 @@ export default function Pagina({ serie }: { serie: Serie }) {
     <main className="b">
       <header className={`b-pad${bajo ? " bajo" : ""}`}><div className="b-in">
         <a className="marca" href="#inicio"><img src="/viridis.svg" alt="" width={34} height={34} />VIRIDIS</a>
-        <nav aria-label="Secciones"><a href="#ahora">El calor ahora</a><a href="#planificar">Planificar</a><a href="#historico">Histórico</a><a href="#fuentes">Fuentes</a></nav>
+        <nav aria-label="Secciones"><a href="#ahora">Datos clave</a><a href="#planificar">Planificar</a><a href="#historico">Histórico</a><a href="/fuentes">Fuentes</a></nav>
       </div></header>
 
       <section className="b-hero b-pad" id="inicio">
@@ -122,21 +154,17 @@ export default function Pagina({ serie }: { serie: Serie }) {
           <p>Calor del suelo, copa de árboles y personas, cuadra por cuadra, para decidir por dónde plantar el próximo corredor verde. <em>Cada metro de sombra, donde más alivia.</em></p>
           <div className="grupo" style={{ gap: 12 }}>
             <a className="pill llena grande" href="#planificar">Planificar un corredor</a>
-            <a className="pill grande" href="#ahora">Ver el calor ahora</a>
+            <a className="pill grande" href="#ahora">Ver los datos clave</a>
           </div>
         </div>
       </section>
 
       {t.info && t.estado ? <Secciones {...t} info={t.info} estado={t.estado} serie={serie} /> : <Esqueletos error={t.error} />}
 
-      <footer className="b-pad" id="fuentes"><div className="b-in">
-        <h2>De dónde salen <em>los datos</em></h2>
-        <p><b>Calor del suelo.</b> Landsat 8 y 9, Collection 2 Level 2 (USGS), vía Microsoft Planetary Computer. Serie mensual: {serie.escenas_landsat} escenas Landsat y {serie.escenas_sentinel2} Sentinel-2, de enero de 2023 a noviembre de 2026.</p>
-        <p><b>Copa de árboles.</b> Modelo propio sobre Sentinel-2 de febrero de 2026, entrenado con la altura de copa de Meta y WRI (r = 0,92 por cuadra en comunas que el modelo no vio).</p>
-        <p><b>Personas.</b> Censo 2024 del INE por manzana, más cercanía a colegios, salud, metro y paraderos de OpenStreetMap. No es ingreso.</p>
-        <p><b>Aire en vivo y terreno.</b> DMC, SINCA y Sensor.Community por barrio (H3 resolución 7). Fotos y videos con GPS desde el teléfono (<code>/captura</code>, con la clave del equipo), validados por Claude; la foto complementa al satélite, no lo reemplaza. Mapa base: CARTO y OpenStreetMap.</p>
-        <p><b>Aves y polinizadores.</b> Aves por su canto con BirdNET (K. Lisa Yang Center for Conservation Bioacoustics, Cornell; modelo CC BY-NC-SA 4.0), filtradas por lugar y semana del año, grabando quieto o caminando con el video; cada escucha mide el ruido del tráfico, y sin aves con ruido alto queda «no concluyente». Aves, abejas, mariposas y flores vistas en las fotos, según Claude. No detectar fauna no significa que no haya.</p>
-        <p><b>Fondo del titular.</b> Sentinel-2 L2A del 6 de febrero de 2026 (Copernicus, vía Microsoft Planetary Computer), 16 m por píxel: la vegetación en verde según su NDVI y lo construido en gris.</p>
+      {/* Las fuentes y sus notas de método viven en /fuentes; aquí solo queda el enlace. */}
+      <footer className="b-pad pie"><div className="b-in">
+        <span className="marca"><img src="/viridis.svg" alt="" width={26} height={26} />VIRIDIS</span>
+        <a href="/fuentes">Fuentes</a>
       </div></footer>
     </main>
   );
@@ -149,7 +177,7 @@ const TODO_GRIS: Foco = { comunas: [], hexes: [] };
 function Esqueletos({ error }: { error: string | null }) {
   return (
     <>
-      {[["ahora", "El calor", "ahora"], ["planificar", "Planificar", "el corredor"], ["historico", "El calor", "de antes"]].map(([id, titulo, acento], k) => (
+      {[["ahora", "Datos", "clave"], ["planificar", "Planificar", "el corredor"], ["historico", "El calor", "de antes"]].map(([id, titulo, acento], k) => (
         <section key={id} id={id} className={`b-sec b-pad${k % 2 ? "" : " alt"}`} aria-busy={!error}><div className="b-in">
           <h2>{titulo} <em>{acento}</em></h2>
           {error ? (
@@ -207,7 +235,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const anillos = useMemo(() => B.h.map(anillo), [B.h]);
   const coleccion = (props: (i: number) => Record<string, unknown>): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
-    features: B.h.map((_, i) => ({ type: "Feature", id: i, properties: { i, c: comIdx.get(B.comuna[i]), cn: B.comuna[i], ...props(i) }, geometry: { type: "Polygon", coordinates: [anillos[i]] } })),
+    features: B.h.map((_, i) => ({ type: "Feature", id: i, properties: { i, c: comIdx.get(B.comuna[i]), cn: B.comuna[i], v: !B.parque[i] && B.pob[i] < SIN_GENTE, ...props(i) }, geometry: { type: "Polygon", coordinates: [anillos[i]] } })),
   });
 
   // Cuadras elegidas (índices de la base). null = todo Santiago.
@@ -352,8 +380,11 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
 
   const filtro = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
     sueloComuna={sueloComuna} ocupado={ocupado} error={error} />;
+  // El primer mapa va sin el panel de arriba a la derecha: lo elegido ya se lee en las cifras de abajo.
+  const filtroSolo = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
+    sueloComuna={sueloComuna} ocupado={ocupado} error={error} sinResumen />;
 
-  // ---- El calor ahora (sobre las 34 comunas: la escala de color no cambia al elegir)
+  // ---- Datos clave: calor, árboles y personas (sobre las 34 comunas: la escala de color no cambia al elegir)
   const [capa, setCapa] = useState("calor");
   const [pasada, setPasada] = useState<number | null>(null);
   const calor = useMemo(() => {
@@ -420,13 +451,16 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   // El corredor solo se rearma si cambian sus cuadras (no cada vez que llega un estado nuevo del servidor).
   // Con «comunas vecinas» el corredor puede salir de lo elegido: esas cuadras llegan aparte (estado.fuera).
   const fuera = estado.fuera ?? [];
-  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("") + fuera.map((f) => f.h).join();
+  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.checkpoint?.[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+!!H.checkpoint?.[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("") + fuera.map((f) => f.h + (f.isla ? "i" : "")).join();
   const corredor = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
     features: H.h.flatMap((h, i) => [
-      ...(H.ahora[i] ? ["ahora"] : []), ...(H.antes[i] ? ["antes"] : []), ...(H.verificado[i] ? ["verificado"] : []),
+      ...(H.ahora[i] ? ["ahora"] : []),
+      ...(H.checkpoint?.[i] ? ["checkpoint"] : []),
+      ...(H.antes[i] ? ["antes"] : []),
+      ...(H.verificado[i] ? ["verificado"] : []),
     ].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: h, comuna: H.comuna[i] }, geometry: { type: "Polygon" as const, coordinates: [anillosH[i]] } })))
-      .concat(fuera.map((f) => ({ type: "Feature" as const, properties: { tipo: "ahora", h3: f.h, comuna: f.comuna ?? "" }, geometry: { type: "Polygon" as const, coordinates: [anillo(f.h)] } }))),
+      .concat(fuera.flatMap((f) => ["ahora", ...(f.isla ? ["checkpoint"] : [])].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: f.h, comuna: f.comuna ?? "" }, geometry: { type: "Polygon" as const, coordinates: [anillo(f.h)] } })))),
   }), [firmaCorredor, anillosH]); // eslint-disable-line react-hooks/exhaustive-deps
   const enCorredor = H.h.flatMap((_, i) => (H.ahora[i] ? [i] : []));
   const comunasFuera = [...new Set(fuera.flatMap((f) => (f.comuna ? [f.comuna] : [])))].sort();
@@ -434,6 +468,15 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const claveCorredor = enCorredor.map((i) => H.h[i]).join() + fuera.map((f) => f.h).join();
   const anillosCorredor = () => [...enCorredor.map((i) => anillosH[i]), ...fuera.map((f) => anillo(f.h))];
   // Conectar con parques e islas verdes de las comunas vecinas (no aplica con todo Santiago elegido).
+  const hayTerreno = estado.totales.cuentan + estado.totales.escuchas > 0;
+  const especies: Especie[] = p.especies?.length ? p.especies : ["humanos"];
+  const claveEspecies = ESPECIES.map(([id]) => id).filter((id) => especies.includes(id)).join("+");
+  const soloHumanos = claveEspecies === "humanos";
+  // Marcar o desmarcar una especie; siempre queda al menos una.
+  function alternarEspecie(id: Especie) {
+    const nuevas = especies.includes(id) ? especies.filter((e) => e !== id) : [...especies, id];
+    if (nuevas.length) cambiar({ especies: nuevas });
+  }
   const vecinasOn = !!p.vecinas;
   const hayVecinas = !nada;
   const kmSugerido = a0km(estado.ahora.km_min);
@@ -496,21 +539,21 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
     <>
       <Seccion id="ahora" alt>
         <div className="b-cab escalon">
-          <h2>El calor <em>ahora</em></h2>
-          {estado.lst_fecha && <p className="nota" style={{ flexBasis: "100%", margin: 0 }}>Temperatura del suelo de la tarde del {fechaLst(estado.lst_fecha)} (Landsat), la misma imagen de verano con que se calcula la urgencia. Las escenas más recientes están en el histórico.</p>}
+          <h2>Datos <em>clave</em></h2>
           <div className="grupo" role="group" aria-label="Capa del mapa">
             {CAPAS_AHORA.map((c) => <button key={c.id} type="button" className="pill" aria-pressed={capa === c.id} onClick={() => setCapa(c.id)}>{NOMBRE_CAPA[c.id]}</button>)}
           </div>
         </div>
         <div className="escalon" style={est(1)}>
           <MapaHex {...mapaComun} datos={datosAhora} capas={CAPAS_AHORA} activa={capa} corredor={terrenoGeo} encuadre={encuadreArea} alPasar={setPasada}
-            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Un clic en una cuadra muestra sus datos; doble clic suma o quita su comuna.`}>{filtro}</MapaHex>
+            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Un clic en una cuadra muestra sus datos; doble clic suma o quita su comuna.`}>{filtroSolo}</MapaHex>
         </div>
         <div className="leyenda">
           <span><i className="barra" style={{ background: LEYENDA[capa][0] }} />{LEYENDA[capa][1]}</span>
           <span><i className="linea" style={{ borderTop: "2px solid #2F4520" }} />Comuna</span>
           <span><i className="linea" style={{ borderTop: "2px dashed #2F4520", opacity: 0.7 }} />Sector</span>
           {estado.totales.cuentan + estado.totales.escuchas > 0 && <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Con fotos o aves de terreno: un clic para verlas</span>}
+          <span><i className="cuadro" style={{ background: "#B9B5A3", opacity: 0.45 }} />Tenue: casi sin habitantes (cerros, campo, industria)</span>
           {!nada && <span><i className="cuadro" style={{ background: "#C5CDA6", opacity: 0.35 }} />Fuera de lo elegido</span>}
           <span className="detalle num" aria-live="polite">{det != null
             ? `${B.distrito[det]}${B.parque[det] ? ", parque" : ""}: suelo ${formato(B.lst[det] ?? 0, 1)} °C${B.vivo[det] != null ? `, aire ${formato(B.vivo[det] as number, 1)} °C` : ""}, copa ${formato(B.copa[det] ?? 0, 1)} %, ${formato(B.pob[det])} personas.${terrenoDe(det)}`
@@ -518,7 +561,14 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
         <div className="elegido escalon" style={est(3)}>
           {!elegido ? (
-            <p className="vacio">Todo Santiago: <b className="num">{formato(santiago.suelo, 1)} °C</b> de suelo, <b className="num">{formato(santiago.copa, 1)} %</b> de copa y <b className="num">{formato(santiago.personas)}</b> personas en {formato(santiago.cuadras)} cuadras. Haz doble clic en comunas del mapa o encierra cuadras con el lápiz para ver aquí sus cifras.</p>
+            <dl className="fechas">
+              <dt>Última actualización de cada dato</dt>
+              <dd><b>Calor del suelo</b>{fechaDia(estado.fechas?.calor) ?? "sin fecha"} · Landsat</dd>
+              <dd><b>Copa de árboles</b>{fechaDia(estado.fechas?.copa) ?? "sin fecha"} · Sentinel-2</dd>
+              <dd><b>Personas</b>Censo 2024 · INE</dd>
+              <dd><b>Parques y servicios</b>{fechaDia(OSM_EXTRACTO)} · OpenStreetMap</dd>
+              <dd><b>Aire en vivo</b>{fechaHora(estado.fechas?.vivo) ?? "sin lecturas confiables ahora"}</dd>
+            </dl>
           ) : (
             <>
               <div className="totales num">
@@ -557,7 +607,19 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       </Seccion>
 
       <Seccion id="planificar">
-        <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2><p>Elige dónde, mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes de lo elegido.</p></div>
+        <div className="b-cab escalon">
+          <h2>Planificar <em>el corredor</em></h2>
+          <div className="grupo especies" role="group" aria-label="Para quién se traza el corredor: se puede marcar más de una">
+            {ESPECIES.map(([id, label]) => (
+              <button key={id} type="button" className="pill" disabled={ocupado} aria-pressed={especies.includes(id)}
+                title={especies.length === 1 && especies[0] === id ? "Tiene que quedar al menos una" : undefined}
+                onClick={() => alternarEspecie(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="criterio" aria-live="polite">{CRITERIO[claveEspecies]}</p>
+        </div>
         <div className={`b-controles escalon${planListo ? "" : " espera"}`} style={est(2)}>
           {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"], ["bio", "Biodiversidad (terreno)"]] as const).map(([k, nombre]) => (
             <div className="peso" key={k}>
@@ -571,9 +633,9 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
           </div>
           <label className={`vecinas${hayVecinas ? "" : " no"}`}>
             <input type="checkbox" checked={vecinasOn && hayVecinas} disabled={!hayVecinas || ocupado} onChange={(e) => cambiar({ vecinas: e.target.checked })} />
-            <span><b>Conectar con comunas vecinas</b><small>{hayVecinas
-              ? "El corredor puede partir o llegar a parques e islas verdes de las comunas de al lado. Al menos la mitad de cada tramo va por lo elegido."
-              : "Con todo Santiago elegido ya se usan todos los parques."}</small></span>
+            <span><b>Conectar con islas y parques de comunas vecinas</b><small>{hayVecinas
+              ? "El corredor puede partir o llegar a parques e islas verdes de las comunas de al lado, para cualquier combinación de especies. Al menos la mitad de cada tramo va por lo elegido."
+              : "Elige una comuna o una zona para usarlo: con todo Santiago ya se usan todos los parques."}</small></span>
           </label>
         </div>
         <div className="b-plan">
@@ -596,12 +658,13 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
               </button>
             )}
             <div className="leyenda">
-              <span><i className="barra" style={{ background: grad(NARANJO) }} />Urgencia</span>
-              <span><i className="cuadro" style={{ background: "#22301A" }} />Corredor</span>
+              {/* Solo lo que el mapa dibuja en este momento, según el perfil y si hay corredor o capturas. */}
+              {planListo && <span><i className="barra" style={{ background: grad(ROJO) }} />{ESCALA[claveEspecies]}</span>}
+              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: "#22301A" }} />{claveEspecies === "abejas" ? "Ruta entre mini islas" : "Corredor"}</span>}
+              {verCorredor && (a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: "#C026D3" }} />Mini isla</span>}
               <span><i className="cuadro" style={{ background: ISLA }} />Islas verdes: cerros y parques</span>
-              <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Sin datos de terreno</span>
-              <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno</span>
-              <span>Toca una cuadra verificada para ver sus fotos y aves</span>
+              {verCorredor && hayTerreno && soloHumanos && <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Corredor sin los datos de terreno</span>}
+              {hayTerreno && <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno: un clic para ver sus fotos y aves</span>}
             </div>
           </div>
           {!planListo ? (
@@ -624,12 +687,18 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
               <>
                 <div className="cifra escalon" style={est(4)}>
                   <b><Cifra valor={a.personas_cubiertas} /></b>
-                  <span>personas viven junto al corredor. Con un trazado al azar del mismo largo serían <strong className="num"><Cifra valor={a.personas_azar} /></strong>.</span>
+                  <span>personas viven junto al corredor.{soloHumanos && <> Con un trazado al azar del mismo largo serían <strong className="num"><Cifra valor={a.personas_azar} /></strong>.</>}</span>
                 </div>
                 <div className="cifra escalon" style={est(5)}>
                   <b><Cifra valor={a.km} dec={2} sufijo={" km"} /></b>
                   <span>en {a.hexes} cuadras{comunasCorredor.length ? `, en ${comunasCorredor.join(", ")}` : ""}{fuera.length ? ` (${fuera.length} en comunas vecinas)` : ""}. Urgencia cubierta {formato(a.urgencia_cubierta, 3)}, contra {formato(a.urgencia_azar, 3)} al azar.</span>
                 </div>
+                {(a.checkpoints ?? 0) > 0 && (
+                  <div className="cifra escalon" style={est(5)}>
+                    <b><Cifra valor={a.checkpoints ?? 0} /></b>
+                    <span>mini islas floridas para abejas{claveEspecies === "abejas" ? `, que conectan ${a.parques_conectados ?? 0} parques` : " sobre el corredor"}.</span>
+                  </div>
+                )}
               </>
             ) : (
               <div className="aviso sin-corredor">
@@ -691,7 +760,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         <div className="b-hist">
           <div className="izq escalon" style={est(2)}>
             <MapaHex {...mapaComun} datos={datosHist} capas={CAPAS_HIST} activa="hist" corredor={terrenoGeo} encuadre={encuadreArea} etiqueta="Promedio del calor del suelo por cuadra en el rango elegido">{filtro}</MapaHex>
-            <div className="leyenda" style={{ marginTop: 10 }}><span><i className="barra" style={{ background: grad(ROJO) }} />{hist ? <span className="num">Suelo medio de {formato(escalaHist[0], 1)} °C a {formato(escalaHist[1], 1)} °C</span> : <span className="sk sk-linea" style={{ display: "inline-block", width: 190, height: 14 }} aria-label="Calculando el promedio" />}</span></div>
+            <div className="leyenda" style={{ marginTop: 10 }}><span><i className="barra" style={{ background: grad(NARANJO) }} />{hist ? <span className="num">Suelo medio de {formato(escalaHist[0], 1)} °C a {formato(escalaHist[1], 1)} °C</span> : <span className="sk sk-linea" style={{ display: "inline-block", width: 190, height: 14 }} aria-label="Calculando el promedio" />}</span></div>
           </div>
           <div className="cifras">
             <p style={{ margin: 0, fontSize: 16, color: "var(--oliva-osc)" }}>Rango elegido: <b>{mesCorto(serie.meses[desde])} a nov 2026</b>, {mesesHist} meses con escenas. Las barras altas son los veranos, que son los que usa el índice de calor.</p>

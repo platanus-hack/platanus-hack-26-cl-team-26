@@ -37,6 +37,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFi
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ecologia import ESPECIES, ESPECIES_DE, PERFIL_DE, PERFILES, resolver_corredor_por_especies
 from optimizer import solve_corridor
 from terreno import aves
 from terreno.almacen import Almacen, cuenta, estado_validacion, hora
@@ -62,7 +63,10 @@ def _resumen(r: dict) -> dict:
     return {"hexes": len(r["hexes"]), "km": round(r["length_km"], 2),
             "urgencia_cubierta": round(r["urgencia_cubierta"], 3), "urgencia_azar": round(r["urgencia_azar"], 3),
             "personas_cubiertas": r["personas_cubiertas"], "verificados": r.get("verificados", 0),
-            "km_min": round(r["km_min"], 2) if r.get("km_min") else None}
+            "km_min": round(r["km_min"], 2) if r.get("km_min") else None,
+            "checkpoints": len(r.get("checkpoints", [])),
+            "parques_conectados": r.get("parques_conectados", 0),
+            "resistencia_media": r.get("resistencia_media")}
 
 
 def _num(x, lo=None, hi=None):
@@ -110,6 +114,8 @@ class Seleccion(BaseModel):
     w_personas: float | None = None
     w_bio: float | None = None
     vecinas: bool | None = None          # el corredor puede partir o llegar a parques de las comunas vecinas
+    perfil: str | None = None            # humanos | fauna_aves | fauna_abejas | mixto (forma antigua de elegir especies)
+    especies: list[str] | None = None    # una o más de humanos, aves, abejas: para quién se traza el corredor
 
 
 def distritos(df: pd.DataFrame) -> dict[tuple[str, str], str]:
@@ -147,10 +153,29 @@ def _vecinas(df: pd.DataFrame) -> dict[str, list[str]]:
     return {c: sorted(v) for c, v in pares.items()}
 
 
+def sin_islas(df: pd.DataFrame) -> pd.DataFrame:
+    """Quita los pedazos sueltos de la grilla que no tienen gente ni parques: son restos del recorte rectangular
+    de los datos (un trozo de comuna que queda separado del resto porque la unión pasa por fuera del recorte)."""
+    todos, comp = set(df["h3_index"]), {}
+    for h in df["h3_index"]:
+        if h in comp:
+            continue
+        comp[h], pila = h, [h]
+        while pila:
+            for v in h3.grid_disk(pila.pop(), 1):
+                if v in todos and v not in comp:
+                    comp[v] = h
+                    pila.append(v)
+    grupo = df["h3_index"].map(comp)
+    por = df.groupby(grupo).agg(n=("h3_index", "size"), pob=("poblacion", "sum"), parques=("es_parque", "sum"))
+    fuera = por.index[(por["n"] < por["n"].max()) & (por["pob"] == 0) & (por["parques"] == 0)]
+    return df[~grupo.isin(fuera)]
+
+
 def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path = Path("data"),
               km: float = 3.0, clave: str | None = None, usar_claude: bool = True,
               aceptar_sin_validar: bool = False, comunas: list[str] | None = None) -> FastAPI:
-    df = pd.read_parquet(datos)
+    df = sin_islas(pd.read_parquet(datos))
     nombres = distritos(df)
     df["distrito"] = [nombres[k] for k in zip(df["comuna"], df["h3_padre"])]
     alm = Almacen(data_dir, aceptar_sin_validar)
@@ -169,6 +194,12 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     lst_hoy = df["lst_c"]
     lst_fecha = df["lst_fecha"].mode().iat[0] if "lst_fecha" in df and df["lst_fecha"].notna().any() else None
     copa = df["copa_modelo_pct"] if "copa_modelo_pct" in df else df["arbol_pct"]
+    # Fecha de la imagen con que el modelo predice la copa (data/modelo_copa.json), para mostrarla en la página.
+    ruta_copa = Path(datos).with_name("modelo_copa.json")
+    try:
+        copa_fecha = json.loads(ruta_copa.read_text(encoding="utf-8"))["pasadas"]["actual"] if ruta_copa.exists() else None
+    except (ValueError, KeyError, TypeError):
+        copa_fecha = None
     lock = threading.Lock()
     refresco_s = float(os.getenv("REFRESCO_VIVO_MIN", "0")) * 60
     if Path(data_dir).resolve() != Path("data").resolve():
@@ -178,7 +209,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     # presupuesto y pesos) identificada por `s`, que vive solo en memoria y se pierde al recargar la página.
     estado: dict = {"datos": 0, "cambios": 0, "sel_seq": 0, "sel_id": 0, "live_mtime": None, "live": None,
                     "intento_vivo": 0.0, "terreno": None,
-                    "p": {"comunas": [], "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2, W_BIO)}}
+                    "p": {"comunas": [], "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2, W_BIO), "especies": ("humanos",)}}
     sesiones: OrderedDict[str, dict] = OrderedDict()
     MAX_SESIONES = 64
 
@@ -196,10 +227,36 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         return True
 
     def resolver(st: dict, terreno=None):
+        """Corredor de una sesión según su perfil: para personas (optimizer) o para fauna (ecologia)."""
         p = st["p"]
         wc, wa, wp, wb = p["w"]
-        return solve_corridor(st["sub"], p["km"], wc, wa, wp, live=estado["live"], terreno=terreno, w_bio=wb,
-                              apoyo=st.get("apoyo"))
+        especies = frozenset(p.get("especies") or ("humanos",))
+        if especies == {"humanos"}:
+            r = solve_corridor(st["sub"], p["km"], wc, wa, wp, live=estado["live"], terreno=terreno, w_bio=wb,
+                               apoyo=st.get("apoyo"))
+            r["checkpoints"] = []
+            r["parques_conectados"] = len(r.get("tramos", [])) + 1 if r.get("tramos") else 0
+            r["resistencia_media"] = None
+            return r
+        # Con aves o abejas: conectividad ecológica (sin fotos de terreno); las comunas vecinas valen igual.
+        res = resolver_corredor_por_especies(st["sub"], especies, budget_km=p["km"], w_calor=wc, w_arbol=wa,
+                                             w_personas=wp, live=estado["live"], apoyo=st.get("apoyo"))
+        return {
+            "hexes": res["hexes_corredor"],
+            "checkpoints": res["hexes_checkpoints"],
+            "length_km": res["length_km"],
+            "urgencia": res["score_mapa"],
+            "urgencia_cubierta": res["urgencia_cubierta"],
+            "urgencia_azar": res["urgencia_azar"],
+            "personas_cubiertas": res["personas_cubiertas"],
+            "personas_azar": res["personas_azar"],
+            "tramos": res["tramos"],
+            "verificados": 0,
+            "fuera": res.get("fuera", []),
+            "km_min": res.get("km_min"),
+            "parques_conectados": res["parques_conectados"],
+            "resistencia_media": round(res["resistencia_media"], 1) if res["resistencia_media"] is not None else None,
+        }
 
     def elegir(cambio: Seleccion, st: dict | None = None):
         """Fija el área (comunas → distritos → zona), presupuesto y pesos de una sesión, y su línea base sin
@@ -226,6 +283,14 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         if min(w) < 0 or sum(w) <= 0:
             raise HTTPException(422, "Pesos >= 0 y no todos 0")
         p["w"] = tuple(w)
+        if cambio.perfil is not None:
+            if cambio.perfil not in PERFILES:
+                raise HTTPException(422, "Perfil inválido")
+            p["especies"] = ESPECIES_DE[cambio.perfil]
+        if cambio.especies is not None:
+            if not cambio.especies or set(cambio.especies) - set(ESPECIES):
+                raise HTTPException(422, "Especies: una o más de humanos, aves, abejas")
+            p["especies"] = tuple(e for e in ESPECIES if e in set(cambio.especies))
         sub = df[df["comuna"].isin(p["comunas"])]
         if p["distritos"]:
             sub = sub[sub["distrito"].isin(p["distritos"])]
@@ -473,7 +538,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         p = st["p"]
         return {"comunas": p["comunas"], "distritos": p["distritos"], "zona": len(p["zona"] or []),
                 "km": p["km"], "w_calor": p["w"][0], "w_arbol": p["w"][1], "w_personas": p["w"][2],
-                "w_bio": p["w"][3], "vecinas": bool(p.get("vecinas")), "birdnet": aves.estado()}
+                "w_bio": p["w"][3], "vecinas": bool(p.get("vecinas")), "especies": list(p.get("especies") or ("humanos",)),
+                "perfil": PERFIL_DE.get(frozenset(p.get("especies") or ("humanos",)), "mixto"), "birdnet": aves.estado()}
 
     dist_por_comuna = {c: sorted(v, key=lambda n: int(n.rsplit(" ", 1)[1])) for c, v in distritos_de.items()}
 
@@ -576,6 +642,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         especies = sub["h3_index"].map(t_idx["especies_aves"]).fillna("") if t_idx is not None else pd.Series("", index=sub.index)
         poli = sub["h3_index"].map(t_idx["n_polinizadores"]).fillna(0) if t_idx is not None else pd.Series(0, index=sub.index)
         en_antes, en_ahora = set(antes["hexes"]), set(ahora["hexes"])
+        en_cp = set(ahora.get("checkpoints", []))
         vivo = pd.Series(float("nan"), index=sub.index)
         if live is not None and len(live):
             ok = live[live["confianza"].isin(["alta", "media"]) & live["temp_aire_c"].notna()]
@@ -589,6 +656,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             "pob": sub["poblacion"].astype(int).tolist(), "social": [_r(x, 3) for x in sub["social"]],
             "parque": sub["es_parque"].astype(bool).tolist(),
             "antes": [h in en_antes for h in hs], "ahora": [h in en_ahora for h in hs],
+            "checkpoint": [h in en_cp for h in hs],
             "verificado": [h in verif for h in hs],
             "bio": [_r(x, 3) for x in bio], "especies": especies.tolist(), "polinizadores": poli.astype(int).tolist(),
             "fotos": [n_fotos.get(h, 0) for h in hs], "escuchas": [n_escuchas.get(h, 0) for h in hs],
@@ -598,13 +666,19 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         recorridos = [{"id": r["id"], "inicio": r.get("inicio"), "duracion_s": r.get("duracion_s"),
                        "archivo": r.get("archivo"), "linea": [[p["lat"], p["lon"]] for p in r.get("track", [])]}
                       for r in alm.recorridos()]
+        # Última lectura de aire que entra al mapa (confianza alta o media); None si no hay.
+        vivo_fecha = None
+        if live is not None and len(live) and "medido_en" in live:
+            ok_v = live[live["confianza"].isin(["alta", "media"]) & live["temp_aire_c"].notna()]["medido_en"].dropna()
+            vivo_fecha = str(ok_v.max()) if len(ok_v) else None
         return {"version": ver, "sel_id": sid, "seleccion": params["comunas"], "parametros": params, "lst_fecha": lst_fecha,
+                "fechas": {"calor": lst_fecha, "copa": copa_fecha, "vivo": vivo_fecha},
                 "hex": col, "recorridos": recorridos, "en_vivo": live is not None,
                 "totales": {"capturas": len(caps), "cuentan": sum(n_fotos.values()),
                             "escuchas": sum(n_escuchas.values())},
                 "fauna_corredor": _fauna(ahora["hexes"], terreno),
                 # Cuadras del corredor en comunas vecinas (opción «vecinas»): no están en `hex`, van aparte.
-                "fuera": [{"h": h, "comuna": comuna_de.get(h)} for h in ahora.get("fuera", [])],
+                "fuera": [{"h": h, "comuna": comuna_de.get(h), "isla": h in en_cp} for h in ahora.get("fuera", [])],
                 "antes": {**_resumen(antes), "personas_azar": antes["personas_azar"]},
                 "ahora": {**_resumen(ahora), "personas_azar": ahora["personas_azar"]}}
 

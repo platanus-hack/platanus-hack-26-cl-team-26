@@ -2,9 +2,11 @@
 import numpy as np
 import pandas as pd
 
-# Antigüedad máxima por prefijo de source. SINCA publica promedios horarios con 1 a 3 h de retraso:
-# con 30 min no quedaría ninguna estación oficial, así que para esa red se acepta hasta 3 h.
-MAX_EDAD_MIN = {"SC_": 30, "DMC_": 30, "SINCA_": 180}
+# Antigüedad máxima por prefijo de source. SINCA publica promedios horarios con 1 a 3 h de retraso, y cada
+# promedio sigue siendo el último dato hasta que sale el siguiente (una hora más): con 3 h justas las 9
+# estaciones quedaban fuera buena parte de cada hora (medido el 22-nov: último dato de hace 195 min).
+# Para esa red se acepta hasta 4 h.
+MAX_EDAD_MIN = {"SC_": 30, "DMC_": 30, "SINCA_": 240}
 
 
 def distancia_km(lat1, lon1, lat2, lon2):

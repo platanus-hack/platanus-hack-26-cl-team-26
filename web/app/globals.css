@@ -237,6 +237,8 @@ section[id], footer[id] { scroll-margin-top: 76px; }
 .resumen-mapa .chip.zona { background: var(--tinta); color: var(--crema2); }
 .resumen-mapa .chip.zona button { color: var(--crema2); }
 .resumen-mapa .volver { min-height: 32px; font-size: 13px; }
+.resumen-mapa.solo { padding: 6px; background: transparent; box-shadow: none; }
+.resumen-mapa.solo .volver { background: var(--papel); box-shadow: 0 10px 24px -16px rgba(47, 69, 32, 0.7); }
 .resumen-mapa .nota { font-size: 13px; }
 
 /* Cifras de lo elegido: total grande y una fila por comuna */
@@ -274,3 +276,33 @@ section[id], footer[id] { scroll-margin-top: 76px; }
 .vecinas.no { cursor: default; opacity: 0.6; }
 .sin-corredor { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .mapa .gris { position: absolute; inset: 0; z-index: 1; background: rgba(34, 40, 26, 0.26); pointer-events: none; }
+
+/* Página /fuentes: una sección por tema, con una tarjeta por fuente. */
+.fuentes h1 { margin: 0; font-family: var(--f-serif); font-weight: 400; font-size: clamp(40px, 5.2vw, 64px); line-height: 1; letter-spacing: -0.01em; color: var(--oliva); text-wrap: balance; }
+.fuentes h1 em { font-style: italic; color: var(--oliva-osc); }
+.fuentes .b-sec .b-in { padding-block: 44px; gap: 20px; }
+.fuentes .f-tema h2 { font-size: clamp(30px, 3.6vw, 42px); }
+.f-indice { display: flex; flex-wrap: wrap; gap: 8px; }
+.f-indice .pill { text-decoration: none; min-height: 40px; font-size: 14px; }
+.f-lista { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 14px; }
+.f-lista li { min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border-radius: 18px; background: var(--papel); border: 1px solid var(--salvia3); }
+.f-lista b { font-size: 17px; line-height: 1.25; color: var(--oliva-osc); }
+.f-quien { font-size: 13px; color: var(--texto3); }
+.f-lista p { margin: 4px 0 6px; font-size: 15px; line-height: 1.5; color: var(--texto2); flex: 1; }
+.f-lista a { align-self: flex-start; font-size: 14px; font-weight: 700; color: var(--oliva); overflow-wrap: anywhere; }
+.f-nota { max-width: 75ch; font-size: 14px; }
+.b header nav a[aria-current="page"] { background-size: 100% 2px; }
+/* Pie de la página principal: solo la marca y el enlace a /fuentes. */
+.b footer.pie .b-in { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding-block: 26px 30px; }
+.b footer.pie .marca { font-size: 18px; }
+.b footer.pie .marca img { width: 26px; height: 26px; }
+.b footer.pie a { font-weight: 700; font-size: 16px; color: var(--oliva); }
+
+/* Planificar: especies del corredor (se marca más de una) y el criterio que resulta. */
+.b-cab .criterio { flex-basis: 100%; max-width: 80ch; margin: 0; font-family: var(--f-cuerpo); font-style: normal; font-size: 15px; line-height: 1.45; color: var(--texto2); }
+
+/* Bajo el primer mapa, sin nada elegido: de cuándo es cada dato. */
+.fechas { margin: 0; display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: baseline; font-size: 15px; color: var(--texto2); }
+.fechas dt { flex-basis: 100%; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--texto3); }
+.fechas dd { margin: 0; display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
+.fechas dd b { font-size: 13px; font-weight: 700; color: var(--oliva-osc); }
