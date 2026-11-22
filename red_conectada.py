@@ -14,6 +14,11 @@ Cifras por presupuesto (todas medidas, salvo los árboles):
 - barrios_aves: barrios (H3 res 7) que cruza la red con aves registradas en GBIF; aves_max: especies del más rico.
 - abejas: registros de abejas nativas (GBIF) en esos barrios; mini: mini islas floridas para abejas.
 - arboles: SUPUESTO de un árbol cada METROS_POR_ARBOL metros de corredor (largo_km). No es una medición.
+- habitat_ha: hábitat unido. Islas y corredor forman grupos de cuadras verdes que se tocan (las abejas saltan una
+  cuadra entre mini islas); se suman las hectáreas de los grupos que juntan dos o más islas, y habitat_islas cuenta
+  cuántas islas quedaron así unidas. Sin red, ninguna isla está unida a otra: 0.
+- verde_300m: personas a una cuadra (unos 300 m, la distancia que recomienda la OMS Europa, 2016) de una isla o del
+  corredor plantado; verde_300m_hoy: lo mismo solo con las islas de hoy.
 """
 import json
 import math
@@ -65,7 +70,8 @@ def islas_verdes(df):
     return isla, nombre
 
 
-PASO = math.sqrt(3) * h3.average_hexagon_edge_length(9, unit="km")   # largo de una cuadra del corredor
+PASO = math.sqrt(3) * h3.average_hexagon_edge_length(9, unit="km")
+HA_CUADRA = h3.average_hexagon_area(9, unit="km^2") * 100   # largo de una cuadra del corredor
 
 
 def red_completa(df, especies):
@@ -92,6 +98,33 @@ def hasta(tramos, mini, continuo, km):
     return hexes, mi, (len(hexes) if continuo else len(mi)) * PASO
 
 
+def habitat_unido(verde, isla, salto=1):
+    """(hectáreas, islas) de los grupos de cuadras verdes que se tocan (o a `salto` cuadras, para abejas) y juntan
+    dos o más islas."""
+    visto, ha, islas = set(), 0.0, 0
+    for h in verde:
+        if h in visto:
+            continue
+        grupo, pila = {h}, [h]
+        visto.add(h)
+        while pila:
+            for v in h3.grid_disk(pila.pop(), salto):
+                if v in verde and v not in visto:
+                    visto.add(v)
+                    grupo.add(v)
+                    pila.append(v)
+        n_islas = len({isla[g] for g in grupo if g in isla})
+        if n_islas >= 2:
+            ha += len(grupo) * HA_CUADRA
+            islas += n_islas
+    return round(ha), islas
+
+
+def cerca_del_verde(verde, pob):
+    """Personas en las cuadras verdes y en las vecinas (a unos 300 m)."""
+    return int(sum(pob.get(v, 0) for v in {v for h in verde for v in h3.grid_disk(h, 1)}))
+
+
 def cifras(hexes, mini, largo, continuo, km, pob, isla, nombre, fauna):
     red = set(hexes) | set(mini)
     toca = {isla[v] for h in red for v in h3.grid_disk(h, 1) if v in isla}
@@ -106,6 +139,8 @@ def cifras(hexes, mini, largo, continuo, km, pob, isla, nombre, fauna):
         "personas": int(sum(pob.get(h, 0) for h in cerca)),
         "barrios_aves": int(len(con_aves)), "aves_max": int(con_aves.aves_especies.max()) if len(con_aves) else 0,
         "abejas": int(f.abejas_nativas.sum()), "largo_km": round(largo, 2), "arboles": int(round(largo * 1000 / METROS_POR_ARBOL)),
+        **dict(zip(("habitat_ha", "habitat_islas"), habitat_unido(set(isla) | plantado, isla, 1 if continuo else 2))),
+        "verde_300m": cerca_del_verde(set(isla) | plantado, pob),
     }
 
 
@@ -115,7 +150,8 @@ def main():
     isla, nombre = islas_verdes(df)
     fauna = pd.read_parquet(FAUNA)
     salida = {"km_max": KM_MAX, "paso_km": PASO_KM, "metros_por_arbol": METROS_POR_ARBOL,
-              "islas_total": len(set(isla.values())), "personas_total": int(df.poblacion.sum()), "red": {}}
+              "islas_total": len(set(isla.values())), "personas_total": int(df.poblacion.sum()),
+              "verde_300m_hoy": cerca_del_verde(set(isla), pob), "red": {}}
     for clave, especies in COMBINACIONES.items():
         tramos, mini, continuo = red_completa(df, especies)
         filas = []
@@ -124,10 +160,12 @@ def main():
             filas.append(cifras(hexes, mi, largo, continuo, km, pob, isla, nombre, fauna))
         salida["red"][clave] = filas
         u = filas[-1]
-        print(f"{clave}: {KM_MAX} km → {u['islas']} islas, {u['personas']:,} personas, {len(u['mini'])} mini islas")
+        print(f"{clave}: {KM_MAX} km → {u['islas']} islas, {u['personas']:,} personas, {len(u['mini'])} mini islas, "
+              f"hábitat unido {u['habitat_ha']} ha ({u['habitat_islas']} islas), {u['verde_300m']:,} a 300 m del verde")
     SALIDA.parent.mkdir(parents=True, exist_ok=True)
     SALIDA.write_text(json.dumps(salida, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"{SALIDA} ({SALIDA.stat().st_size // 1024} KB); {salida['islas_total']} islas verdes en la grilla")
+    print(f"{SALIDA} ({SALIDA.stat().st_size // 1024} KB); {salida['islas_total']} islas verdes en la grilla; hoy: "
+          f"{salida['verde_300m_hoy']:,} de {salida['personas_total']:,} personas a 300 m del verde")
 
 
 if __name__ == "__main__":

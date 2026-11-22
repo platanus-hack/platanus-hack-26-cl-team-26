@@ -87,8 +87,10 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
 * **Pantalla:** la sección «Santiago conectado», con «Las tres» elegido: apretar «Ver crecer la red» y dejar que
   la red llegue a 100 km mientras se habla.
 * **Orador:**
-  > *"Y si Santiago construye la red completa: con 100 km de corredores se unen **30 islas verdes** y **943.837
-  > personas** quedan a una cuadra de la sombra. Viridis no necesita instalar nada: usa satélites públicos, el Censo, OpenStreetMap, las estaciones
+  > *"Y si Santiago construye la red completa: con 100 km de corredores, **30 islas verdes dejan de estar solas**
+  > —4.055 hectáreas de hábitat unido— y **764.364 personas más** tienen el verde a 300 m de su casa, como
+  > recomienda la OMS: del 14 % al 26 % de Santiago. Las abejas polinizan, las aves siembran, y ese verde vuelve a
+  > dar sombra. Viridis no necesita instalar nada: usa satélites públicos, el Censo, OpenStreetMap, las estaciones
   > meteorológicas oficiales y lo que miles de personas han observado de aves y abejas. Le dice a un municipio
   > por dónde plantar primero, para quién y por qué. Donde se necesita el verde. Gracias."*
 
