@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExpressionSpecification, GeoJSONSource, LngLatBoundsLike, Map as MapaML, MapMouseEvent, MapTouchEvent, Popup } from "maplibre-gl";
 import { menosMovimiento, useVisible } from "./movimiento";
 
@@ -196,6 +196,33 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         });
         // Cuadras que va marcando el pincel mientras se arrastra (estado por cuadra, sin recargar datos).
         nuevo.addLayer({ id: "pincel", type: "fill", source: "hex", paint: { "fill-color": "#2F4520", "fill-opacity": ["case", ["boolean", ["feature-state", "pinta"], false], 0.6, 0] } });
+        // Autopistas y avenidas principales (OSM, web/public/data/vias.json): una línea fina sobre las cuadras y su
+        // nombre a lo largo. Las autopistas se rotulan desde antes; las avenidas, al acercar.
+        nuevo.addSource("vias", { type: "geojson", data: "/data/vias.json" });
+        nuevo.addLayer({
+          id: "vias-linea", type: "line", source: "vias", minzoom: 9.5, layout: { "line-join": "round", "line-cap": "round" },
+          filter: ["any", ["<", ["get", "k"], 2], [">=", ["zoom"], 11]],
+          paint: { "line-color": "#FFFDF6", "line-opacity": ["case", ["<", ["get", "k"], 2], 0.75, 0.5],
+            "line-width": ["interpolate", ["linear"], ["zoom"], 9.5, ["case", ["<", ["get", "k"], 2], 0.9, 0.4], 14, ["case", ["<", ["get", "k"], 2], 3, 1.8]] },
+        }, "distritos");
+        // Nombres de las comunas en gris suave: aparecen al acercar (de lejos el mapa base solo dice «Santiago»).
+        nuevo.addSource("comunas-nombre", { type: "geojson", data: VACIO });
+        if (letra) {
+          nuevo.addLayer({
+            id: "vias-nombre", type: "symbol", source: "vias", minzoom: 10.3,
+            filter: ["any", ["<", ["get", "k"], 2], [">=", ["zoom"], 11.8]],
+            layout: { "symbol-placement": "line", "text-field": ["get", "n"], "text-font": letra, "symbol-spacing": 320,
+              "text-size": ["interpolate", ["linear"], ["zoom"], 10.3, 10, 14, 13], "text-letter-spacing": 0.03, "text-max-angle": 35 },
+            paint: { "text-color": "#3F4730", "text-halo-color": "rgba(255, 253, 246, 0.9)", "text-halo-width": 1.6 },
+          });
+          nuevo.addLayer({
+            id: "comunas-nombre", type: "symbol", source: "comunas-nombre", minzoom: 10.4,
+            layout: { "text-field": ["get", "n"], "text-font": letra, "text-transform": "uppercase", "text-letter-spacing": 0.12, "text-max-width": 7,
+              "text-size": ["interpolate", ["linear"], ["zoom"], 10.4, 10.5, 13.5, 15], "text-padding": 6 },
+            paint: { "text-color": "#6F7266", "text-halo-color": "rgba(246, 241, 228, 0.85)", "text-halo-width": 1.4,
+              "text-opacity": ["interpolate", ["linear"], ["zoom"], 10.4, 0, 10.9, 0.95] },
+          });
+        }
         nuevo.addSource("lazo", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "lazo-relleno", type: "fill", source: "lazo", filter: ["==", ["get", "tipo"], "zona"], paint: { "fill-color": "#966222", "fill-opacity": 0.14 } });
         nuevo.addLayer({ id: "lazo", type: "line", source: "lazo", filter: ["==", ["get", "tipo"], "borde"], layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "#22281A", "line-width": 2.4 } });
@@ -477,6 +504,29 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
     hayComunas.current = (comunas?.features.length ?? 0) > 0;
     (mapa.current?.getSource("comunas") as GeoJSONSource | undefined)?.setData(comunas ?? VACIO);
   }, [comunas, listo]);
+
+  // Un punto por comuna para su nombre: el centro del polígono más grande. Solo cambia si cambian las comunas.
+  const nombres = useMemo<GeoJSON.FeatureCollection>(() => ({
+    type: "FeatureCollection",
+    features: (comunas?.features ?? []).flatMap((f) => {
+      if (f.geometry.type !== "MultiPolygon") return [];
+      let mejor: [number, number] | null = null, areaMax = 0;
+      for (const poly of f.geometry.coordinates) {
+        const a = poly[0];
+        let area = 0, cx = 0, cy = 0;
+        for (let k = 0; k < a.length - 1; k++) {
+          const w = a[k][0] * a[k + 1][1] - a[k + 1][0] * a[k][1];
+          area += w; cx += (a[k][0] + a[k + 1][0]) * w; cy += (a[k][1] + a[k + 1][1]) * w;
+        }
+        if (Math.abs(area) > areaMax) { areaMax = Math.abs(area); mejor = [cx / (3 * area), cy / (3 * area)]; }
+      }
+      return mejor ? [{ type: "Feature" as const, properties: { n: String(f.properties?.c ?? "") }, geometry: { type: "Point" as const, coordinates: mejor } }] : [];
+    }),
+  }), [comunas?.features.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!listo) return;
+    (mapa.current?.getSource("comunas-nombre") as GeoJSONSource | undefined)?.setData(nombres);
+  }, [nombres, listo]);
 
   useEffect(() => {
     const m = mapa.current;
