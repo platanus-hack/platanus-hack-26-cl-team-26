@@ -1,0 +1,10 @@
+# Ver scripts/systemd/README.md. %h es la carpeta del usuario.
+[Unit]
+Description=VerdeH3: sumar SINCA a las maximas del dia
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PYTHON=%h/verdeh3-sinca/.venv/bin/python
+ExecStart=%h/verdeh3-sinca/scripts/completar_sinca.sh

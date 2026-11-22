@@ -5,6 +5,8 @@ temp_aire_c es la máxima de ayer y medido_en la hora en que se midió.
 Uso:
   python maximas.py               # ayer, en hora de Santiago
   python maximas.py 2026-11-21    # otro día (la DMC solo guarda 12 h: sirve hasta el mediodía siguiente)
+  python maximas.py --completar   # suma SINCA a los días de las últimas 2 semanas que no lo tienen
+                                  # (desde Chile; lo corre scripts/completar_sinca.sh con un timer de systemd)
 
 Fuentes: solo estaciones oficiales. DMC (getDatosRecientesEma/{codigo}, minuto a minuto, 12 h) y SINCA
 (promedio horario). sensor.community no guarda el día y RedMeteo no tiene acceso confirmado.
@@ -18,6 +20,7 @@ diaria trae la DMC; SINCA guarda su historial, así que se suma después desde u
 `python maximas.py AAAA-MM-DD` sin perder la DMC del día. live_h3.parquet solo se reescribe con el día más
 reciente del historial.
 """
+import datetime as dt
 import io
 import sys
 from pathlib import Path
@@ -32,6 +35,7 @@ import vivo
 
 HORAS_CALOR = range(14, 18)   # 14:00 a 17:59 de Santiago
 MIN_HORAS = 3
+DIAS_COMPLETAR = 14
 HISTORIAL = vivo.DATA / "maximas"
 
 
@@ -91,9 +95,41 @@ def sinca_dia(dia):
     return filas
 
 
+def pendientes(hoy, n=DIAS_COMPLETAR):
+    """Días de los últimos n, desde el primero del historial, sin ninguna estación SINCA, del más antiguo al
+    más reciente. Ayer entra solo si la tarea de la noche ya dejó su archivo, para no escribir los dos a la vez."""
+    archivos = sorted(HISTORIAL.glob("*.csv"))
+    if not archivos:
+        return []
+    primero = dt.date.fromisoformat(archivos[0].stem)
+    dias = []
+    for k in range(n, 0, -1):
+        d = hoy - dt.timedelta(days=k)
+        if d < primero:
+            continue
+        ruta = HISTORIAL / f"{d}.csv"
+        if ruta.exists():
+            if not pd.read_csv(ruta).source.str.startswith("SINCA_").any():
+                dias.append(d)
+        elif k >= 2:
+            dias.append(d)
+    return dias
+
+
 def main(args):
-    dia = (pd.Timestamp(args[0]) if args else pd.Timestamp.now(tz=fuentes.TZ) - pd.Timedelta(days=1)).date()
-    filas = dmc_dia(dia) + sinca_dia(dia)
+    hoy = pd.Timestamp.now(tz=fuentes.TZ).date()
+    if args[:1] == ["--completar"]:
+        dias = pendientes(hoy, int(args[1]) if len(args) > 1 else DIAS_COMPLETAR)
+        print(f"Días sin SINCA: {', '.join(map(str, dias)) or 'ninguno'}")
+        for d in dias:
+            guardar(d, sinca_dia(d))
+        return 0
+    dia = pd.Timestamp(args[0]).date() if args else hoy - dt.timedelta(days=1)
+    return guardar(dia, dmc_dia(dia) + sinca_dia(dia))
+
+
+def guardar(dia, filas):
+    """Junta las máximas nuevas con el historial del día y, si es el día más reciente, reescribe live_h3."""
     if not filas:
         print(f"{dia}: ninguna estación con datos de las horas de calor; no se escribe nada")
         return 1
