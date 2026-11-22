@@ -1,0 +1,13 @@
+# Todos los días a las 03:00 y 5 min después de prender el PC. Persistent=true: si a las 03:00 estaba
+# apagado, corre apenas se prenda.
+[Unit]
+Description=VerdeH3: SINCA en las maximas del dia, una vez al dia
+
+[Timer]
+OnCalendar=*-*-* 03:00
+OnBootSec=5min
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

@@ -438,8 +438,7 @@ def test_audio():
         with tempfile.TemporaryDirectory() as tmp:
             c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, clave="secreta", usar_claude=False))
             v0 = c.get("/api/version").json()["version"]
-            pag = c.get("/captura?k=secreta")  # la misma página del teléfono, para el sitio web/
-            assert pag.status_code == 200 and "Escuchar aves" in pag.text
+            assert c.get("/captura").status_code == 404  # la página del teléfono se retiró
             datos = {"lat": la, "lon": lo, "precision_m": 8, "tomado_en": "2026-11-21T15:00:00-03:00"}
             assert c.post("/api/audio", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")}).status_code == 403
             r = c.post("/api/audio?k=secreta", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")})
@@ -613,12 +612,12 @@ def test_sitio_exportado():
         c = TestClient(crear_app(DEMO, tmp / "datos", comunas=COMUNAS_DEMO, usar_claude=False, web=web))
         assert "Viridis" in c.get("/").text
         assert c.get("/_next/app.js").text == "console.log(1)"
-        assert "Escuchar aves" in c.get("/captura").text and c.get("/mapa").status_code == 200
+        assert c.get("/captura").status_code == 404 and c.get("/mapa").status_code == 200  # sin página del teléfono
         assert c.get("/api/salud").json() == {"ok": True}
         assert c.get("/no-existe").status_code == 404
-        # sin sitio exportado, «/» sigue siendo la página del teléfono
+        # sin sitio exportado, «/» lleva al mapa
         c2 = TestClient(crear_app(DEMO, tmp / "datos2", comunas=COMUNAS_DEMO, usar_claude=False, web=tmp / "nada"))
-        assert "Escuchar aves" in c2.get("/").text
+        assert c2.get("/", follow_redirects=False).headers["location"] == "/mapa"
 
 
 def test_aves_wav():

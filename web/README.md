@@ -8,9 +8,8 @@ calor en ocre. Next.js 16 + MapLibre, sobre Carto Positron teñido.
 
 La página no guarda datos propios: el mapa, las comunas y el corredor vienen del servidor de terreno
 (`terreno/servidor.py`, de `feat/integracion-terreno`), que cruza los datos por comuna. Next reenvía
-`/api`, `/fotos`, `/videos` y `/audios` a ese servidor (`TERRENO_URL`, por defecto `http://127.0.0.1:8000`),
-y también `/captura`: la página del teléfono (foto, video y escuchar aves). Así hay un solo enlace público:
-el teléfono abre `https://<sitio>/captura?k=<clave>`.
+`/api`, `/fotos`, `/videos` y `/audios` a ese servidor (`TERRENO_URL`, por defecto `http://127.0.0.1:8000`).
+La página del teléfono (`/captura`) se retiró.
 
 ```bash
 pip install -r requirements.txt               # desde la raíz del repo

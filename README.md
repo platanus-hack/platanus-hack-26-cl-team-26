@@ -81,7 +81,7 @@ python -m tests.test_contrato
 `optimizer.solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None)` devuelve el
 corredor continuo entre parques que más urgencia cubre dentro del presupuesto.
 
-## App web: mapa + captura en terreno (un solo servidor)
+## App web: mapa (un solo servidor)
 
 `python -m terreno.servidor` sirve todo (FastAPI, sin Streamlit):
 
@@ -92,91 +92,33 @@ corredor continuo entre parques que más urgencia cubre dentro del presupuesto.
     azar y el efecto de las fotos de terreno.
   - *Histórico*: promedio de LST y NDVI de las escenas entre dos fechas (`data/historico_h3.parquet`, 2023–2026).
   - Área: comunas (toque en el mapa, «Piloto», «Todas (34)»), distritos (barrios H3 res 7) y «Encerrar zona»
-    para dibujar un polígono. Presupuesto, pesos y área son compartidos: la captura del teléfono responde con
-    los mismos números que muestra el mapa.
-- `/captura?k=<clave>` (teléfono): captura en terreno, abajo.
+    para dibujar un polígono.
+- `/` lleva al sitio Viridis si está exportado (`web/out`), si no a `/mapa`. La página del teléfono
+  (`/captura`) se retiró: el equipo decidió quedarse solo con el sitio.
 
 ### Despliegue en Render (un solo servicio)
 
 El `Dockerfile` compila el sitio Viridis (`web/`, `npm run exportar` → archivos estáticos en `web/out`) y lo
-sirve desde el mismo servidor de terreno. Un solo enlace: `/` el sitio, `/api` los datos, `/captura` el teléfono
-(HTTPS de Render, que el GPS exige) y `/mapa` el mapa de respaldo.
+sirve desde el mismo servidor de terreno. Un solo enlace: `/` el sitio, `/api` los datos y `/mapa` el mapa de
+respaldo.
 
-1. En Render: **New → Blueprint**, elegir este repositorio (rama `main`); `render.yaml` crea el servicio
-   `viridis` (plan standard, 2 GB: el modelo de aves no cabe holgado en 512 MB) con un disco de 1 GB en
-   `data/terreno/` para que las capturas sobrevivan a cada despliegue.
-2. En **Environment**, escribir los secretos (nunca en el repo): `TERRENO_CLAVE` (clave de subida del
-   teléfono), `ANTHROPIC_API_KEY` (Claude valida las fotos), `DMC_USUARIO` y `DMC_TOKEN` (estaciones DMC del
-   aire en vivo).
-3. Health check: `/api/salud`. Cada push a `main` vuelve a desplegar.
+1. En Render: **New → Blueprint**, elegir este repositorio; `render.yaml` crea el servicio `viridis` (plan
+   standard, 2 GB: el modelo de aves no cabe holgado en 512 MB) con un disco de 1 GB en `data/terreno/`.
+2. En **Environment**, escribir los secretos (nunca en el repo): `TERRENO_CLAVE` (clave de la API de subida),
+   `ANTHROPIC_API_KEY` (Claude valida las fotos), `DMC_USUARIO` y `DMC_TOKEN` (estaciones DMC del aire en vivo).
+3. Health check: `/api/salud`.
 
 Para probarlo igual en local: `cd web && npm run exportar`, y luego `python -m terreno.servidor` sirve todo en
 http://localhost:8000.
 
-## Captura en terreno (teléfono → corredor en vivo)
+## Datos de terreno (sin página del teléfono)
 
-**Fauna para los corredores.** Un corredor verde sirve para conectar hábitat, así que el equipo también
-registra fauna en terreno:
-- Fotos y videos: Claude anota aves, abejas, mariposas y flores que se vean con claridad. Un primer plano
-  exterior de un ave, un insecto o una flor es válido («fauna_flora»): suma biodiversidad y no cambia la copa
-  ni el espacio para plantar del hexágono.
-- «🎙️ Escuchar aves (15 s)»: el teléfono graba 15 s (WAV, sin cancelación de ruido) y BirdNET identifica las
-  aves por su canto, solo entre las esperables en Santiago esa semana del año (`terreno/aves.py`, sin red).
-  Nombres científicos y comunes en inglés (el modelo no trae español). Funciona caminando por la calle.
-- El video del recorrido también escucha: el micrófono graba mientras se camina, BirdNET oye el audio entero y
-  cada ave queda en el hexágono donde iba el teléfono cuando cantó (una escucha por hexágono recorrido, con su
-  trozo de audio en el mapa).
-- Ruido de la calle: cada escucha mide el tráfico (banda 100–1500 Hz, dB relativos del micrófono, no
-  calibrados): bajo, medio o alto. BirdNET tolera el ruido de fondo, pero el tráfico fuerte tapa aves lejanas y
-  arrullos graves; sin aves y con ruido alto la escucha queda «no concluyente».
-- Cada hexágono suma una biodiversidad de 0 a 1 (ver `CONTRATO.md`) que entra al corredor con el peso
-  «Biodiversidad (terreno)» del mapa (10 de 100 al inicio). En el mapa: capa de biodiversidad, marcadores 🎧
-  con el audio y especies, y «Especies de aves en el corredor».
-- Honestidad: no detectar fauna no significa que no haya, y un hexágono sin visitar vale 0; por eso el peso es
-  bajo y el resultado se lee como «dónde encontramos evidencia». BirdNET: K. Lisa Yang Center for Conservation
-  Bioacoustics (Cornell), modelo CC BY-NC-SA 4.0 (uso no comercial).
-
-El equipo recorre el corredor con un teléfono: cada foto lleva GPS, se analiza (índice de verde siempre;
-Claude estima árboles, espacio para plantar y obstáculos si hay credenciales de Anthropic), actualiza su
-hexágono en `data/terreno_h3.parquet` (ver `CONTRATO.md`) y `optimizer.solve_corridor` recalcula el corredor.
-El mapa en vivo muestra el corredor antes y después de las fotos.
-
-```bash
-python -m venv .venv && .venv/Scripts/pip install h3 pandas numpy pyarrow fastapi uvicorn python-multipart pillow anthropic httpx
-set TERRENO_CLAVE=una-clave                        # la URL del túnel es pública: la clave protege la subida
-.venv/Scripts/python -m terreno.servidor           # --sin-claude para usar solo el índice de verde
-cloudflared tunnel --url http://localhost:8000     # entrega https://<algo>.trycloudflare.com
-```
-
-- Teléfono: `https://<algo>.trycloudflare.com/?k=una-clave` (el GPS del navegador exige HTTPS). Aceptar la
-  ubicación, esperar precisión ≤ 30 m, «Tomar foto», «Subir captura».
-- Mapa para proyectar: `http://localhost:8000/mapa` (consulta cada 3 s y redibuja solo si algo cambió).
-  Por el túnel o en Render, abrir `/mapa?k=una-clave` para poder cambiar comunas y pesos.
-- Comunas: el servidor carga las 34 comunas (`data/santiago_h3_gs.parquet`) y calcula el corredor solo en las
-  elegidas. Al abrir se ven las 34 («Todas las comunas»); «Por comuna» separa el análisis (o `--comunas ...` al
-  iniciar). En modo por comuna, tocar una comuna vecina (borde punteado) la
-  suma; tocar otra comuna empieza de nuevo ahí; tocar dentro de una elegida muestra el hexágono con un botón
-  para quitarla; la × de cada comuna también la quita. Las fotos de cualquier comuna se
-  guardan y cuentan cuando esa comuna está elegida.
-- Video: «Abrir cámara de video» abre la cámara a pantalla completa; el botón rojo graba dentro de la página (máx. 3 min) mientras registra el trazado GPS; cada 3 s
-  guarda un cuadro con su posición y hora. Al subirlo se analizan hasta 12 cuadros (2 por hexágono como máximo),
-  cada uno valida su propio hexágono, y el mapa dibuja el recorrido en morado con enlace al video. No se aceptan
-  videos de la galería: sin trazado GPS no se sabe dónde fue cada cuadro.
-- Cada captura guarda posición (lat, lon, precisión del GPS en m), `tomado_en` (hora del teléfono) y `medido_en`
-  (hora de llegada al servidor).
-- Claude: usa `ANTHROPIC_API_KEY`, un perfil de `ant auth login` o la key sola en `.anthropic_key` (raíz del
-  repo, en `.gitignore`). Claude primero valida que sea una foto
-  exterior de calle o espacio público (descarta interiores, vistas desde ventanas, pantallas, primeros planos).
-- Solo las fotos válidas cambian el corredor. Sin credenciales, las fotos quedan «sin validar» (el índice de
-  verde no distingue una oficina de una calle) y no cuentan; `--aceptar-sin-validar` las deja contar en una
-  demo sin red.
-- Las fotos se guardan sin EXIF en `data/terreno/fotos/`. Ni las fotos ni los registros
-  (`data/terreno/*.jsonl`, con la posición GPS de cada captura y recorrido) ni `data/terreno_h3.parquet` se
-  versionan: quedan en el computador que corre el servidor.
-- Prueba offline: `python -m tests.test_terreno`.
-
-Honestidad: una foto de calle muestra parte de un hexágono de ~0,1 km²; complementa al satélite (el déficit de
-árboles del hexágono es el promedio 50/50 entre el de `copa_modelo_pct` y el de la foto) y no lo reemplaza. Los porcentajes de Claude son estimaciones visuales.
+La página del teléfono se retiró. Lo ya capturado sigue contando: `data/terreno/*.jsonl` se agrega en
+`data/terreno_h3.parquet` (ver `CONTRATO.md`) y entra al corredor (árboles, espacio para plantar y
+biodiversidad con el peso «Biodiversidad (terreno)»). La API de subida (`/api/captura`, `/api/video`,
+`/api/audio`, protegida con `TERRENO_CLAVE`) sigue para scripts y pruebas: `python -m tests.test_terreno`.
+Nada de `data/terreno/` se versiona. BirdNET: K. Lisa Yang Center for Conservation Bioacoustics (Cornell),
+modelo CC BY-NC-SA 4.0 (uso no comercial).
 
 # Corredores Verdes · Bloque 1
 

@@ -27,6 +27,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 COPY --from=sitio /web/out ./web/out
 
+# Un solo servidor: el sitio en /, el mapa en /mapa y la API. Render define PORT.
 ENV PORT=8000
 EXPOSE 8000
 

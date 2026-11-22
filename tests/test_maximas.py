@@ -40,3 +40,24 @@ def test_dmc_tabla_lista_objeto_y_estacion_sin_datos():
                                                  {"estacion": {**est, "codigoNacional": "330021"}, "datos": None}]})
     una = fuentes.dmc_tabla({"datosEstaciones": {"estacion": est, "datos": datos}})
     assert len(red) == len(una) == 1 and red.temp_c[0] == 27.5 and red.humedad_pct[0] == 21.0
+
+
+def test_juntar_suma_sinca_sin_perder_dmc_ni_duplicar():
+    dmc = maximas.maxima(lecturas({14: 26.0, 15: 28.0, 16: 27.0}), DIA).to_frame().T
+    sinca_viejo = dmc.assign(source="SINCA_D14", temp_c=20.0)
+    previas = pd.concat([dmc, sinca_viejo], ignore_index=True)
+    previas["medido_en"] = previas.medido_en.astype(str)  # como vuelve del CSV
+    nuevas = dmc.assign(source="SINCA_D14", temp_c=24.0)
+    j = maximas.juntar(previas, nuevas)
+    assert sorted(j.source) == ["DMC_1", "SINCA_D14"] and j.set_index("source").temp_c.to_dict() == {"DMC_1": 28.0, "SINCA_D14": 24.0}
+
+
+def test_pendientes_dias_sin_sinca(tmp_path, monkeypatch):
+    monkeypatch.setattr(maximas, "HISTORIAL", tmp_path)
+    hoy = dt.date(2026, 11, 25)
+    pd.DataFrame({"source": ["DMC_1"]}).to_csv(tmp_path / "2026-11-21.csv", index=False)            # sin SINCA
+    pd.DataFrame({"source": ["DMC_1", "SINCA_D14"]}).to_csv(tmp_path / "2026-11-22.csv", index=False)  # completo
+    # 23-11 no existe (falló la tarea de la noche): se hace solo con SINCA; 24-11 (ayer) aún no tiene archivo: espera
+    assert maximas.pendientes(hoy, 6) == [dt.date(2026, 11, 21), dt.date(2026, 11, 23)]  # 19 y 20: antes del historial
+    pd.DataFrame({"source": ["DMC_1"]}).to_csv(tmp_path / "2026-11-24.csv", index=False)
+    assert maximas.pendientes(hoy, 6)[-1] == dt.date(2026, 11, 24)
