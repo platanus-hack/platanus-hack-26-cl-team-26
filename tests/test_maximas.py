@@ -29,3 +29,14 @@ def test_no_mezcla_otro_dia_ni_valores_fuera_de_rango():
     ayer = lecturas({14: 33.0, 15: 33.0, 16: 33.0}, dia="2026-11-20")
     m = maximas.maxima(pd.concat([hoy, ayer], ignore_index=True), DIA)
     assert m.temp_c == 27.0
+
+
+def test_dmc_tabla_lista_objeto_y_estacion_sin_datos():
+    import fuentes
+    est = {"codigoNacional": "330020", "latitud": "-33.445", "longitud": "-70.683"}
+    datos = [{"momento": "2026-11-21 18:01:00", "temperatura": "27.5 °C", "humedadRelativa": "21 %"},
+             {"momento": "2026-11-21 18:00:00", "temperatura": None, "humedadRelativa": "22 %"}]
+    red = fuentes.dmc_tabla({"datosEstaciones": [{"estacion": est, "datos": datos},
+                                                 {"estacion": {**est, "codigoNacional": "330021"}, "datos": None}]})
+    una = fuentes.dmc_tabla({"datosEstaciones": {"estacion": est, "datos": datos}})
+    assert len(red) == len(una) == 1 and red.temp_c[0] == 27.5 and red.humedad_pct[0] == 21.0
