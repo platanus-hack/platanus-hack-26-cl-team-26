@@ -380,7 +380,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
 
   const filtro = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
     sueloComuna={sueloComuna} ocupado={ocupado} error={error} />;
-  // El primer mapa va sin el panel de arriba a la derecha: lo elegido ya se lee en las cifras de abajo.
+  // Los mapas de Datos clave y Planificar van sin el panel de arriba a la derecha: queda solo el botón para volver.
   const filtroSolo = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
     sueloComuna={sueloComuna} ocupado={ocupado} error={error} sinResumen />;
 
@@ -645,7 +645,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
           <div className="izq escalon" style={est(3)}>
             <MapaHex {...mapaComun} foco={planListo ? foco : TODO_GRIS} hitos={HITOS} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={verCorredor ? corredor : SIN_CORREDOR} encuadre={encuadrePlan}
               etiqueta="Corredor propuesto sobre la urgencia de cada cuadra">
-              {filtro}
+              {filtroSolo}
               {!planListo && <div className="gris" aria-hidden="true" />}
               {!planListo && (
                 <div className="invita" role="status">
