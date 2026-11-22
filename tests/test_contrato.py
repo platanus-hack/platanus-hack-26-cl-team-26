@@ -98,16 +98,20 @@ def main():
     from optimizer import urgencia
     pd.testing.assert_series_equal(urgencia(demo), urgencia(demo, 4, 4, 2))
 
-    # En vivo (live de prueba): solo cambian las cuadras de barrios con confianza alta o media.
-    barrios = demo["h3_padre"].value_counts().index[:4].tolist()
-    live = pd.DataFrame({"h3_padre": barrios, "temp_aire_c": [26.0, 31.0, 40.0, 35.0],
-                         "confianza": ["alta", "media", "baja", "sin dato"]})
+    # En vivo (live de prueba): solo cambian las cuadras de barrios con confianza alta o media, y solo si hay al
+    # menos AIRE_MIN_BARRIOS barrios medidos (con menos, unas décimas de grado no reordenan el corredor).
+    from optimizer import AIRE_MIN_BARRIOS
+    n_ok = AIRE_MIN_BARRIOS
+    barrios = demo["h3_padre"].value_counts().index[:n_ok + 2].tolist()
+    temps = [26.0, 31.0, 28.0, 33.0, 29.0, 30.0, 32.0, 27.0, 34.0][:n_ok] + [40.0, 35.0]
+    live = pd.DataFrame({"h3_padre": barrios, "temp_aire_c": temps,
+                         "confianza": (["alta", "media"] * n_ok)[:n_ok] + ["baja", "sin dato"]})
     u0, u1 = urgencia(demo), urgencia(demo, live=live)
     cambia = u1 != u0
-    assert cambia.any() and demo.loc[cambia, "h3_padre"].isin(barrios[:2]).all()
+    assert cambia.any() and demo.loc[cambia, "h3_padre"].isin(barrios[:n_ok]).all()
     assert (u1 >= 0).all() and (u1 <= 1).all()
-    pd.testing.assert_series_equal(urgencia(demo, live=live.iloc[:1]), u0)  # un solo barrio: sin cambio
-    pd.testing.assert_series_equal(urgencia(demo, live=live.iloc[2:]), u0)  # baja o sin dato: sin cambio
+    pd.testing.assert_series_equal(urgencia(demo, live=live.iloc[:n_ok - 1]), u0)  # pocos barrios: sin cambio
+    pd.testing.assert_series_equal(urgencia(demo, live=live.iloc[n_ok:]), u0)  # baja o sin dato: sin cambio
     t = time.perf_counter()
     assert len(solve_corridor(demo, live=live)["hexes"]) > 0
     assert time.perf_counter() - t < 0.1
