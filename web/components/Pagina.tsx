@@ -1,18 +1,16 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExpressionSpecification, LngLatBoundsLike } from "maplibre-gl";
-import { cellToBoundary } from "h3-js";
-import MapaHex, { type Capa } from "./MapaHex";
+import { cellToBoundary, cellsToDirectedEdge, directedEdgeToBoundary, getResolution, gridDisk, latLngToCell, polygonToCellsExperimental, POLYGON_TO_CELLS_FLAGS } from "h3-js";
+import MapaHex, { type Capa, type Foco } from "./MapaHex";
 import Cifra from "./Cifra";
 import FiltroComunas from "./FiltroComunas";
 import { formato, useRevela, useVisible } from "./movimiento";
-import { historico, useTerreno, type Captura, type Estado, type InfoComunas } from "@/lib/terreno";
+import { historico, useTerreno, type Captura, type Estado, type HexCols, type InfoComunas } from "@/lib/terreno";
 
 type Serie = { meses: string[]; escenas_landsat: number; escenas_sentinel2: number; media_mes: (number | null)[]; lst_fecha_ultima: string };
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-const MESES_LARGOS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
-const fechaLarga = (iso: string) => { const [a, m, d] = iso.split("-").map(Number); return `${d} de ${MESES_LARGOS[m - 1]} de ${a}`; };
 const esVerano = (ym: string) => [12, 1, 2].includes(Number(ym.slice(5)));
 const mesCorto = (ym: string) => { const [a, m] = ym.split("-").map(Number); return `${MESES[m - 1]} ${a}`; };
 const sinNulos = (xs: (number | null)[]) => xs.filter((x): x is number => x != null);
@@ -46,15 +44,32 @@ const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Copa de ár
 const LEYENDA: Record<string, [string, string]> = {
   calor: [grad(OCRE), "Índice de calor: 60 % suelo y 40 % aire donde hay sensores con confianza alta o media; si no, solo suelo"],
   copa: [grad(VERDE), "Copa de árboles, de 0 % a 25 % o más"],
-  personas: [grad(VERDE), "Personas: 50 % densidad del Censo y 50 % cercanía a servicios"],
+  personas: [grad(VERDE), "Personas: 70 % habitantes del Censo en la cuadra y 30 % cercanía a colegios, salud, metro y paraderos"],
 };
-const CAPAS_PLAN: Capa[] = [{ id: "urg", color: ["case", ["get", "k"], "#B7C298", escala("u", VERDE, 0, 0.85)] }];
+// Cerros isla y parques grandes de Santiago: las islas verdes que el corredor busca unir.
+const ISLAS: [string, number, number][] = [
+  ["Cerro San Cristóbal", -70.632, -33.422], ["Cerro Renca", -70.713, -33.392], ["Cerro Santa Lucía", -70.6436, -33.4405],
+  ["Parque O'Higgins", -70.66, -33.4645], ["Quinta Normal", -70.682, -33.441], ["Cerro Blanco", -70.6445, -33.4195],
+];
+const HITOS: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: ISLAS.map(([n, lng, lat]) => ({ type: "Feature", properties: { n }, geometry: { type: "Point", coordinates: [lng, lat] } })),
+};
+const CAPAS_PLAN: Capa[] = [{ id: "urg", color: ["case", ["get", "k"], "#7FA35A", ["==", ["get", "u"], null], "#E4DFCC", escala("u", VERDE, 0, 0.85)] }];
 const CAPAS_HIST: Capa[] = [{ id: "hist", color: ["case", ["==", ["get", "hn"], null], "#E4DFCC", escala("hn", OCRE, 0, 1)] }];
 
 function encuadreDe(anillos: number[][][], margen = 0.006): LngLatBoundsLike {
   let w = 180, s = 90, e = -180, n = -90;
   for (const a of anillos) for (const [lng, lat] of a) { w = Math.min(w, lng); e = Math.max(e, lng); s = Math.min(s, lat); n = Math.max(n, lat); }
   return [[w - margen, s - margen], [e + margen, n + margen]];
+}
+
+// Diferencia contra el promedio de Santiago; en ocre si es peor (más calor o menos copa).
+function Dif({ v, base, u, bueno }: { v: number; base: number; u: string; bueno?: boolean }) {
+  const d = v - base;
+  if (Math.abs(d) < 0.05) return <span className="dif">igual que Santiago</span>;
+  const peor = bueno ? d < 0 : d > 0;
+  return <span className={`dif${peor ? " peor" : " mejor"}`}>{d > 0 ? "+" : "−"}{formato(Math.abs(d), 1)}{u}</span>;
 }
 
 function Seccion({ id, alt, children }: { id: string; alt?: boolean; children: React.ReactNode }) {
@@ -68,10 +83,17 @@ function Seccion({ id, alt, children }: { id: string; alt?: boolean; children: R
 
 export default function Pagina({ serie }: { serie: Serie }) {
   const t = useTerreno();
+  // La barra queda fija; al bajar de la portada se le marca el borde para separarla del contenido.
+  const [bajo, setBajo] = useState(false);
+  useEffect(() => {
+    const mira = () => setBajo(window.scrollY > 8);
+    mira();
+    window.addEventListener("scroll", mira, { passive: true });
+    return () => window.removeEventListener("scroll", mira);
+  }, []);
   return (
     <main className="b">
-      <p className="banda">Gran Santiago: 34 comunas y 13.172 cuadras. Calor de la escena Landsat más reciente, del {fechaLarga(serie.lst_fecha_ultima)}.</p>
-      <header className="b-pad"><div className="b-in">
+      <header className={`b-pad${bajo ? " bajo" : ""}`}><div className="b-in">
         <a className="marca" href="#inicio"><img src="/viridis.svg" alt="" width={34} height={34} />VIRIDIS</a>
         <nav aria-label="Secciones"><a href="#ahora">El calor ahora</a><a href="#planificar">Planificar</a><a href="#historico">Histórico</a><a href="#fuentes">Fuentes</a></nav>
       </div></header>
@@ -91,19 +113,10 @@ export default function Pagina({ serie }: { serie: Serie }) {
         </div>
       </section>
 
-      {t.info && t.estado ? <Secciones {...t} info={t.info} estado={t.estado} serie={serie} /> : (
-        [["ahora", "El calor ahora"], ["planificar", "Planificar"], ["historico", "Histórico"]].map(([id, titulo], k) => (
-          <section key={id} id={id} className={`b-sec b-pad${k % 2 ? "" : " alt"}`}><div className="b-in">
-            <h2>{titulo}</h2>
-            <p className="aviso" role="status">{t.error
-              ? <>No hay conexión con el servidor del mapa. Desde la raíz del repo, córrelo con <code>python -m terreno.servidor --puerto 8000</code> y recarga.</>
-              : "Cargando las 34 comunas del Gran Santiago…"}</p>
-          </div></section>
-        ))
-      )}
+      {t.info && t.estado ? <Secciones {...t} info={t.info} estado={t.estado} serie={serie} /> : <Esqueletos error={t.error} />}
 
       <footer className="b-pad" id="fuentes"><div className="b-in">
-        <h2>Fuentes</h2>
+        <h2>De dónde salen <em>los datos</em></h2>
         <p><b>Calor del suelo.</b> Landsat 8 y 9, Collection 2 Level 2 (USGS), vía Microsoft Planetary Computer. Serie mensual: {serie.escenas_landsat} escenas Landsat y {serie.escenas_sentinel2} Sentinel-2, de enero de 2023 a noviembre de 2026.</p>
         <p><b>Copa de árboles.</b> Modelo propio sobre Sentinel-2 de febrero de 2026, entrenado con la altura de copa de Meta y WRI (r = 0,92 por cuadra en comunas que el modelo no vio).</p>
         <p><b>Personas.</b> Censo 2024 del INE por manzana, más cercanía a colegios, salud, metro y paraderos de OpenStreetMap. No es ingreso.</p>
@@ -114,60 +127,137 @@ export default function Pagina({ serie }: { serie: Serie }) {
   );
 }
 
+const SIN_CORREDOR: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+// Planificar sin nada elegido: todo el mapa con el velo de lo no elegido, detrás de la invitación.
+const TODO_GRIS: Foco = { comunas: [], hexes: [] };
+
+function Esqueletos({ error }: { error: string | null }) {
+  return (
+    <>
+      {[["ahora", "El calor", "ahora"], ["planificar", "Planificar", "el corredor"], ["historico", "El calor", "de antes"]].map(([id, titulo, acento], k) => (
+        <section key={id} id={id} className={`b-sec b-pad${k % 2 ? "" : " alt"}`} aria-busy={!error}><div className="b-in">
+          <h2>{titulo} <em>{acento}</em></h2>
+          {error ? (
+            <p className="aviso" role="status">No hay conexión con el servidor del mapa. Desde la raíz del repo, córrelo con <code>python -m terreno.servidor --puerto 8000</code> y recarga.</p>
+          ) : (
+            <div className="sk-bloque" role="status" aria-label="Cargando las 34 comunas del Gran Santiago">
+              <div className="sk sk-linea" style={{ width: "38%" }} />
+              <div className="sk sk-mapa" />
+              <div className="sk-fila"><div className="sk sk-linea" /><div className="sk sk-linea" /><div className="sk sk-linea" /></div>
+            </div>
+          )}
+        </div></section>
+      ))}
+    </>
+  );
+}
+
+// Polígonos de las cuadras: los arma h3-js una vez y quedan guardados.
+const anillosH3 = new Map<string, number[][]>();
+function anillo(h: string) {
+  let a = anillosH3.get(h);
+  if (!a) { const b = cellToBoundary(h, true); a = [...b, b[0]]; anillosH3.set(h, a); }
+  return a;
+}
+
 type PropsSecciones = ReturnType<typeof useTerreno> & { info: InfoComunas; estado: Estado; serie: Serie };
 
-function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSecciones) {
-  const H = estado.hex;
-  const sel = estado.seleccion;
-  const todas = sel.length === info.comunas.length;
-  // Un área vacía no tiene cuadras: como mapa.html, se abre con las 34.
-  useEffect(() => { if (!sel.length && !ocupado) cambiar({ comunas: info.comunas, distritos: [], zona: null }); }, [sel.length]); // eslint-disable-line react-hooks/exhaustive-deps
+// Lo elegido vive en la página: comunas tocadas o una zona dibujada con el lápiz (una cosa o la otra).
+// El mapa siempre muestra las 34 comunas (la base) y atenúa lo que no está elegido; al servidor se le manda
+// lo elegido para que Planificar trace el corredor ahí. Sin nada elegido, el área son las 34.
+function Secciones(props: PropsSecciones) {
+  const { info, estado, cambiar } = props;
+  const [base, setBase] = useState<HexCols | null>(null);
+  const completa = estado.seleccion.length === info.comunas.length && !estado.parametros.zona;
+  useEffect(() => { if (completa) setBase(estado.hex); }, [completa, estado.hex]);
+  const [elegidas, setElegidas] = useState<string[]>([]);
+  const [zona, setZona] = useState<string[] | null>(null);
+  const envio = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    clearTimeout(envio.current);
+    envio.current = setTimeout(() => cambiar({ comunas: elegidas.length ? elegidas : info.comunas, distritos: [], zona }), 350);
+  }, [elegidas, zona]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!base) return <Esqueletos error={props.error} />;
+  return <Contenido {...props} B={base} elegidas={elegidas} setElegidas={setElegidas} zona={zona} setZona={setZona} />;
+}
 
-  // Polígonos de los hexágonos del área: los arma h3-js y se guardan entre áreas.
-  const cache = useRef(new Map<string, number[][]>());
-  const anillos = useMemo(() => H.h.map((h) => {
-    let a = cache.current.get(h);
-    if (!a) { const b = cellToBoundary(h, true); a = [...b, b[0]]; cache.current.set(h, a); }
-    return a;
-  }), [estado.sel_id]); // eslint-disable-line react-hooks/exhaustive-deps
+function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, setElegidas, zona, setZona }: PropsSecciones & {
+  B: HexCols; elegidas: string[]; setElegidas: React.Dispatch<React.SetStateAction<string[]>>;
+  zona: string[] | null; setZona: (z: string[] | null) => void;
+}) {
+  const H = estado.hex;   // el área que tiene el servidor (lo elegido), para el corredor
+  const nada = !elegidas.length && !zona;
+  const comIdx = useMemo(() => new Map(info.comunas.map((c, i) => [c, i])), [info]);
+  const idxB = useMemo(() => new Map(B.h.map((h, i) => [h, i])), [B.h]);
+  const anillos = useMemo(() => B.h.map(anillo), [B.h]);
   const coleccion = (props: (i: number) => Record<string, unknown>): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
-    features: H.h.map((_, i) => ({ type: "Feature", id: i, properties: { i, ...props(i) }, geometry: { type: "Polygon", coordinates: [anillos[i]] } })),
+    features: B.h.map((_, i) => ({ type: "Feature", id: i, properties: { i, c: comIdx.get(B.comuna[i]), cn: B.comuna[i], ...props(i) }, geometry: { type: "Polygon", coordinates: [anillos[i]] } })),
   });
-  const encuadreArea = useMemo(() => {
-    const geo = sel.flatMap((c) => info.geo[c] ?? []).flatMap((poly) => poly.map((anillo) => anillo.map(([la, lo]) => [lo, la])));
-    return encuadreDe(geo.length ? geo : anillos, 0.004);
-  }, [estado.sel_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Comunas: contorno, y si están elegidas, son vecinas de la elección o quedan fuera.
-  const vecinas = useMemo(() => {
-    const v = new Set<string>();
-    for (const c of sel) for (const x of info.vecinas[c] ?? []) if (!sel.includes(x)) v.add(x);
-    return v;
-  }, [sel, info]);
+  // Cuadras elegidas (índices de la base). null = todo Santiago.
+  const zonaIdx = useMemo(() => (zona ? zona.flatMap((h) => idxB.get(h) ?? []) : []), [zona, idxB]);
+  const marca = useMemo(() => {
+    if (zona) return zonaIdx;
+    if (!elegidas.length) return null;
+    const s = new Set(elegidas);
+    return B.comuna.flatMap((c, i) => (s.has(c) ? [i] : []));
+  }, [zona, zonaIdx, elegidas, B.comuna]);
+  const foco = useMemo<Foco>(() => (zona ? { comunas: [], hexes: zonaIdx } : elegidas.length ? { comunas: elegidas.map((c) => comIdx.get(c) ?? -1), hexes: [] } : null),
+    [zona, zonaIdx, elegidas, comIdx]);
+  const encuadreArea = useMemo(() => {
+    if (zona && zonaIdx.length) return encuadreDe(zonaIdx.map((i) => anillos[i]), 0.004);
+    const geo = elegidas.flatMap((c) => info.geo[c] ?? []).flatMap((poly) => poly.map((a) => a.map(([la, lo]) => [lo, la])));
+    return encuadreDe(geo.length ? geo : anillos, 0.004);
+  }, [zona, zonaIdx, elegidas, anillos, info]);
+
   const comunasGeo = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
     features: info.comunas.map((c) => ({
       type: "Feature",
-      properties: { c, est: todas ? "todas" : sel.includes(c) ? "sel" : vecinas.has(c) ? "vec" : "otra" },
-      geometry: { type: "MultiPolygon", coordinates: info.geo[c].map((poly) => poly.map((anillo) => anillo.map(([la, lo]) => [lo, la]))) },
+      properties: { c, est: elegidas.includes(c) ? "sel" : "otra" },
+      geometry: { type: "MultiPolygon", coordinates: info.geo[c].map((poly) => poly.map((a) => a.map(([la, lo]) => [lo, la]))) },
     })),
-  }), [info, sel, vecinas, todas]);
-  // Tocar una comuna en el mapa: con todas a la vista la deja sola; una elegida se quita (la última vuelve
-  // a la vista general); una vecina se suma; otra empieza de nuevo.
+  }), [info, elegidas]);
+  // Sectores: el borde compartido entre dos cuadras vecinas de la misma comuna y distinto distrito.
+  const distritosGeo = useMemo<GeoJSON.FeatureCollection>(() => {
+    const lineas: number[][][] = [];
+    B.h.forEach((h, i) => {
+      for (const n of gridDisk(h, 1)) {
+        const j = idxB.get(n);
+        if (j == null || j <= i || B.comuna[j] !== B.comuna[i] || B.distrito[j] === B.distrito[i]) continue;
+        lineas.push(directedEdgeToBoundary(cellsToDirectedEdge(h, n), true));
+      }
+    });
+    return { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "MultiLineString", coordinates: lineas } }] };
+  }, [B.h, idxB]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tocar una comuna la suma y tocarla otra vez la quita. Una zona dibujada se reemplaza por las comunas.
   function tocarComuna(c: string) {
-    if (ocupado) return;
-    const quedan = sel.filter((x) => x !== c);
-    const nuevo = todas ? [c] : sel.includes(c) ? (quedan.length ? quedan : info.comunas) : vecinas.has(c) ? [...sel, c] : [c];
-    cambiar({ comunas: nuevo, distritos: [], zona: null });
+    setZona(null);
+    setElegidas((ant) => (ant.includes(c) ? ant.filter((x) => x !== c) : [...ant, c]));
   }
-  // Suelo medio por comuna para la lista del cajón; se recuerda lo visto aunque luego se filtre.
-  const sueloComuna = useRef(new Map<string, number>());
-  useMemo(() => {
+  function sumar(cs: string[]) { setZona(null); setElegidas((ant) => [...new Set([...ant, ...cs])]); }
+  function reiniciar() { setZona(null); setElegidas([]); setPlanTodo(false); }
+  // Lápiz: las cuadras que toca el contorno dibujado; cada trazo se suma a la zona anterior.
+  function lazo(contorno: [number, number][]) {
+    const res = getResolution(B.h[0]);
+    let celdas = polygonToCellsExperimental(contorno.map(([lng, lat]) => [lat, lng]), res, POLYGON_TO_CELLS_FLAGS.containmentOverlapping).filter((h) => idxB.has(h));
+    if (!celdas.length) {
+      const [lng, lat] = contorno.reduce(([a, b], [x, y]) => [a + x / contorno.length, b + y / contorno.length], [0, 0]);
+      celdas = [latLngToCell(lat, lng, res)].filter((h) => idxB.has(h));
+    }
+    if (!celdas.length) return;
+    setElegidas([]);
+    setZona([...new Set([...(zona ?? []), ...celdas])]);
+  }
+
+  // Suelo medio por comuna para la lista del cajón.
+  const sueloComuna = useMemo(() => {
     const por: Record<string, number[]> = {};
-    H.comuna.forEach((c, i) => { if (H.lst[i] != null) (por[c] ??= []).push(H.lst[i] as number); });
-    for (const [c, v] of Object.entries(por)) sueloComuna.current.set(c, media(v));
-  }, [H]);
+    B.comuna.forEach((c, i) => { if (B.lst[i] != null) (por[c] ??= []).push(B.lst[i] as number); });
+    return new Map(Object.entries(por).map(([c, v]) => [c, media(v)]));
+  }, [B]);
 
   const capturasGeo = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
@@ -191,32 +281,39 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
       ${p.obstaculos ? `Obstáculos: ${esc(p.obstaculos)}<br>` : ""}<small>${esc(c.descripcion)}</small>
       ${c.cuenta ? "" : "<br><b>Sin validar: no cuenta</b>"}<br><small>${esc(cuando)} · GPS ±${Math.round(Number(c.precision_m ?? 0))} m</small></div>`;
   };
-  const mapaComun = { comunas: comunasGeo, capturas: capturasGeo, recorridos: recorridosGeo, popupCaptura, alComuna: tocarComuna };
+  const mapaComun = { comunas: comunasGeo, distritos: distritosGeo, capturas: capturasGeo, recorridos: recorridosGeo, popupCaptura, alComuna: tocarComuna, alLazo: lazo, foco };
 
-  const filtro = <FiltroComunas info={info} estado={estado} ocupado={ocupado} error={error} cambiar={cambiar} sueloComuna={sueloComuna.current} />;
+  const filtro = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
+    sueloComuna={sueloComuna} ocupado={ocupado} error={error} />;
 
-  // ---- El calor ahora
+  // ---- El calor ahora (sobre las 34 comunas: la escala de color no cambia al elegir)
   const [capa, setCapa] = useState("calor");
-  const [elegida, setElegida] = useState<number | null>(null);
-  useEffect(() => setElegida(null), [estado.sel_id]);
+  const [pasada, setPasada] = useState<number | null>(null);
   const calor = useMemo(() => {
     // Igual que optimizer.indice_calor: la temperatura del aire no reemplaza a la del suelo, se combina.
-    const suelo = norm(H.lst), aire = norm(H.vivo);
-    const conAire = new Set(H.vivo.flatMap((v, i) => (v == null ? [] : [i])));
+    const suelo = norm(B.lst), aire = norm(B.vivo);
+    const conAire = new Set(B.vivo.flatMap((v, i) => (v == null ? [] : [i])));
     return suelo.map((s, i) => (s == null ? null : conAire.size && aire[i] != null ? 0.6 * s + 0.4 * (aire[i] as number) : s));
-  }, [H]);
+  }, [B]);
   const personas = useMemo(() => {
-    const p = norm(H.pob);
-    return p.map((x, i) => 0.5 * (x ?? 0.5) + 0.5 * Math.min(1, Math.max(0, H.social[i] ?? 0.5)));
-  }, [H]);
-  const datosAhora = useMemo(() => coleccion((i) => ({ calor: calor[i], copa: H.copa[i], personas: personas[i] })), [calor, personas, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
-  const resumen = useMemo(() => {
-    const por: Record<string, number[]> = {};
-    H.comuna.forEach((c, i) => { if (H.lst[i] != null) (por[c] ??= []).push(H.lst[i] as number); });
-    return Object.entries(por).map(([c, v]) => [c, media(v)] as const).sort((a, b) => b[1] - a[1]);
-  }, [H]);
-  const conAire = sinNulos(H.vivo);
-  const det = elegida;
+    const p = norm(B.pob);
+    return p.map((x, i) => 0.7 * (x ?? 0.5) + 0.3 * Math.min(1, Math.max(0, B.social[i] ?? 0.5)));   // igual que optimizer.urgencia
+  }, [B]);
+  const datosAhora = useMemo(() => coleccion((i) => ({ calor: calor[i], copa: B.copa[i], personas: personas[i] })), [calor, personas, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Cifras de lo elegido: el total y, debajo, cada comuna (o cada comuna que toca la zona dibujada).
+  const cifras = (idx: number[]) => {
+    const l = sinNulos(idx.map((i) => B.lst[i])), cp = sinNulos(idx.map((i) => B.copa[i]));
+    return { cuadras: idx.length, suelo: media(l), copa: media(cp), personas: idx.reduce((s, i) => s + B.pob[i], 0) };
+  };
+  const santiago = useMemo(() => cifras(B.h.map((_, i) => i)), [B]); // eslint-disable-line react-hooks/exhaustive-deps
+  const elegido = useMemo(() => {
+    if (!marca) return null;
+    const por = new Map<string, number[]>();
+    for (const i of marca) { const c = B.comuna[i]; if (!por.has(c)) por.set(c, []); por.get(c)!.push(i); }
+    return { total: cifras(marca), filas: [...por].map(([c, idx]) => ({ c, ...cifras(idx) })).sort((a, b) => b.suelo - a.suelo) };
+  }, [marca, B]); // eslint-disable-line react-hooks/exhaustive-deps
+  const conAire = sinNulos((marca ?? B.h.map((_, i) => i)).map((i) => B.vivo[i]));
+  const det = pasada;
 
   // ---- Planificar: presupuesto y pesos van al servidor, que recalcula con y sin terreno
   const p = estado.parametros;
@@ -236,20 +333,34 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
   }
   const total = pesos.calor + pesos.arbol + pesos.pers || 1;
   const a = estado.ahora, b = estado.antes;
-  const datosPlan = useMemo(() => coleccion((i) => ({ u: H.u[i], k: H.parque[i] })), [H, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
+  // La urgencia es relativa al área del servidor: fuera de lo elegido las cuadras quedan sin valor (gris tenue).
+  const datosPlan = useMemo(() => {
+    const u = new Map(H.h.map((h, j) => [h, H.u[j]]));
+    return coleccion((i) => ({ u: u.get(B.h[i]) ?? null, k: B.parque[i] }));
+  }, [H, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
+  const anillosH = useMemo(() => H.h.map(anillo), [H.h]);
+  // El corredor solo se rearma si cambian sus cuadras (no cada vez que llega un estado nuevo del servidor).
+  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("");
   const corredor = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
     features: H.h.flatMap((h, i) => [
       ...(H.ahora[i] ? ["ahora"] : []), ...(H.antes[i] ? ["antes"] : []), ...(H.verificado[i] ? ["verificado"] : []),
-    ].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: h, comuna: H.comuna[i] }, geometry: { type: "Polygon" as const, coordinates: [anillos[i]] } }))),
-  }), [H, anillos]);
+    ].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: h, comuna: H.comuna[i] }, geometry: { type: "Polygon" as const, coordinates: [anillosH[i]] } }))),
+  }), [firmaCorredor, anillosH]); // eslint-disable-line react-hooks/exhaustive-deps
   const enCorredor = H.h.flatMap((_, i) => (H.ahora[i] ? [i] : []));
   const comunasCorredor = [...new Set(enCorredor.map((i) => H.comuna[i]))].sort();
   const claveCorredor = enCorredor.map((i) => H.h[i]).join();
   // Por defecto se ve el área completa (las 34 comunas si están todas); el corredor se acerca a pedido.
   const [cerca, setCerca] = useState(false);
+  // Planificar viene después del filtro: sin nada elegido el mapa invita a elegir (o a usar todo Santiago a propósito).
+  const [planTodo, setPlanTodo] = useState(false);
+  const planListo = !nada || planTodo;
+  // El corredor que se muestra tiene que ser el de lo elegido ahora, no el del área anterior del servidor.
+  const esperadas = elegidas.length ? elegidas : info.comunas;
+  const alDia = !ocupado && estado.seleccion.length === esperadas.length && esperadas.every((c) => estado.seleccion.includes(c)) && estado.parametros.zona === zonaIdx.length;
+  const verCorredor = planListo && alDia;
   useEffect(() => setCerca(false), [encuadreArea]);
-  const encuadrePlan = useMemo(() => (cerca && enCorredor.length ? encuadreDe(enCorredor.map((i) => anillos[i]), 0.025) : encuadreArea),
+  const encuadrePlan = useMemo(() => (cerca && enCorredor.length ? encuadreDe(enCorredor.map((i) => anillosH[i]), 0.025) : encuadreArea),
     [cerca, claveCorredor, encuadreArea]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function exportar() {
@@ -277,7 +388,7 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
       .catch((e) => vivo && setErrHist(String(e.message)));
     return () => { vivo = false; };
   }, [verHist, desde, estado.sel_id, hasta, serie.meses]);
-  const promHex = useMemo(() => H.h.map((h) => hist?.get(h) ?? null), [hist, H]);
+  const promHex = useMemo(() => B.h.map((h) => hist?.get(h) ?? null), [hist, B.h]);
   const escalaHist = useMemo(() => {
     const v = sinNulos(promHex).sort((x, y) => x - y);
     return v.length ? [v[Math.floor(v.length * 0.02)], v[Math.ceil(v.length * 0.98) - 1]] : [0, 1];
@@ -287,9 +398,10 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
   })), [promHex, escalaHist, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
   const histComuna = useMemo(() => {
     const por: Record<string, number[]> = {};
-    H.comuna.forEach((c, i) => { if (promHex[i] != null) (por[c] ??= []).push(promHex[i] as number); });
+    (marca ?? B.h.map((_, i) => i)).forEach((i) => { if (promHex[i] != null) (por[B.comuna[i]] ??= []).push(promHex[i] as number); });
     return Object.entries(por).map(([c, v]) => [c, media(v)] as const).sort((x, y) => y[1] - x[1]);
-  }, [promHex, H]);
+  }, [promHex, B, marca]);
+  const promElegido = media(sinNulos((marca ?? B.h.map((_, i) => i)).map((i) => promHex[i])));
   const mm = sinNulos(serie.media_mes);
   const lo = Math.min(...mm), hi = Math.max(...mm);
 
@@ -297,60 +409,67 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
     <>
       <Seccion id="ahora" alt>
         <div className="b-cab escalon">
-          <h2>El calor ahora</h2>
+          <h2>El calor <em>ahora</em></h2>
           <div className="grupo" role="group" aria-label="Capa del mapa">
             {CAPAS_AHORA.map((c) => <button key={c.id} type="button" className="pill" aria-pressed={capa === c.id} onClick={() => setCapa(c.id)}>{NOMBRE_CAPA[c.id]}</button>)}
           </div>
         </div>
         <div className="escalon" style={est(1)}>
-          <MapaHex {...mapaComun} datos={datosAhora} capas={CAPAS_AHORA} activa={capa} encuadre={encuadreArea} alElegir={setElegida}
-            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Toca una cuadra para ver sus datos o una comuna para elegirla.`}>{filtro}</MapaHex>
+          <MapaHex {...mapaComun} datos={datosAhora} capas={CAPAS_AHORA} activa={capa} encuadre={encuadreArea} alPasar={setPasada}
+            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Toca una comuna para sumarla o quitarla.`}>{filtro}</MapaHex>
         </div>
         <div className="leyenda">
           <span><i className="barra" style={{ background: LEYENDA[capa][0] }} />{LEYENDA[capa][1]}</span>
+          <span><i className="linea" style={{ borderTop: "2px solid #2F4520" }} />Comuna</span>
+          <span><i className="linea" style={{ borderTop: "2px dashed #2F4520", opacity: 0.7 }} />Sector</span>
+          {!nada && <span><i className="cuadro" style={{ background: "#C5CDA6", opacity: 0.35 }} />Fuera de lo elegido</span>}
           <span className="detalle num" aria-live="polite">{det != null
-            ? `${H.distrito[det]}${H.parque[det] ? ", parque" : ""}: suelo ${formato(H.lst[det] ?? 0, 1)} °C${H.vivo[det] != null ? `, aire ${formato(H.vivo[det] as number, 1)} °C` : ""}, copa ${formato(H.copa[det] ?? 0, 1)} %, ${formato(H.pob[det])} personas, urgencia ${formato(H.u[det] ?? 0, 3)}.`
-            : "Toca una cuadra para ver sus datos."}</span>
-          {det != null && todas && (
-            <button type="button" className="pill" style={{ minHeight: 36, fontSize: 14 }} disabled={ocupado}
-              onClick={() => cambiar({ comunas: [H.comuna[det]], distritos: [], zona: null })}>Ver solo {H.comuna[det]}</button>
-          )}
+            ? `${B.distrito[det]}${B.parque[det] ? ", parque" : ""}: suelo ${formato(B.lst[det] ?? 0, 1)} °C${B.vivo[det] != null ? `, aire ${formato(B.vivo[det] as number, 1)} °C` : ""}, copa ${formato(B.copa[det] ?? 0, 1)} %, ${formato(B.pob[det])} personas.`
+            : "Pasa el puntero por una cuadra para ver sus datos."}</span>
         </div>
-        <div className="resumen">
-          <div className="comuna escalon" style={est(3)}>
-            <b>{todas ? "Gran Santiago, 34 comunas" : sel.join(", ")}</b>
-            <div className="datos">
-              <span><span className="grande"><Cifra valor={media(sinNulos(H.lst))} dec={1} /></span> °C de suelo</span>
-              <span><span className="grande"><Cifra valor={media(sinNulos(H.copa))} dec={1} /></span> % de copa</span>
-              <span><span className="grande"><Cifra valor={H.pob.reduce((s, x) => s + x, 0)} /></span> personas</span>
-            </div>
-            <span className="num">{H.h.length.toLocaleString("es-CL")} cuadras. Suelo máximo {formato(Math.max(...sinNulos(H.lst)), 1)} °C.</span>
-            <span className="num">{conAire.length
-              ? `Aire en vivo con confianza alta o media en ${conAire.length.toLocaleString("es-CL")} cuadras: ${formato(media(conAire), 1)} °C de media. Entra al índice de calor con 40 %.`
-              : "Sin sensores de aire con confianza alta o media en el área: el calor sale solo del satélite."}</span>
-          </div>
-          {resumen.length > 1 && (
-            <div className="ranking escalon" style={est(4)}>
-              <b>Comunas con el suelo más caliente</b>
-              <ol>
-                {resumen.slice(0, 6).map(([c, v]) => (
-                  <li key={c}>
-                    <button type="button" disabled={ocupado} onClick={() => cambiar({ comunas: [c], distritos: [], zona: null })}>
-                      <span>{c}</span><span className="num">{formato(v, 1)} °C</span>
-                      <i style={{ width: `${(100 * (v - 25)) / (resumen[0][1] - 25)}%` }} />
-                    </button>
-                  </li>
-                ))}
-              </ol>
-              <span className="nota">La más fresca es {resumen[resumen.length - 1][0]}, con {formato(resumen[resumen.length - 1][1], 1)} °C. Toca una para verla sola.</span>
-            </div>
+        <div className="elegido escalon" style={est(3)}>
+          {!elegido ? (
+            <p className="vacio">Todo Santiago: <b className="num">{formato(santiago.suelo, 1)} °C</b> de suelo, <b className="num">{formato(santiago.copa, 1)} %</b> de copa y <b className="num">{formato(santiago.personas)}</b> personas en {formato(santiago.cuadras)} cuadras. Toca comunas en el mapa o encierra cuadras con el lápiz para ver aquí sus cifras.</p>
+          ) : (
+            <>
+              <div className="totales num">
+                <span className="quien">{zona ? "Zona dibujada" : elegidas.length === 1 ? elegidas[0] : `${elegidas.length} comunas`}</span>
+                <span><b><Cifra valor={elegido.total.suelo} dec={1} /> °C</b> suelo <Dif v={elegido.total.suelo} base={santiago.suelo} u=" °C" /></span>
+                <span><b><Cifra valor={elegido.total.copa} dec={1} /> %</b> copa <Dif v={elegido.total.copa} base={santiago.copa} u=" pts" bueno /></span>
+                <span><b><Cifra valor={elegido.total.personas} /></b> personas</span>
+                <span><b>{formato(elegido.total.cuadras)}</b> cuadras</span>
+              </div>
+              {(elegido.filas.length > 1 || zona) && (
+                <div className="tabla-env">
+                  <table className="tabla-elegido num">
+                    <thead><tr><th scope="col">{zona ? "Comunas que toca la zona" : "Comuna"}</th><th scope="col">Suelo</th><th scope="col">Frente a Santiago</th><th scope="col">Copa</th><th scope="col">Personas</th><th scope="col">Cuadras</th>{!zona && <th scope="col"><span className="sr">Quitar</span></th>}</tr></thead>
+                    <tbody>
+                      {elegido.filas.map((f) => (
+                        <tr key={f.c}>
+                          <th scope="row">{f.c}</th>
+                          <td>{formato(f.suelo, 1)} °C</td>
+                          <td><Dif v={f.suelo} base={santiago.suelo} u=" °C" /></td>
+                          <td>{formato(f.copa, 1)} %</td>
+                          <td>{formato(f.personas)}</td>
+                          <td>{formato(f.cuadras)}</td>
+                          {!zona && <td><button type="button" className="quita" aria-label={`Quitar ${f.c}`} onClick={() => tocarComuna(f.c)}>×</button></td>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="nota">Santiago completo: {formato(santiago.suelo, 1)} °C de suelo y {formato(santiago.copa, 1)} % de copa. {conAire.length
+                ? `Aire en vivo con confianza alta o media en ${conAire.length.toLocaleString("es-CL")} cuadras de lo elegido: ${formato(media(conAire), 1)} °C de media.`
+                : "Sin sensores de aire con confianza alta o media en lo elegido: el calor sale solo del satélite."}</p>
+            </>
           )}
         </div>
       </Seccion>
 
       <Seccion id="planificar">
-        <div className="b-cab escalon"><h2>Planificar</h2><p>Mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes del área elegida.</p></div>
-        <div className="b-controles escalon" style={est(2)}>
+        <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2><p>Elige dónde, mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes de lo elegido.</p></div>
+        <div className={`b-controles escalon${planListo ? "" : " espera"}`} style={est(2)}>
           {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"]] as const).map(([k, nombre]) => (
             <div className="peso" key={k}>
               <label htmlFor={`p-${k}`}><span>{nombre}</span><b>{Math.round((100 * pesos[k]) / total)} %</b></label>
@@ -364,22 +483,46 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
         </div>
         <div className="b-plan">
           <div className="izq escalon" style={est(3)}>
-            <MapaHex {...mapaComun} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={corredor} encuadre={encuadrePlan}
-              etiqueta="Corredor propuesto sobre la urgencia de cada cuadra">{filtro}</MapaHex>
-            {enCorredor.length > 0 && (
+            <MapaHex {...mapaComun} foco={planListo ? foco : TODO_GRIS} hitos={HITOS} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={verCorredor ? corredor : SIN_CORREDOR} encuadre={encuadrePlan}
+              etiqueta="Corredor propuesto sobre la urgencia de cada cuadra">
+              {filtro}
+              {!planListo && <div className="gris" aria-hidden="true" />}
+              {!planListo && (
+                <div className="invita" role="status">
+                  <b>Primero elige dónde</b>
+                  <span>Toca comunas en este mapa o encierra cuadras con el lápiz. El corredor se traza solo dentro de lo que elijas.</span>
+                  <button type="button" className="mini" onClick={() => setPlanTodo(true)}>Trazar en todo Santiago</button>
+                </div>
+              )}
+            </MapaHex>
+            {verCorredor && enCorredor.length > 0 && (
               <button type="button" className="pill zoom-corredor" aria-pressed={cerca} onClick={() => setCerca(!cerca)}>
-                {cerca ? (todas ? "Ver las 34 comunas" : "Ver toda el área") : "Acercar al corredor"}
+                {cerca ? (nada ? "Ver las 34 comunas" : "Ver toda el área") : "Acercar al corredor"}
               </button>
             )}
             <div className="leyenda">
               <span><i className="barra" style={{ background: grad(VERDE) }} />Urgencia</span>
               <span><i className="cuadro" style={{ background: "#22301A" }} />Corredor</span>
-              <span><i className="cuadro" style={{ background: "#B7C298" }} />Parque</span>
+              <span><i className="cuadro" style={{ background: "#7FA35A" }} />Islas verdes: cerros y parques</span>
               <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Sin datos de terreno</span>
               <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno</span>
-              <span><i className="cuadro" style={{ background: "#2D5E9E", borderRadius: 7 }} />Foto válida</span>
             </div>
           </div>
+          {!planListo ? (
+            <div className="cifras pasos">
+              <b>Cómo se planifica</b>
+              <ol>
+                <li><b>Elige dónde.</b> Una o varias comunas, o una zona dibujada con el lápiz.</li>
+                <li><b>Ajusta los pesos</b> de calor, falta de árboles y personas, y el presupuesto en kilómetros.</li>
+                <li><b>Revisa el corredor</b> que aparece en el mapa y expórtalo.</li>
+              </ol>
+            </div>
+          ) : !alDia ? (
+            <div className="cifras" role="status" aria-label="Trazando el corredor">
+              <span className="nota">Trazando el corredor en {zona ? "la zona dibujada" : nada ? "todo Santiago" : elegidas.length === 1 ? elegidas[0] : `${elegidas.length} comunas`}…</span>
+              <div className="sk" style={{ height: 64, width: "70%" }} /><div className="sk sk-linea" /><div className="sk" style={{ height: 64, width: "55%" }} /><div className="sk sk-linea" /><div className="sk" style={{ height: 120 }} />
+            </div>
+          ) : (
           <div className="cifras">
             {a.hexes ? (
               <>
@@ -408,11 +551,12 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
             </div>
             <p className="nota">{estado.capturas.length} {estado.capturas.length === 1 ? "captura" : "capturas"} en terreno; {estado.capturas.filter((c) => c.cuenta).length} cuentan. El mapa se actualiza solo cuando llega una foto nueva.</p>
           </div>
+          )}
         </div>
       </Seccion>
 
       <Seccion id="historico" alt>
-        <div className="b-cab escalon"><h2>Histórico</h2><p>Elige desde qué mes promediar el calor del suelo del área: {serie.escenas_landsat} escenas Landsat, de enero de 2023 a noviembre de 2026.</p></div>
+        <div className="b-cab escalon"><h2>El calor <em>de antes</em></h2><p>Elige desde qué mes promediar el calor del suelo del área: {serie.escenas_landsat} escenas Landsat, de enero de 2023 a noviembre de 2026.</p></div>
         <div ref={refHist} className="escalon" style={{ ...est(1), display: "flex", flexDirection: "column", gap: 10 }}>
           <div className="b-meses" role="group" aria-label="Mes desde el que se promedia">
             {serie.meses.map((m, j) => {
@@ -432,13 +576,13 @@ function Secciones({ info, estado, cambiar, ocupado, error, serie }: PropsSeccio
         <div className="b-hist">
           <div className="izq escalon" style={est(2)}>
             <MapaHex {...mapaComun} datos={datosHist} capas={CAPAS_HIST} activa="hist" encuadre={encuadreArea} etiqueta="Promedio del calor del suelo por cuadra en el rango elegido">{filtro}</MapaHex>
-            <div className="leyenda" style={{ marginTop: 10 }}><span><i className="barra" style={{ background: grad(OCRE) }} /><span className="num">Suelo medio de {formato(escalaHist[0], 1)} °C a {formato(escalaHist[1], 1)} °C</span></span></div>
+            <div className="leyenda" style={{ marginTop: 10 }}><span><i className="barra" style={{ background: grad(OCRE) }} />{hist ? <span className="num">Suelo medio de {formato(escalaHist[0], 1)} °C a {formato(escalaHist[1], 1)} °C</span> : <span className="sk sk-linea" style={{ display: "inline-block", width: 190, height: 14 }} aria-label="Calculando el promedio" />}</span></div>
           </div>
           <div className="cifras">
             <p style={{ margin: 0, fontSize: 16, color: "var(--oliva-osc)" }}>Rango elegido: <b>{mesCorto(serie.meses[desde])} a nov 2026</b>, {mesesHist} meses con escenas. Las barras altas son los veranos, que son los que usa el índice de calor.</p>
             {errHist && <p className="aviso" role="alert">{errHist}</p>}
             <div className="cifra escalon" style={est(3)}>
-              <b>{hist ? <Cifra valor={media(sinNulos(promHex))} dec={1} sufijo={" °C"} duracion={700} /> : "…"}</b>
+              <b>{hist ? <Cifra valor={promElegido} dec={1} sufijo={" °C"} duracion={700} /> : "…"}</b>
               <span>suelo medio del área en el rango.</span>
             </div>
             {histComuna.length > 1 && (
