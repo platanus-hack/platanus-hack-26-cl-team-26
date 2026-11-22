@@ -292,6 +292,25 @@ section[id], footer[id] { scroll-margin-top: 76px; }
 .f-lista a { align-self: flex-start; font-size: 14px; font-weight: 700; color: var(--oliva); overflow-wrap: anywhere; }
 .f-nota { max-width: 75ch; font-size: 14px; }
 .b header nav a[aria-current="page"] { background-size: 100% 2px; }
+/* Sección #vulnerabilidad de /fuentes: las tarjetas de siempre, más pasos con fórmula, dos tablas y los límites. */
+.v-metodo h3 { margin: 14px 0 0; font-family: var(--f-serif); font-weight: 400; font-size: 26px; color: var(--oliva-osc); }
+.v-intro { margin: 0; max-width: 60ch; font-family: var(--f-it); font-style: italic; font-size: 19px; line-height: 1.45; color: var(--oliva-osc); }
+.f-quien code, .v-pasos pre { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
+.v-rango { font-size: 14px; font-weight: 700; color: var(--oliva); font-variant-numeric: tabular-nums; }
+.v-pasos { margin: 0; padding: 0; list-style: none; counter-reset: paso; display: grid; gap: 14px; max-width: 920px; }
+.v-pasos li { counter-increment: paso; position: relative; padding: 16px 18px 16px 62px; border-radius: 18px; background: var(--papel); border: 1px solid var(--salvia3); }
+.v-pasos li::before { content: counter(paso); position: absolute; left: 18px; top: 14px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--oliva); color: var(--crema2); font-weight: 800; font-size: 15px; }
+.v-pasos b { font-size: 17px; color: var(--oliva-osc); }
+.v-pasos p { margin: 4px 0 0; font-size: 15px; line-height: 1.55; color: var(--texto2); max-width: 75ch; }
+.v-pasos pre { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: #e9ecd9; color: var(--oliva-osc); font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.v-tablas { display: flex; flex-wrap: wrap; gap: 14px 28px; }
+.v-tabla { border-collapse: collapse; min-width: min(300px, 100%); font-size: 15px; color: var(--texto2); }
+.v-tabla caption { text-align: left; padding-bottom: 6px; font-weight: 700; color: var(--oliva-osc); }
+.v-tabla td { padding: 7px 0; border-bottom: 1px solid var(--salvia3); }
+.v-tabla td.num { text-align: right; font-weight: 700; color: var(--oliva); }
+.v-limites { margin: 0; padding-left: 20px; display: grid; gap: 8px; max-width: 75ch; font-size: 15px; line-height: 1.55; color: var(--texto2); }
+.v-limites b { color: var(--oliva-osc); }
+a.como { font-size: 13px; font-weight: 700; color: var(--oliva); }
 /* Pie de la página principal: solo la marca y el enlace a /fuentes. */
 .b footer.pie .b-in { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding-block: 26px 30px; }
 .b footer.pie .marca { font-size: 18px; }

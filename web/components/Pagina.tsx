@@ -353,7 +353,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       ${B.vivo[i] != null ? fila("Aire, máxima de ayer", `${formato(B.vivo[i] as number, 1)} °C`) : ""}
       ${fila("Copa de árboles", B.copa[i] == null ? "sin dato" : `${formato(B.copa[i] as number, 1)} %`)}
       ${fila("Personas", formato(B.pob[i]))}
-      ${B.vuln?.[i] != null ? fila("Vulnerabilidad al calor", `${formato(B.vuln[i] as number, 2)} de 1`) : ""}
+      ${B.vuln?.[i] != null ? fila("Vulnerabilidad al calor", `${formato(B.vuln[i] as number, 2)} de 1 · <a href="/fuentes#vulnerabilidad">cómo se calcula</a>`) : ""}
       ${faunaDe[i]?.an ? fila("Aves en el barrio", `${faunaDe[i]!.asp} especies`) : ""}
       ${faunaDe[i]?.bn ? fila("Abejas nativas en el barrio", `${faunaDe[i]!.bn} ${faunaDe[i]!.bn === 1 ? "registro" : "registros"}`) : ""}
       ${fila("Coordenadas", `<a href="${gmapsUrl}" target="_blank" rel="noopener noreferrer">${lat.toFixed(5)}, ${lng.toFixed(5)} ↗</a>`)}</table>
@@ -525,7 +525,8 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Un clic en una cuadra muestra sus datos; doble clic suma o quita su comuna.`}>{filtroSolo}</MapaHex>
         </div>
         <div className="leyenda">
-          <span><i className="barra" style={{ background: LEYENDA[capa][0] }} />{LEYENDA[capa][1]}</span>
+          <span><i className="barra" style={{ background: LEYENDA[capa][0] }} />{LEYENDA[capa][1]}
+            {capa === "vulnerabilidad" && <>. <a className="como" href="/fuentes#vulnerabilidad">Cómo se calcula</a></>}</span>
           <span><i className="linea" style={{ borderTop: "2px solid #2F4520" }} />Comuna</span>
           <span><i className="linea" style={{ borderTop: "2px dashed #2F4520", opacity: 0.7 }} />Sector</span>
           <span><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style={{ verticalAlign: "-2px", marginRight: 6 }}><path d="M12 2l8.66 5v10L12 22l-8.66-5V7z" fill="none" stroke="#2F4520" strokeWidth="2" /></svg>1 hexágono ≈ 0,1 km², unas 4 manzanas</span>
@@ -604,6 +605,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             <div className="peso" key={k}>
               <label htmlFor={`p-${k}`}><span>{nombre}</span><b>{Math.round((100 * pesos[k]) / total)} %</b></label>
               <input id={`p-${k}`} type="range" min={0} max={100} step={5} value={pesos[k]} onChange={(e) => mover(k, Number(e.target.value))} />
+              {k === "vuln" && <a className="como" href="/fuentes#vulnerabilidad">¿Cómo se calcula?</a>}
             </div>
           ))}
           <div className="peso">

@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { Metadata } from "next";
+import { Fragment } from "react";
+
+import { VulnerabilidadMetodo } from "./vulnerabilidad";
 
 // Todas las fuentes de datos de Viridis, ordenadas por tema: qué es cada una, para qué se usa y su sitio oficial.
 // El pie de la página principal resume lo mismo y enlaza aquí.
@@ -10,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 type Fuente = { nombre: string; quien: string; uso: string; url: string; enlace: string };
-const TEMAS: { id: string; titulo: string; acento: string; nota?: string; fuentes: Fuente[] }[] = [
+const TEMAS: { id: string; titulo: string; acento: string; nota?: string; mas?: [string, string]; fuentes: Fuente[] }[] = [
   {
     id: "calor", titulo: "Calor", acento: "del suelo",
     nota: "El mapa y el índice usan la escena de verano del 19 de febrero de 2026. El histórico usa la serie mensual: {landsat} escenas Landsat y {sentinel} Sentinel-2, de enero de 2023 a noviembre de 2026.",
@@ -41,6 +44,7 @@ const TEMAS: { id: string; titulo: string; acento: string; nota?: string; fuente
   {
     id: "personas", titulo: "Personas", acento: "y servicios",
     nota: "La capa de personas es 70 % habitantes de la cuadra y 30 % cercanía a colegios, salud, metro y paraderos. La vulnerabilidad al calor promedia la sensibilidad (personas de 60 años o más, de 0 a 5 años y con discapacidad) y la capacidad de adaptarse (viviendas hacinadas e irrecuperables y años de escolaridad), cada parte normalizada sobre las 34 comunas; entra solo en la urgencia de las personas, con 10 % por omisión. Ninguna es ingreso: el Censo no lo pregunta.",
+    mas: ["#vulnerabilidad", "Cómo se calcula la vulnerabilidad al calor ↓"],
     fuentes: [
       { nombre: "Censo de Población y Vivienda 2024", quien: "Instituto Nacional de Estadísticas (INE)",
         uso: "Habitantes por manzana y, para la vulnerabilidad al calor, edades, discapacidad, viviendas hacinadas e irrecuperables y escolaridad, repartidos a cada cuadra según el área que comparten.",
@@ -110,12 +114,18 @@ export default function Fuentes() {
           <p>Cada fuente, para qué la usamos y su sitio oficial. Todo es público.</p>
         </div>
         <nav className="f-indice" aria-label="Temas">
-          {TEMAS.map((t) => <a key={t.id} className="pill" href={`#${t.id}`}>{t.titulo} {t.acento}</a>)}
+          {TEMAS.map((t) => (
+            <Fragment key={t.id}>
+              <a className="pill" href={`#${t.id}`}>{t.titulo} {t.acento}</a>
+              {t.id === "personas" && <a className="pill" href="#vulnerabilidad">Vulnerabilidad al calor</a>}
+            </Fragment>
+          ))}
         </nav>
       </div></section>
 
       {TEMAS.map((t, k) => (
-        <section key={t.id} id={t.id} className={`b-sec b-pad f-tema${k % 2 ? "" : " alt"}`}><div className="b-in">
+        <Fragment key={t.id}>
+        <section id={t.id} className={`b-sec b-pad f-tema${k % 2 ? "" : " alt"}`}><div className="b-in">
           <h2>{t.titulo} <em>{t.acento}</em></h2>
           <ul className="f-lista">
             {t.fuentes.map((f) => (
@@ -128,7 +138,11 @@ export default function Fuentes() {
             ))}
           </ul>
           {t.nota && <p className="nota f-nota">{conCifras(t.nota)}</p>}
+          {t.mas && <a className="como" href={t.mas[0]}>{t.mas[1]}</a>}
         </div></section>
+        {/* La vulnerabilidad va justo después de Personas, con el mismo fondo, como su método. */}
+        {t.id === "personas" && <VulnerabilidadMetodo />}
+        </Fragment>
       ))}
 
       <section className="b-sec b-pad"><div className="b-in" style={{ paddingBlock: "36px 56px" }}>
