@@ -19,7 +19,8 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
 ---
 
 ### 0:00 – 0:30 · Donde se necesita el verde
-* **Pantalla:** la portada y luego «El viaje del picaflor», que se anima solo al llegar; después «Datos clave»
+* **Pantalla:** la portada y luego el corto «El viaje del picaflor» (parte solo; se puede dejar correr de fondo
+  mientras se habla, o adelantarlo con la barra); después «Datos clave»
   con Providencia y Cerro Navia elegidas, para que la tabla muestre las dos comunas lado a lado.
 * **Orador:**
   > *"El picaflor chico, el colibrí que más se ve en Santiago, quiere ir del Cerro Renca al San Cristóbal. En
