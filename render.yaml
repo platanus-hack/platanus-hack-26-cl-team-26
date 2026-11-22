@@ -1,15 +1,29 @@
 services:
   - type: web
-    name: verdeh3-santiago
+    name: viridis
     runtime: docker
-    plan: starter
+    # standard: 2 GB de RAM. El modelo de aves (BirdNET) más los datos de las 34 comunas no caben con holgura
+    # en los 512 MB de starter. Se paga con los créditos de Render de Platanus Hack.
+    plan: standard
     region: oregon
+    healthCheckPath: /api/salud
+    # Las fotos, videos, audios y registros de terreno sobreviven a cada despliegue y reinicio.
+    disk:
+      name: terreno
+      mountPath: /app/data/terreno
+      sizeGB: 1
     envVars:
       - key: PORT
         value: 8000
-      # Se definen en el panel de Render, no aquí: la clave de subida del teléfono y la API key de Claude.
-      - key: TERRENO_CLAVE
+      # Cada cuántos minutos se refrescan los sensores en vivo mientras alguien mira el mapa.
+      - key: REFRESCO_VIVO_MIN
+        value: 10
+      # Secretos: se escriben en el panel de Render (Environment), nunca en este archivo.
+      - key: TERRENO_CLAVE        # clave de subida del teléfono: /captura?k=<clave>
         sync: false
-      - key: ANTHROPIC_API_KEY
+      - key: ANTHROPIC_API_KEY    # Claude valida y analiza las fotos
         sync: false
-    healthCheckPath: /api/salud
+      - key: DMC_USUARIO          # estaciones de la Dirección Meteorológica (aire en vivo)
+        sync: false
+      - key: DMC_TOKEN
+        sync: false

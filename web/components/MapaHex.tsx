@@ -17,6 +17,10 @@ export type Capa = { id: string; color: ExpressionSpecification };
 // Lo elegido: índices de comuna (propiedad c de cada cuadra) o cuadras sueltas (propiedad i). null = todo Santiago.
 export type Foco = { comunas: number[]; hexes: number[] } | null;
 const TENUE = 0.5, VELO = 0.42;   // lo no elegido: capa más transparente y un velo oscuro encima
+// Cuadras casi sin habitantes que no son parque (propiedad v: cerros, campo, aeropuerto, industria): muy tenues,
+// para que se lea la mancha urbana real y no el rectángulo con que se recortaron los datos.
+const VACIA = 0.2;
+const vacia: ExpressionSpecification = ["boolean", ["get", "v"], false];
 
 function tenir(mapa: MapaML) {
   for (const l of mapa.getStyle().layers ?? []) {
@@ -37,10 +41,14 @@ function tenir(mapa: MapaML) {
   }
 }
 
+// Corredor en el verde más oscuro (#386641), sobre islas más claras, para que se lea como camino (personas y aves) o negro con mini islas amarillas si el plan incluye abejas.
+export const COLOR_CORREDOR = "#386641", COLOR_MINI_ISLA = "#F4C430";
+export const TONO_CORREDOR = { verde: { fondo: COLOR_CORREDOR, borde: "#1F3A25" }, abeja: { fondo: "#1F1F1A", borde: "#000000" } };
+export type TonoCorredor = keyof typeof TONO_CORREDOR;
 const TESELA_Z = 9;   // zoom de tesela único para cuadras, sectores y comunas (calzan entre sí y no se recargan)
 
 export default function MapaHex({ datos, capas, activa, corredor, comunas, distritos, capturas, recorridos, popupCaptura,
-  popupHex, datoHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, children }: {
+  popupHex, datoHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, tono = "verde", children }: {
   datos: GeoJSON.FeatureCollection;
   capas: Capa[];
   activa: string;
@@ -59,6 +67,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   alComuna?: (c: string) => void;            // doble clic en una cuadra o comuna: suma o quita su comuna
   alLazo?: (anillo: [number, number][] | null, pintadas?: number[]) => void;  // contorno cerrado en [lng, lat] (o null) y cuadras pintadas con el pincel
   etiqueta: string;
+  tono?: TonoCorredor;                       // colores del corredor: verde, o negro si el plan incluye abejas
   children?: React.ReactNode;                 // controles que flotan sobre el mapa
 }) {
   const [cont, visible] = useVisible<HTMLDivElement>();
@@ -126,13 +135,13 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
           nuevo.addLayer({
             id: c.id, type: "fill", source: "hex",
             layout: { visibility: c.id === ini.activa ? "visible" : "none" },
-            paint: { "fill-color": c.color, "fill-opacity": OPACIDAD, "fill-opacity-transition": fundido, "fill-antialias": false },
+            paint: { "fill-color": c.color, "fill-opacity": ["case", vacia, VACIA, OPACIDAD], "fill-opacity-transition": fundido, "fill-antialias": false },
           });
         }
         // Con todo el Gran Santiago a la vista los bordes de 13 mil cuadras solo ensucian y cuestan; aparecen al acercar.
         nuevo.addLayer({
           id: "borde", type: "line", source: "hex", minzoom: 11,
-          paint: { "line-color": "#F6F1E4", "line-width": 0.35, "line-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0, 12, 1] },
+          paint: { "line-color": "#F6F1E4", "line-width": 0.3, "line-opacity": ["interpolate", ["linear"], ["zoom"], 11, 0, 13, 0.25] },
         });
         // Velo oscuro sobre las cuadras no elegidas; apagado mientras se ve todo Santiago.
         nuevo.addLayer({
@@ -169,12 +178,12 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         nuevo.addSource("corredor", { type: "geojson", data: VACIO });
         nuevo.addLayer({
           id: "corredor", type: "fill", source: "corredor", filter: ["==", ["get", "tipo"], "ahora"],
-          paint: { "fill-color": "#22301A", "fill-opacity": 0.92, "fill-opacity-transition": { duration: menosMovimiento() ? 0 : 700 } },
+          paint: { "fill-color": COLOR_CORREDOR, "fill-opacity": 1, "fill-opacity-transition": { duration: menosMovimiento() ? 0 : 700 } },
         });
         // Contorno grueso para que el corredor se distinga aun con el área completa a la vista.
         nuevo.addLayer({
           id: "corredor-borde", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "ahora"],
-          paint: { "line-color": "#22301A", "line-width": ["interpolate", ["linear"], ["zoom"], 9, 3, 13, 1] },
+          paint: { "line-color": TONO_CORREDOR.verde.borde, "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.4, 13, 1.8] },
         });
         nuevo.addLayer({
           id: "corredor-antes", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "antes"],
@@ -183,6 +192,14 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         nuevo.addLayer({
           id: "corredor-verificado", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "verificado"],
           paint: { "line-color": "#B0398B", "line-width": 3 },
+        });
+        nuevo.addLayer({
+          id: "corredor-checkpoint", type: "fill", source: "corredor", filter: ["==", ["get", "tipo"], "checkpoint"],
+          paint: { "fill-color": COLOR_MINI_ISLA, "fill-opacity": 0.96 },
+        });
+        nuevo.addLayer({
+          id: "corredor-checkpoint-borde", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "checkpoint"],
+          paint: { "line-color": "#7A5B00", "line-width": 2 },
         });
         nuevo.addSource("recorridos", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "recorridos", type: "line", source: "recorridos", paint: { "line-color": "#6B3FA0", "line-width": 4, "line-opacity": 0.85 } });
@@ -328,7 +345,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
     if (!listo || !m) return;
     // Los parques (propiedad k, solo en Planificar) nunca se apagan: son las islas verdes que une el corredor.
     const dentro: ExpressionSpecification = ["any", ["boolean", ["get", "k"], false], ["in", ["get", "c"], ["literal", foco?.comunas ?? []]], ["in", ["get", "i"], ["literal", foco?.hexes ?? []]]];
-    for (const c of capas) if (m.getLayer(c.id)) m.setPaintProperty(c.id, "fill-opacity", foco ? ["case", dentro, 0.95, TENUE] : OPACIDAD);
+    for (const c of capas) if (m.getLayer(c.id)) m.setPaintProperty(c.id, "fill-opacity", foco ? ["case", vacia, ["case", dentro, VACIA + 0.1, VACIA * 0.6], dentro, 0.95, TENUE] : ["case", vacia, VACIA, OPACIDAD]);
     m.setPaintProperty("velo", "fill-opacity", foco ? ["case", dentro, 0, VELO] : 0);
     m.setLayoutProperty("velo", "visibility", foco ? "visible" : "none");
   }, [claveFoco, capas, listo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -544,9 +561,16 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
     if (clave === claveCorredor.current || menosMovimiento()) { claveCorredor.current = clave; return; }
     claveCorredor.current = clave;
     m.setPaintProperty("corredor", "fill-opacity", 0);
-    const t = setTimeout(() => m.getLayer("corredor") && m.setPaintProperty("corredor", "fill-opacity", 0.92), 60);
+    const t = setTimeout(() => m.getLayer("corredor") && m.setPaintProperty("corredor", "fill-opacity", 1), 60);
     return () => clearTimeout(t);
   }, [corredor, listo]);
+
+  useEffect(() => {
+    const m = mapa.current;
+    if (!listo || !m?.getLayer("corredor")) return;
+    m.setPaintProperty("corredor", "fill-color", TONO_CORREDOR[tono].fondo);
+    m.setPaintProperty("corredor-borde", "line-color", TONO_CORREDOR[tono].borde);
+  }, [tono, listo]);
 
   useEffect(() => {
     const m = mapa.current;

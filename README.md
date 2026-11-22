@@ -81,22 +81,53 @@ python -m tests.test_contrato
 `optimizer.solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None)` devuelve el
 corredor continuo entre parques que más urgencia cubre dentro del presupuesto.
 
-## App web: mapa (un solo servidor)
+## App web
 
-`python -m terreno.servidor` sirve todo (FastAPI, sin Streamlit):
+La página (Next, en `web/`) muestra los datos y traza el corredor; `python -m terreno.servidor --puerto 8000`
+(FastAPI) es su API: cruza los datos por comuna y calcula el corredor. Ver `web/README.md` para levantarla.
 
-- `/mapa` (laptop o jurado): tres vistas sobre la grilla H3.
-  - *Tiempo real*: capas de calor (LST más reciente, o temperatura del aire en vivo por barrio si hay
-    `data/live_h3.parquet`), verde (copa + NDVI) y social/densidad; con varias capas el color es el promedio RGB.
-  - *Corredor*: Dijkstra con presupuesto (km) y pesos calor / árboles / personas, métricas contra caminatas al
-    azar y el efecto de las fotos de terreno.
-  - *Histórico*: promedio de LST y NDVI de las escenas entre dos fechas (`data/historico_h3.parquet`, 2023–2026).
-  - Área: comunas (toque en el mapa, «Piloto», «Todas (34)»), distritos (barrios H3 res 7) y «Encerrar zona»
-    para dibujar un polígono.
-- `/` lleva a `/mapa`. La página del teléfono (`/captura`) se retiró: el equipo decidió quedarse solo con el sitio.
-- Despliegue: `Dockerfile` y `render.yaml` corren este servidor (`/api/salud` como health check);
-  `TERRENO_CLAVE` y `ANTHROPIC_API_KEY` van en el panel de Render. En Render el disco es efímero: para la demo
-  la captura corre local con el túnel (`compartir_publico.sh`).
+- *Datos clave*: capas de calor (suelo y aire), árboles, personas, aves y abejas por cuadra, en las 34
+  comunas. Un clic en una cuadra muestra sus datos; doble clic elige su comuna; el lápiz encierra cuadras.
+- *Planificar*: corredor con presupuesto (km) y pesos de calor, árboles y personas, para humanos, aves, abejas
+  o mixto (`ecologia.py`), con las cifras contra un trazado al azar y la fauna registrada en los barrios que
+  cruza.
+- *Santiago conectado*: la red completa sobre todo Santiago, de 0 a 100 km, para personas, aves, abejas o las tres:
+  islas verdes unidas, personas a una cuadra, barrios con aves y mini islas para abejas. La precalcula
+  `python red_conectada.py` en `web/public/data/red.json` (cada presupuesto son los primeros tramos de la red de
+  100 km, así crece sin cambiar de lugar).
+- `/` lleva al sitio Viridis si está exportado (`web/out`), si no a `/mapa`. La página del teléfono
+  (`/captura`) se retiró: el equipo decidió quedarse solo con el sitio.
+
+### Despliegue en Render (un solo servicio)
+
+El `Dockerfile` compila el sitio Viridis (`web/`, `npm run exportar` → archivos estáticos en `web/out`) y lo
+sirve desde el mismo servidor de terreno. Un solo enlace: `/` el sitio, `/api` los datos y `/mapa` el mapa de
+respaldo.
+
+1. En Render: **New → Blueprint**, elegir este repositorio; `render.yaml` crea el servicio `viridis` (plan
+   standard, 2 GB: el modelo de aves no cabe holgado en 512 MB) con un disco de 1 GB en `data/terreno/`.
+2. En **Environment**, escribir los secretos (nunca en el repo): `TERRENO_CLAVE` (clave de la API de subida),
+   `ANTHROPIC_API_KEY` (Claude valida las fotos), `DMC_USUARIO` y `DMC_TOKEN` (estaciones DMC del aire en vivo).
+3. Health check: `/api/salud`.
+
+Para probarlo igual en local: `cd web && npm run exportar`, y luego `python -m terreno.servidor` sirve todo en
+http://localhost:8000.
+
+## Aire: máxima del día
+
+`maximas.py` escribe `data/live_h3.parquet` con la temperatura máxima del día anterior por barrio, de las
+estaciones oficiales de la DMC y del SINCA (ver `CONTRATO.md`). Corre sola cada noche en GitHub Actions
+(`.github/workflows/maximas.yml`, con los secretos `DMC_USUARIO` y `DMC_TOKEN`). SINCA bloquea las conexiones
+desde fuera de Chile, así que se suma desde un PC en Chile con `python maximas.py --completar` (timer de systemd
+en `scripts/systemd/`).
+
+## Fauna: aves y abejas registradas
+
+`python fauna_gbif.py` (unos 5 minutos) baja de GBIF.org los registros con coordenadas desde 2015 (eBird,
+iNaturalist, museos) y escribe `data/fauna_h3.parquet` y `web/public/data/fauna.json`: por barrio, las especies
+de aves y las abejas nativas (sin la abeja de miel ni el abejorro europeo, que van aparte). Es por barrio y no
+por cuadra porque muchas ubicaciones tienen un margen de cientos de metros. Un registro dice que alguien vio la
+especie ahí: no haber registro no significa que no esté, y hay más observadores en parques y cerros.
 
 ## Datos de terreno (sin página del teléfono)
 

@@ -9,7 +9,7 @@ import { formato } from "./movimiento";
 const sinTilde = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const porNombre = (a: string, b: string) => a.localeCompare(b, "es");
 
-export default function FiltroComunas({ info, elegidas, zona, alternar, sumar, reiniciar, sueloComuna, ocupado, error }: {
+export default function FiltroComunas({ info, elegidas, zona, alternar, sumar, reiniciar, sueloComuna, ocupado, error, sinResumen }: {
   info: InfoComunas;
   elegidas: string[];
   zona: number;                       // cuadras de la zona dibujada (0 si no hay)
@@ -19,6 +19,7 @@ export default function FiltroComunas({ info, elegidas, zona, alternar, sumar, r
   sueloComuna: Map<string, number>;
   ocupado: boolean;
   error: string | null;
+  sinResumen?: boolean;               // sin el panel de arriba a la derecha: solo un botón para volver al inicio
 }) {
   const [abierto, setAbierto] = useState(false);
   const [busca, setBusca] = useState("");
@@ -52,7 +53,14 @@ export default function FiltroComunas({ info, elegidas, zona, alternar, sumar, r
         {ocupado && <span className="nota" style={{ fontWeight: 500 }}>Calculando…</span>}
       </button>
 
-      <div className="flota resumen-mapa" aria-live="polite">
+      {sinResumen ? (
+        (!nada || error) && (
+          <div className="flota resumen-mapa solo" aria-live="polite">
+            {!nada && <button type="button" className="mini volver" onClick={reiniciar}>↺ Volver a todo Santiago</button>}
+            {error && <span className="aviso" role="alert">{error}</span>}
+          </div>
+        )
+      ) : <div className="flota resumen-mapa" aria-live="polite">
         {nada ? <span className="t">Todo Santiago, {info.comunas.length} comunas</span> : (
           <span className="t quitar">
             {zona > 0 && <span className="chip zona num">Zona dibujada, {zona.toLocaleString("es-CL")} cuadras<button type="button" aria-label="Quitar la zona dibujada" onClick={reiniciar}>×</button></span>}
@@ -65,7 +73,7 @@ export default function FiltroComunas({ info, elegidas, zona, alternar, sumar, r
           ? <span className="nota">Doble clic en una comuna para elegirla, o encierra cuadras con el lápiz.</span>
           : <button type="button" className="mini volver" onClick={reiniciar}>↺ Volver a todo Santiago</button>}
         {error && <span className="aviso" role="alert" style={{ flexBasis: "100%" }}>{error}</span>}
-      </div>
+      </div>}
 
       {abierto && (
         <aside className="cajon" aria-label="Elegir comunas" onKeyDown={(e) => { if (e.key === "Escape") cerrar(); }}>

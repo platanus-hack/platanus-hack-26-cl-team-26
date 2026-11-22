@@ -4,9 +4,11 @@
 // el corredor con y sin capturas en terreno, y la serie histórica.
 import { useCallback, useEffect, useRef, useState } from "react";
 
+// Para quién se traza el corredor: una o más.
+export type Especie = "humanos" | "aves" | "abejas";
 export type Parametros = {
   comunas: string[]; distritos: string[]; zona: number; km: number; w_calor: number; w_arbol: number; w_personas: number;
-  w_bio?: number; vecinas?: boolean; birdnet?: string;
+  w_bio?: number; vecinas?: boolean; perfil?: string; especies?: Especie[]; birdnet?: string;
 };
 export type InfoComunas = {
   comunas: string[]; vecinas: Record<string, string[]>; geo: Record<string, number[][][][]>;
@@ -15,13 +17,14 @@ export type InfoComunas = {
 export type HexCols = {
   h: string[]; comuna: string[]; distrito: string[]; u: (number | null)[]; lst: (number | null)[]; vivo: (number | null)[];
   ndvi: (number | null)[]; copa: (number | null)[]; pob: number[]; social: (number | null)[];
-  parque: boolean[]; antes: boolean[]; ahora: boolean[]; verificado: boolean[];
+  parque: boolean[]; antes: boolean[]; ahora: boolean[]; checkpoint?: boolean[]; verificado: boolean[];
   bio?: (number | null)[]; especies?: string[]; polinizadores?: number[];
   fotos?: number[]; escuchas?: number[];  // cuántas fotos que cuentan y escuchas analizadas hay en cada cuadra
 };
 export type ResumenCorredor = {
   hexes: number; km: number; urgencia_cubierta: number; urgencia_azar: number; personas_cubiertas: number;
   personas_azar: number; verificados: number; km_min?: number | null;
+  checkpoints?: number; parques_conectados?: number; resistencia_media?: number | null;
 };
 export type Captura = {
   id: string; lat: number; lon: number; validacion: string; cuenta: boolean; fuente?: string; arbol_pct?: number;
@@ -40,16 +43,17 @@ export type Escucha = {
 export type Recorrido = { id: string; inicio?: string; duracion_s?: number; archivo?: string; linea: [number, number][] };
 export type Estado = {
   version: number; sel_id: number; seleccion: string[]; parametros: Parametros; hex: HexCols; lst_fecha: string | null;
+  fechas?: { calor: string | null; copa: string | null; vivo: string | null };   // última actualización de cada dato
   recorridos: Recorrido[]; en_vivo: boolean; antes: ResumenCorredor; ahora: ResumenCorredor;
   totales: { capturas: number; cuentan: number; escuchas: number };
   fauna_corredor?: { especies: string[]; polinizadores: number };
-  fuera?: { h: string; comuna: string | null }[];   // cuadras del corredor en comunas vecinas
+  fuera?: { h: string; comuna: string | null; isla?: boolean }[];   // cuadras del corredor en comunas vecinas
 };
 export type DetalleHex = {
   h3_index: string; comuna: string | null; n_fotos: number; n_escuchas: number; fotos: Captura[]; escuchas: Escucha[];
   especies?: string[]; polinizadores?: number; flores?: number | null;
 };
-export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number; w_bio: number; vecinas: boolean }>;
+export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number; w_bio: number; vecinas: boolean; perfil: string; especies: Especie[] }>;
 
 const SONDEO_MS = 3000;
 // Sesión de este navegador en el servidor: área, presupuesto y pesos son solo suyos y se pierden al recargar.

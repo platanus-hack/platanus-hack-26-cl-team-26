@@ -241,7 +241,12 @@ def test_seleccion_comunas():
         info = c.get("/api/comunas").json()
         assert len(info["comunas"]) == 34 and info["seleccion"] == info["comunas"]  # al abrir, todas
         df = pd.read_parquet(GS)
-        assert len(c.get("/api/estado").json()["hex"]["h"]) == len(df)
+        from terreno.servidor import sin_islas
+        hs = c.get("/api/estado").json()["hex"]["h"]
+        # El trozo suelto de San Bernardo (24 cuadras sin gente, resto del recorte) no se muestra; no se pierde nadie.
+        suelto = df[~df["h3_index"].isin(hs)]
+        assert len(hs) == len(sin_islas(df)) == len(df) - 24
+        assert set(suelto["comuna"]) == {"San Bernardo"} and suelto["poblacion"].sum() == 0 and not suelto["es_parque"].any()
         c.post("/api/seleccion", json={"comunas": ["Cerro Navia"]})
         assert "Quinta Normal" in info["vecinas"]["Cerro Navia"] and "Maipú" not in info["vecinas"]["Cerro Navia"]
         assert all(a in info["vecinas"][b] for a in info["vecinas"] for b in info["vecinas"][a])  # simétrica
@@ -439,7 +444,6 @@ def test_audio():
             c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, clave="secreta", usar_claude=False))
             v0 = c.get("/api/version").json()["version"]
             assert c.get("/captura").status_code == 404  # la página del teléfono se retiró
-            assert c.get("/", follow_redirects=False).headers["location"] == "/mapa"
             datos = {"lat": la, "lon": lo, "precision_m": 8, "tomado_en": "2026-11-21T15:00:00-03:00"}
             assert c.post("/api/audio", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")}).status_code == 403
             r = c.post("/api/audio?k=secreta", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")})
@@ -599,6 +603,28 @@ def test_hexagono():
         aves.detectar = original
 
 
+def test_sitio_exportado():
+    """Con web/out el servidor sirve el sitio en «/» y sus archivos; la API, /captura y /mapa siguen igual."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        web = tmp / "out"
+        (web / "_next").mkdir(parents=True)
+        (web / "index.html").write_text("<html>Viridis</html>", encoding="utf-8")
+        (web / "_next" / "app.js").write_text("console.log(1)", encoding="utf-8")
+        c = TestClient(crear_app(DEMO, tmp / "datos", comunas=COMUNAS_DEMO, usar_claude=False, web=web))
+        assert "Viridis" in c.get("/").text
+        assert c.get("/_next/app.js").text == "console.log(1)"
+        assert c.get("/captura").status_code == 404 and c.get("/mapa").status_code == 200  # sin página del teléfono
+        assert c.get("/api/salud").json() == {"ok": True}
+        assert c.get("/no-existe").status_code == 404
+        # sin sitio exportado, «/» lleva al mapa
+        c2 = TestClient(crear_app(DEMO, tmp / "datos2", comunas=COMUNAS_DEMO, usar_claude=False, web=tmp / "nada"))
+        assert c2.get("/", follow_redirects=False).headers["location"] == "/mapa"
+
+
 def test_aves_wav():
     """leer_wav acepta lo que arma la página y rechaza lo demás (sin cargar BirdNET)."""
     import terreno.aves as aves
@@ -662,3 +688,84 @@ def test_comunas_vecinas():
         assert e["ahora"]["hexes"] == 0 and e["ahora"]["km_min"] > 3
         c.post("/api/seleccion", json={"km": e["ahora"]["km_min"] + 0.4})
         assert c.get("/api/estado").json()["ahora"]["hexes"] > 0
+
+
+def test_perfiles_de_corredor():
+    """El corredor se puede trazar para personas, aves, abejas o mixto; cada navegador guarda su perfil."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(GS, Path(tmp), usar_claude=False, comunas=["Santiago", "Providencia", "Ñuñoa"]))
+        s = "navegadorPERF"
+        base = c.get(f"/api/estado?s={s}").json()
+        assert base["parametros"]["perfil"] == "humanos" and base["ahora"]["checkpoints"] == 0
+        vistos = {}
+        for perfil in ("fauna_aves", "fauna_abejas", "mixto"):
+            assert c.post(f"/api/seleccion?s={s}", json={"perfil": perfil}).status_code == 200
+            e = c.get(f"/api/estado?s={s}").json()
+            assert e["parametros"]["perfil"] == perfil and e["ahora"]["hexes"] > 0
+            assert sum(e["hex"]["checkpoint"]) == e["ahora"]["checkpoints"]
+            vistos[perfil] = e["ahora"]
+        assert vistos["fauna_aves"]["checkpoints"] == 0 and vistos["fauna_abejas"]["checkpoints"] > 0
+        assert vistos["mixto"]["checkpoints"] > 0
+        assert c.post(f"/api/seleccion?s={s}", json={"perfil": "dragones"}).status_code == 422
+        assert c.get("/api/estado").json()["parametros"]["perfil"] == "humanos"   # la sesión compartida no cambió
+        assert c.post(f"/api/seleccion?s={s}", json={"perfil": "humanos"}).status_code == 200
+        assert c.get(f"/api/estado?s={s}").json()["ahora"]["personas_cubiertas"] == base["ahora"]["personas_cubiertas"]
+
+
+def test_especies_combinadas():
+    """Se puede elegir más de una especie: el criterio promedia el de cada una y la forma sale de quiénes son."""
+    from fastapi.testclient import TestClient
+    from ecologia import criterio_por_especies
+    from terreno.servidor import crear_app
+
+    df = pd.read_parquet(GS)
+    sub = df[df["comuna"].isin(["Santiago", "Providencia", "Ñuñoa"])]
+    solo = {e: criterio_por_especies(sub, [e]) for e in ("humanos", "aves", "abejas")}
+    for combo in (["humanos", "abejas"], ["humanos", "aves"], ["aves", "abejas"], ["humanos", "aves", "abejas"]):
+        prioridad, costo, _, _ = criterio_por_especies(sub, combo)
+        assert np.allclose(prioridad, sum(solo[e][0] for e in combo) / len(combo))   # promedio simple de prioridades
+        assert np.allclose(costo, (sum(solo[e][1] for e in combo) / len(combo)).clip(lower=0.01))
+        assert prioridad.between(0, 1).all()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(GS, Path(tmp), usar_claude=False, comunas=["Santiago", "Providencia", "Ñuñoa"]))
+        s = "navegadorESPE"
+        assert c.get(f"/api/estado?s={s}").json()["parametros"]["especies"] == ["humanos"]
+        for combo, islas in ((["aves", "humanos"], False), (["humanos", "abejas"], True), (["abejas", "aves"], True),
+                             (["humanos", "aves", "abejas"], True)):
+            assert c.post(f"/api/seleccion?s={s}", json={"especies": combo}).status_code == 200
+            e = c.get(f"/api/estado?s={s}").json()
+            assert e["parametros"]["especies"] == [x for x in ("humanos", "aves", "abejas") if x in combo]   # orden fijo
+            assert e["ahora"]["hexes"] > 0 and e["ahora"]["km"] <= 3.0 + 1e-6      # corredor continuo dentro del presupuesto
+            assert (e["ahora"]["checkpoints"] > 0) == islas                         # mini islas solo con abejas
+            assert all(a or not cp for a, cp in zip(e["hex"]["ahora"], e["hex"]["checkpoint"]))   # las islas van sobre el corredor
+        assert c.post(f"/api/seleccion?s={s}", json={"especies": []}).status_code == 422
+        assert c.post(f"/api/seleccion?s={s}", json={"especies": ["gatos"]}).status_code == 422
+        # La forma antigua sigue funcionando: «mixto» equivale a las tres especies.
+        c.post(f"/api/seleccion?s={s}", json={"perfil": "mixto"})
+        assert c.get(f"/api/estado?s={s}").json()["parametros"]["especies"] == ["humanos", "aves", "abejas"]
+
+
+def test_vecinas_con_especies():
+    """«Comunas vecinas» vale para cualquier combinación de especies, no solo para humanos."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(GS, Path(tmp), usar_claude=False, comunas=["Independencia"]))
+        s = "navegadorVECI"
+        for combo in (["aves"], ["abejas"], ["humanos", "aves"], ["humanos", "aves", "abejas"]):
+            c.post(f"/api/seleccion?s={s}", json={"especies": combo, "vecinas": False, "km": 6})
+            sin = c.get(f"/api/estado?s={s}").json()
+            assert sin["ahora"]["hexes"] == 0 and sin["fuera"] == []        # Independencia sola no tiene dos parques que unir
+            u = sin["hex"]["u"]
+            c.post(f"/api/seleccion?s={s}", json={"vecinas": True})
+            con = c.get(f"/api/estado?s={s}").json()
+            dentro = sum(con["hex"]["ahora"])
+            assert con["ahora"]["hexes"] > 0 and len(con["fuera"]) > 0, combo
+            assert dentro + len(con["fuera"]) == con["ahora"]["hexes"] and 2 * dentro >= con["ahora"]["hexes"] - 1
+            assert all(f["comuna"] != "Independencia" for f in con["fuera"])
+            assert con["hex"]["u"] == u                                      # el color de lo elegido no cambia

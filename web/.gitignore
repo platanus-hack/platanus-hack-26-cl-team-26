@@ -3,3 +3,5 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 public/maplibre/
+# sitio exportado (npm run exportar); lo arma el Dockerfile
+out/
