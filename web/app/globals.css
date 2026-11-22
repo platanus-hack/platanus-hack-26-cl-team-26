@@ -306,3 +306,7 @@ section[id], footer[id] { scroll-margin-top: 76px; }
 .fechas dt { flex-basis: 100%; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--texto3); }
 .fechas dd { margin: 0; display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
 .fechas dd b { font-size: 13px; font-weight: 700; color: var(--oliva-osc); }
+
+/* Título de sección con una indicación pequeña debajo. */
+.b-cab .titulo { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.b-cab .titulo small { font-size: 14px; line-height: 1.4; color: var(--texto3); }

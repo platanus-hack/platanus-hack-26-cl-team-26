@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExpressionSpecification, LngLatBoundsLike } from "maplibre-gl";
 import { cellToBoundary, cellToLatLng, cellToParent, cellsToDirectedEdge, directedEdgeToBoundary, getResolution, gridDisk, latLngToCell, polygonToCellsExperimental, POLYGON_TO_CELLS_FLAGS } from "h3-js";
-import MapaHex, { type Capa, type Foco } from "./MapaHex";
+import MapaHex, { COLOR_CORREDOR, COLOR_MINI_ISLA, type Capa, type Foco } from "./MapaHex";
 import Cifra from "./Cifra";
 import FiltroComunas from "./FiltroComunas";
 import { formato, useRevela, useVisible } from "./movimiento";
@@ -380,7 +380,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
 
   const filtro = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
     sueloComuna={sueloComuna} ocupado={ocupado} error={error} />;
-  // El primer mapa va sin el panel de arriba a la derecha: lo elegido ya se lee en las cifras de abajo.
+  // Los mapas de Datos clave y Planificar van sin el panel de arriba a la derecha: queda solo el botón para volver.
   const filtroSolo = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
     sueloComuna={sueloComuna} ocupado={ocupado} error={error} sinResumen />;
 
@@ -539,7 +539,10 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
     <>
       <Seccion id="ahora" alt>
         <div className="b-cab escalon">
-          <h2>Datos <em>clave</em></h2>
+          <div className="titulo">
+            <h2>Datos <em>clave</em></h2>
+            <small>Haz doble clic en una comuna para fijarla, o encierra cuadras con el lápiz.</small>
+          </div>
           <div className="grupo" role="group" aria-label="Capa del mapa">
             {CAPAS_AHORA.map((c) => <button key={c.id} type="button" className="pill" aria-pressed={capa === c.id} onClick={() => setCapa(c.id)}>{NOMBRE_CAPA[c.id]}</button>)}
           </div>
@@ -642,7 +645,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
           <div className="izq escalon" style={est(3)}>
             <MapaHex {...mapaComun} foco={planListo ? foco : TODO_GRIS} hitos={HITOS} datos={datosPlan} capas={CAPAS_PLAN} activa="urg" corredor={verCorredor ? corredor : SIN_CORREDOR} encuadre={encuadrePlan}
               etiqueta="Corredor propuesto sobre la urgencia de cada cuadra">
-              {filtro}
+              {filtroSolo}
               {!planListo && <div className="gris" aria-hidden="true" />}
               {!planListo && (
                 <div className="invita" role="status">
@@ -660,8 +663,8 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             <div className="leyenda">
               {/* Solo lo que el mapa dibuja en este momento, según el perfil y si hay corredor o capturas. */}
               {planListo && <span><i className="barra" style={{ background: grad(ROJO) }} />{ESCALA[claveEspecies]}</span>}
-              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: "#22301A" }} />{claveEspecies === "abejas" ? "Ruta entre mini islas" : "Corredor"}</span>}
-              {verCorredor && (a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: "#C026D3" }} />Mini isla</span>}
+              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: COLOR_CORREDOR, outline: "2px solid #2F4520", outlineOffset: -1 }} />{claveEspecies === "abejas" ? "Ruta entre mini islas" : "Corredor"}</span>}
+              {verCorredor && (a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: COLOR_MINI_ISLA, outline: "2px solid #7A5B00", outlineOffset: -1 }} />Mini isla para abejas</span>}
               <span><i className="cuadro" style={{ background: ISLA }} />Islas verdes: cerros y parques</span>
               {verCorredor && hayTerreno && soloHumanos && <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Corredor sin los datos de terreno</span>}
               {hayTerreno && <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno: un clic para ver sus fotos y aves</span>}

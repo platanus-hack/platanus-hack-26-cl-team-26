@@ -41,6 +41,8 @@ function tenir(mapa: MapaML) {
   }
 }
 
+// Corredor en verde hoja (más claro que las islas, con borde oliva oscuro) y mini islas de abejas en amarillo.
+export const COLOR_CORREDOR = "#62A83C", COLOR_MINI_ISLA = "#F4C430";
 const TESELA_Z = 9;   // zoom de tesela único para cuadras, sectores y comunas (calzan entre sí y no se recargan)
 
 export default function MapaHex({ datos, capas, activa, corredor, comunas, distritos, capturas, recorridos, popupCaptura,
@@ -173,12 +175,12 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         nuevo.addSource("corredor", { type: "geojson", data: VACIO });
         nuevo.addLayer({
           id: "corredor", type: "fill", source: "corredor", filter: ["==", ["get", "tipo"], "ahora"],
-          paint: { "fill-color": "#22301A", "fill-opacity": 0.92, "fill-opacity-transition": { duration: menosMovimiento() ? 0 : 700 } },
+          paint: { "fill-color": COLOR_CORREDOR, "fill-opacity": 0.92, "fill-opacity-transition": { duration: menosMovimiento() ? 0 : 700 } },
         });
         // Contorno grueso para que el corredor se distinga aun con el área completa a la vista.
         nuevo.addLayer({
           id: "corredor-borde", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "ahora"],
-          paint: { "line-color": "#22301A", "line-width": ["interpolate", ["linear"], ["zoom"], 9, 3, 13, 1] },
+          paint: { "line-color": "#2F4520", "line-width": ["interpolate", ["linear"], ["zoom"], 9, 3, 13, 1.6] },
         });
         nuevo.addLayer({
           id: "corredor-antes", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "antes"],
@@ -190,11 +192,11 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         });
         nuevo.addLayer({
           id: "corredor-checkpoint", type: "fill", source: "corredor", filter: ["==", ["get", "tipo"], "checkpoint"],
-          paint: { "fill-color": "#C026D3", "fill-opacity": 0.94 },
+          paint: { "fill-color": COLOR_MINI_ISLA, "fill-opacity": 0.96 },
         });
         nuevo.addLayer({
           id: "corredor-checkpoint-borde", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "checkpoint"],
-          paint: { "line-color": "#701A75", "line-width": 2 },
+          paint: { "line-color": "#7A5B00", "line-width": 2 },
         });
         nuevo.addSource("recorridos", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "recorridos", type: "line", source: "recorridos", paint: { "line-color": "#6B3FA0", "line-width": 4, "line-opacity": 0.85 } });
