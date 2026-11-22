@@ -6,11 +6,8 @@ calor en ocre. Next.js 16 + MapLibre, sobre Carto Positron teñido.
 
 ## Correr
 
-La página no guarda datos propios: el mapa, las comunas y el corredor vienen del servidor de terreno
-(`terreno/servidor.py`, de `feat/integracion-terreno`), que cruza los datos por comuna. Next reenvía
-`/api`, `/fotos`, `/videos` y `/audios` a ese servidor (`TERRENO_URL`, por defecto `http://127.0.0.1:8000`),
-y también `/captura`: la página del teléfono (foto, video y escuchar aves). Así hay un solo enlace público:
-el teléfono abre `https://<sitio>/captura?k=<clave>`.
+El mapa, las comunas y el corredor vienen del servidor (`terreno/servidor.py`), que cruza los datos por
+comuna. Next reenvía `/api` a ese servidor (`TERRENO_URL`, por defecto `http://127.0.0.1:8000`).
 
 ```bash
 pip install -r requirements.txt               # desde la raíz del repo
@@ -20,20 +17,21 @@ npm install
 npm run dev                                   # http://localhost:3000
 ```
 
-Producción: `npm run build && npm start`. Si el servidor de terreno está en otra máquina:
+Producción: `npm run build && npm start`. Si el servidor está en otra máquina:
 `TERRENO_URL=http://host:8000 npm run build`.
 
 ## Qué muestra
 
-- **Datos clave** (calor, árboles y personas): las 34 comunas del Gran Santiago juntas, o una comuna y sus vecinas (se tocan en el
-  mapa, igual que en `terreno/static/mapa.html`). Capas de calor, copa de árboles y personas. El calor es
-  el índice 0,6 suelo + 0,4 aire donde hay sensores con confianza alta o media; si no, solo suelo.
-- **Planificar**: largo y pesos del corredor (los recalcula el servidor), corredor actual contra el de
-  sin capturas en terreno, capturas con su foto, y exportar los tramos en GeoJSON.
+- **Datos clave**: las 34 comunas del Gran Santiago juntas, o las que se elijan con doble clic o el lápiz.
+  Capas de calor, árboles, personas, 🐦 aves y 🐝 abejas. El calor es el suelo, combinado con la máxima del
+  aire (70 % suelo y 30 % aire) donde hay al menos 5 barrios con confianza alta o media. Aves y abejas salen
+  de `public/data/fauna.json` (GBIF, `python fauna_gbif.py` desde la raíz).
+- **Planificar**: largo y pesos del corredor (los recalcula el servidor), para humanos, aves, abejas o mixto,
+  la fauna registrada en los barrios que cruza y exportar los tramos en GeoJSON.
 - **Histórico**: barras mensuales del suelo (`public/data/historico.json`); al elegir un mes el servidor
   promedia desde ahí hasta hoy.
 
-`historico.json` es lo único estático. Para regenerarlo, desde la raíz del repo:
+`historico.json` y `fauna.json` son estáticos. Para regenerarlo, desde la raíz del repo:
 
 ```bash
 python web/scripts/exportar_datos.py
@@ -45,4 +43,4 @@ Las secciones entran al hacer scroll, la rama brota en la portada, las cifras cu
 el mapa cruza capas y vuela entre comunas, y el corredor nuevo aparece desde transparente. Con
 `prefers-reduced-motion` todo eso queda quieto.
 
-Capturas en `capturas/`.
+Capturas de pantalla en `capturas/`.
