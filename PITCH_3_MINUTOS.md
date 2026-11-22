@@ -19,7 +19,7 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
 ---
 
 ### 0:00 – 0:30 · Donde se necesita el verde
-* **Pantalla:** la portada de la página («Donde se necesita el verde») y luego «El calor ahora» con Providencia
+* **Pantalla:** la portada de la página («Donde se necesita el verde») y luego «Calor, árboles y personas» con Providencia
   y Cerro Navia elegidas, para que la tabla muestre las dos comunas lado a lado.
 * **Orador:**
   > *"Santiago no es desigual solo en ingresos: también en sombra. La tarde del 19 de febrero de 2026, el suelo
