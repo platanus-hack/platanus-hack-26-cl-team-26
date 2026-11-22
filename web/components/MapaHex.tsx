@@ -41,12 +41,14 @@ function tenir(mapa: MapaML) {
   }
 }
 
-// Corredor en verde hoja (más claro que las islas, con borde oliva oscuro) y mini islas de abejas en amarillo.
-export const COLOR_CORREDOR = "#62A83C", COLOR_MINI_ISLA = "#F4C430";
+// Corredor en lima (personas y aves) o negro con mini islas amarillas si el plan incluye abejas.
+export const COLOR_CORREDOR = "#B8E02E", COLOR_MINI_ISLA = "#F4C430";
+export const TONO_CORREDOR = { lima: { fondo: COLOR_CORREDOR, borde: "#3F5A00" }, abeja: { fondo: "#1F1F1A", borde: "#000000" } };
+export type TonoCorredor = keyof typeof TONO_CORREDOR;
 const TESELA_Z = 9;   // zoom de tesela único para cuadras, sectores y comunas (calzan entre sí y no se recargan)
 
 export default function MapaHex({ datos, capas, activa, corredor, comunas, distritos, capturas, recorridos, popupCaptura,
-  popupHex, datoHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, children }: {
+  popupHex, datoHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, tono = "lima", children }: {
   datos: GeoJSON.FeatureCollection;
   capas: Capa[];
   activa: string;
@@ -65,6 +67,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   alComuna?: (c: string) => void;            // doble clic en una cuadra o comuna: suma o quita su comuna
   alLazo?: (anillo: [number, number][] | null, pintadas?: number[]) => void;  // contorno cerrado en [lng, lat] (o null) y cuadras pintadas con el pincel
   etiqueta: string;
+  tono?: TonoCorredor;                       // colores del corredor: lima, o negro si el plan incluye abejas
   children?: React.ReactNode;                 // controles que flotan sobre el mapa
 }) {
   const [cont, visible] = useVisible<HTMLDivElement>();
@@ -561,6 +564,13 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
     const t = setTimeout(() => m.getLayer("corredor") && m.setPaintProperty("corredor", "fill-opacity", 0.92), 60);
     return () => clearTimeout(t);
   }, [corredor, listo]);
+
+  useEffect(() => {
+    const m = mapa.current;
+    if (!listo || !m?.getLayer("corredor")) return;
+    m.setPaintProperty("corredor", "fill-color", TONO_CORREDOR[tono].fondo);
+    m.setPaintProperty("corredor-borde", "line-color", TONO_CORREDOR[tono].borde);
+  }, [tono, listo]);
 
   useEffect(() => {
     const m = mapa.current;

@@ -6,7 +6,7 @@ import type { Metadata } from "next";
 // El pie de la página principal resume lo mismo y enlaza aquí.
 export const metadata: Metadata = {
   title: "Fuentes · Viridis",
-  description: "De dónde salen los datos de Viridis: satélites, censo, sensores de aire, registros de terreno y mapas base.",
+  description: "De dónde salen los datos de Viridis: satélites, censo, estaciones meteorológicas, registros de aves y abejas, y mapas base.",
 };
 
 type Fuente = { nombre: string; quien: string; uso: string; url: string; enlace: string };
@@ -51,33 +51,30 @@ const TEMAS: { id: string; titulo: string; acento: string; nota?: string; fuente
     ],
   },
   {
-    id: "aire", titulo: "Aire", acento: "en vivo",
-    nota: "Las lecturas se reparten por barrio (H3 resolución 7). El aire entra al índice de calor solo donde hay al menos 5 barrios medidos con confianza alta o media, y pesa 30 % frente al suelo.",
+    id: "aire", titulo: "Aire", acento: "máxima del día",
+    nota: "Cada noche se calcula la temperatura máxima del día anterior de cada estación oficial y se reparte por barrio (H3 resolución 7) con distancia inversa. Una estación cuenta solo si midió en al menos 3 de las 4 horas más calientes (14 a 18 h). El aire entra al índice de calor solo donde hay al menos 5 barrios con confianza alta o media, y pesa 30 % frente al suelo.",
     fuentes: [
-      { nombre: "SINCA", quien: "Ministerio del Medio Ambiente",
-        uso: "Temperatura y humedad horarias de 9 estaciones oficiales de Santiago.",
-        url: "https://sinca.mma.gob.cl/", enlace: "sinca.mma.gob.cl" },
       { nombre: "Red de estaciones automáticas", quien: "Dirección Meteorológica de Chile (DMC)",
-        uso: "Lecturas recientes de las estaciones meteorológicas de Santiago.",
+        uso: "Temperatura y humedad minuto a minuto de las estaciones de Santiago; de ahí sale la máxima del día.",
         url: "https://climatologia.meteochile.gob.cl/", enlace: "climatologia.meteochile.gob.cl" },
-      { nombre: "Sensor.Community", quien: "Red ciudadana abierta",
-        uso: "Sensores de vecinos; se descartan los que se alejan de las estaciones oficiales.",
-        url: "https://sensor.community/", enlace: "sensor.community" },
+      { nombre: "SINCA", quien: "Ministerio del Medio Ambiente",
+        uso: "Temperatura y humedad horarias de 9 estaciones oficiales de Santiago; se suman a las de la DMC.",
+        url: "https://sinca.mma.gob.cl/", enlace: "sinca.mma.gob.cl" },
     ],
   },
   {
-    id: "biodiversidad", titulo: "Biodiversidad", acento: "y terreno",
-    nota: "Las aves se graban quieto o caminando con el video; cada escucha mide el ruido del tráfico, y si no se oyen aves con ruido alto queda «no concluyente». Aves, abejas, mariposas y flores de las fotos son las que reconoce Claude. No detectar fauna no significa que no haya: una cuadra sin visitar vale 0, por eso su peso en el índice es bajo.",
+    id: "fauna", titulo: "Aves", acento: "y abejas",
+    nota: "Registros con coordenadas desde 2015, contados por barrio porque muchas ubicaciones tienen un margen de cientos de metros (las abejas con más de 1 km se descartan). La abeja de miel y el abejorro europeo van aparte, por exóticos. Un registro dice que alguien vio la especie ahí: no haber registro no significa que no esté, y hay más observadores en parques y cerros.",
     fuentes: [
-      { nombre: "BirdNET", quien: "K. Lisa Yang Center for Conservation Bioacoustics, Cornell · modelo CC BY-NC-SA 4.0",
-        uso: "Identifica aves por su canto en los audios grabados desde el teléfono, filtrando por lugar y semana del año.",
-        url: "https://birdnet.cornell.edu/", enlace: "birdnet.cornell.edu" },
-      { nombre: "Claude", quien: "Anthropic",
-        uso: "Revisa que cada foto de calle sirva y estima copa, espacio para plantar, fauna y flores.",
-        url: "https://www.anthropic.com/claude", enlace: "anthropic.com/claude" },
-      { nombre: "Capturas del equipo", quien: "Viridis",
-        uso: "Fotos, videos y audios con GPS tomados en terreno; complementan al satélite, no lo reemplazan.",
-        url: "/captura", enlace: "/captura (con la clave del equipo)" },
+      { nombre: "GBIF", quien: "Global Biodiversity Information Facility",
+        uso: "Reúne los registros de aves y abejas de Santiago de muchas fuentes; de aquí se descargan todos.",
+        url: "https://www.gbif.org/", enlace: "gbif.org" },
+      { nombre: "eBird", quien: "Cornell Lab of Ornithology",
+        uso: "Listas de aves que anotan observadores en todo el mundo; es la mayor parte de los registros de aves.",
+        url: "https://ebird.org/", enlace: "ebird.org" },
+      { nombre: "iNaturalist", quien: "California Academy of Sciences y National Geographic Society",
+        uso: "Fotos de fauna con la especie confirmada por la comunidad («grado de investigación»); casi todos los registros de abejas.",
+        url: "https://www.inaturalist.org/", enlace: "inaturalist.org" },
     ],
   },
   {
@@ -87,7 +84,7 @@ const TEMAS: { id: string; titulo: string; acento: string; nota?: string; fuente
         uso: "El fondo claro sobre el que se dibujan las cuadras.",
         url: "https://carto.com/basemaps", enlace: "carto.com/basemaps" },
       { nombre: "H3", quien: "Uber · código abierto",
-        uso: "La grilla de hexágonos: resolución 9 para las cuadras y 7 para los barrios del aire en vivo.",
+        uso: "La grilla de hexágonos: resolución 9 para las cuadras y 7 para los barrios del aire y la fauna.",
         url: "https://h3geo.org/", enlace: "h3geo.org" },
       { nombre: "MapLibre GL JS", quien: "Proyecto MapLibre · código abierto",
         uso: "El motor que dibuja los mapas de la página.",
@@ -110,7 +107,7 @@ export default function Fuentes() {
       <section className="b-sec b-pad"><div className="b-in">
         <div className="b-cab">
           <h1>De dónde salen <em>los datos</em></h1>
-          <p>Cada fuente, para qué la usamos y su sitio oficial. Todo es público, salvo las capturas que el equipo toma en terreno.</p>
+          <p>Cada fuente, para qué la usamos y su sitio oficial. Todo es público.</p>
         </div>
         <nav className="f-indice" aria-label="Temas">
           {TEMAS.map((t) => <a key={t.id} className="pill" href={`#${t.id}`}>{t.titulo} {t.acento}</a>)}
