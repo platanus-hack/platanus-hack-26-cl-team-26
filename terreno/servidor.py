@@ -61,7 +61,8 @@ log = logging.getLogger("terreno")
 def _resumen(r: dict) -> dict:
     return {"hexes": len(r["hexes"]), "km": round(r["length_km"], 2),
             "urgencia_cubierta": round(r["urgencia_cubierta"], 3), "urgencia_azar": round(r["urgencia_azar"], 3),
-            "personas_cubiertas": r["personas_cubiertas"], "verificados": r.get("verificados", 0)}
+            "personas_cubiertas": r["personas_cubiertas"], "verificados": r.get("verificados", 0),
+            "km_min": round(r["km_min"], 2) if r.get("km_min") else None}
 
 
 def _num(x, lo=None, hi=None):
@@ -108,6 +109,7 @@ class Seleccion(BaseModel):
     w_arbol: float | None = None
     w_personas: float | None = None
     w_bio: float | None = None
+    vecinas: bool | None = None          # el corredor puede partir o llegar a parques de las comunas vecinas
 
 
 def distritos(df: pd.DataFrame) -> dict[tuple[str, str], str]:
@@ -196,7 +198,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     def resolver(st: dict, terreno=None):
         p = st["p"]
         wc, wa, wp, wb = p["w"]
-        return solve_corridor(st["sub"], p["km"], wc, wa, wp, live=estado["live"], terreno=terreno, w_bio=wb)
+        return solve_corridor(st["sub"], p["km"], wc, wa, wp, live=estado["live"], terreno=terreno, w_bio=wb,
+                              apoyo=st.get("apoyo"))
 
     def elegir(cambio: Seleccion, st: dict | None = None):
         """Fija el área (comunas → distritos → zona), presupuesto y pesos de una sesión, y su línea base sin
@@ -230,6 +233,15 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             en_zona = sub[sub["h3_index"].isin(p["zona"])]
             if len(en_zona):  # como en la app de Rol 3: una zona fuera del área no la vacía
                 sub = en_zona
+        if cambio.vecinas is not None:
+            p["vecinas"] = cambio.vecinas
+        # Apoyo: el resto de las comunas elegidas (si hay sector o zona) y sus comunas vecinas. Sus parques e islas
+        # verdes sirven de extremo del corredor, que igual debe ir en su mayoría por lo elegido.
+        apoyo = None
+        if p.get("vecinas") and len(sub):
+            cerca = set(p["comunas"]).union(*(vecinas[c] for c in p["comunas"]))
+            apoyo = df[df["comuna"].isin(cerca) & ~df.index.isin(sub.index)]
+        st["apoyo"] = apoyo if apoyo is not None and len(apoyo) else None
         anterior = st.get("area")
         st["p"], st["sub"] = p, sub
         st["area"] = tuple(sub.index)
@@ -461,7 +473,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         p = st["p"]
         return {"comunas": p["comunas"], "distritos": p["distritos"], "zona": len(p["zona"] or []),
                 "km": p["km"], "w_calor": p["w"][0], "w_arbol": p["w"][1], "w_personas": p["w"][2],
-                "w_bio": p["w"][3], "birdnet": aves.estado()}
+                "w_bio": p["w"][3], "vecinas": bool(p.get("vecinas")), "birdnet": aves.estado()}
 
     dist_por_comuna = {c: sorted(v, key=lambda n: int(n.rsplit(" ", 1)[1])) for c, v in distritos_de.items()}
 
@@ -591,6 +603,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
                 "totales": {"capturas": len(caps), "cuentan": sum(n_fotos.values()),
                             "escuchas": sum(n_escuchas.values())},
                 "fauna_corredor": _fauna(ahora["hexes"], terreno),
+                # Cuadras del corredor en comunas vecinas (opción «vecinas»): no están en `hex`, van aparte.
+                "fuera": [{"h": h, "comuna": comuna_de.get(h)} for h in ahora.get("fuera", [])],
                 "antes": {**_resumen(antes), "personas_azar": antes["personas_azar"]},
                 "ahora": {**_resumen(ahora), "personas_azar": ahora["personas_azar"]}}
 

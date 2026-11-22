@@ -177,8 +177,19 @@ def _red_continua(tramos, paso, budget_km):
 
 
 def solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None,
-                   terreno=None, w_bio=0.0) -> dict:
+                   terreno=None, w_bio=0.0, apoyo=None) -> dict:
+    """`apoyo`: cuadras de comunas vecinas (mismas columnas que df, sin repetir). Sus parques sirven de extremo y
+    sus cuadras de paso, pero cada tramo debe ir en su mayoría por df. La urgencia que se devuelve es solo la de df."""
     U_todo = urgencia(df, w_calor, w_arbol, w_personas, live, terreno, w_bio)
+    nucleo = pd.Series(True, index=df.index)
+    if apoyo is not None and len(apoyo):
+        junto = pd.concat([df, apoyo])
+        # La urgencia de lo elegido no cambia al sumar apoyo; la del apoyo se mide sobre el conjunto.
+        U_ap = urgencia(junto, w_calor, w_arbol, w_personas, live, terreno, w_bio).loc[apoyo.index]
+        nucleo = pd.concat([nucleo, pd.Series(False, index=apoyo.index)])
+        U_propia, df, U_todo = U_todo, junto, pd.concat([U_todo, U_ap])
+    else:
+        U_propia = U_todo
     ok = df["es_parque"] | (df["poblacion"] >= MIN_PERSONAS_HEX)
     verificado = pd.Series(False, index=df.index)
     if terreno is not None and len(terreno):
@@ -189,10 +200,23 @@ def solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, 
     ok = ok.to_numpy()
     hexs = df["h3_index"][ok].tolist()
     U, parque, pob = U_todo[ok].to_numpy(), df["es_parque"][ok].to_numpy(), df["poblacion"][ok].to_numpy()
+    nuc = nucleo[ok].to_numpy()
     idx = {h: i for i, h in enumerate(hexs)}
     vec = [[idx[v] for v in h3.grid_disk(h, 1) if v != h and v in idx] for h in hexs]
     dist, etiq, prev = _dijkstra(vec, np.where(parque, 0.0, 1.0 / (EPS + U)), parque)
     tramos = _tramos(vec, dist, etiq, prev, parque, U)
+    if not nuc.all():
+        # Con apoyo: los tramos que van al menos la mitad por lo elegido, más los que ya salían sin apoyo
+        # (solo por lo elegido y entre sus propios parques), para que activar el apoyo nunca quite opciones.
+        tramos = [t for t in tramos if 2 * int(nuc[t[2]].sum()) >= len(t[2])]
+        vec_n = [[v for v in vs if nuc[v]] if nuc[i] else [] for i, vs in enumerate(vec)]
+        par_n = parque & nuc
+        d_n, e_n, p_n = _dijkstra(vec_n, np.where(par_n, 0.0, 1.0 / (EPS + U)), par_n)
+        vistos = {frozenset(t[2]) for t in tramos}
+        for a, b, cam, um in _tramos(vec_n, d_n, e_n, p_n, par_n, U):
+            if frozenset(cam) not in vistos:
+                tramos.append((int(etiq[a]), int(etiq[b]), cam, um))  # mismas etiquetas de parque que el resto
+        tramos.sort(key=lambda t: (-t[3], len(t[2])))
     paso = math.sqrt(3) * h3.average_hexagon_edge_length(9, unit="km")  # ~0,35 km entre centros
 
     red = _red_continua(tramos, paso, budget_km)
@@ -205,14 +229,16 @@ def solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, 
 
     # Azar: mismas cantidades de hexágonos por tramo, caminatas sin repetir desde junto a un parque.
     rng = random.Random(0)
-    inicio = [i for i in range(len(vec)) if not parque[i] and any(parque[v] for v in vec[i])]
+    inicio = [i for i in range(len(vec)) if nuc[i] and not parque[i] and any(parque[v] for v in vec[i])]
+    if not inicio:  # lo elegido no toca ningún parque (el corredor llega a los de comunas vecinas)
+        inicio = [i for i in range(len(vec)) if nuc[i] and not parque[i]]
     u_az, p_az = [], []
     for _ in range(N_AZAR if sel and inicio else 0):
         vis = set()
         for k in largos:
             cam = [rng.choice(inicio)]
             while len(cam) < k:
-                op = [v for v in vec[cam[-1]] if not parque[v] and v not in vis and v not in cam]
+                op = [v for v in vec[cam[-1]] if nuc[v] and not parque[v] and v not in vis and v not in cam]
                 if not op:
                     break
                 cam.append(rng.choice(op))
@@ -230,5 +256,8 @@ def solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, 
         "personas_azar": int(np.mean(p_az)) if p_az else 0,
         "verificados": int(verificado[ok].to_numpy()[sel].sum()) if sel else 0,
         "tramos": [[hexs[i] for i in tramos[k][2]] for k in red],
-        "urgencia": U_todo,
+        "urgencia": U_propia,
+        "fuera": [hexs[i] for i in sel if not nuc[i]],   # cuadras del corredor en comunas vecinas (apoyo)
+        # Largo del tramo más corto entre dos parques: el presupuesto mínimo para que salga algún corredor.
+        "km_min": min((len(t[2]) for t in tramos), default=0) * paso or None,
     }

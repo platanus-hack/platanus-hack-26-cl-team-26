@@ -78,6 +78,9 @@ function Dif({ v, base, u, bueno }: { v: number; base: number; u: string; bueno?
 const MESES_L = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const fechaLst = (f: string) => { const [a, m, d] = f.split("-").map(Number); return `${d} de ${MESES_L[m - 1]} de ${a}`; };
 
+// Presupuesto mínimo para que salga un corredor, redondeado hacia arriba al paso del control (0,5 km); 0 si no hay.
+const a0km = (km?: number | null) => (km ? Math.min(20, Math.ceil(km * 2) / 2) : 0);
+
 function Seccion({ id, alt, children }: { id: string; alt?: boolean; children: React.ReactNode }) {
   const ref = useRevela<HTMLElement>();
   return (
@@ -409,16 +412,25 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   }, [H, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
   const anillosH = useMemo(() => H.h.map(anillo), [H.h]);
   // El corredor solo se rearma si cambian sus cuadras (no cada vez que llega un estado nuevo del servidor).
-  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("");
+  // Con «comunas vecinas» el corredor puede salir de lo elegido: esas cuadras llegan aparte (estado.fuera).
+  const fuera = estado.fuera ?? [];
+  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("") + fuera.map((f) => f.h).join();
   const corredor = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
     features: H.h.flatMap((h, i) => [
       ...(H.ahora[i] ? ["ahora"] : []), ...(H.antes[i] ? ["antes"] : []), ...(H.verificado[i] ? ["verificado"] : []),
-    ].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: h, comuna: H.comuna[i] }, geometry: { type: "Polygon" as const, coordinates: [anillosH[i]] } }))),
+    ].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: h, comuna: H.comuna[i] }, geometry: { type: "Polygon" as const, coordinates: [anillosH[i]] } })))
+      .concat(fuera.map((f) => ({ type: "Feature" as const, properties: { tipo: "ahora", h3: f.h, comuna: f.comuna ?? "" }, geometry: { type: "Polygon" as const, coordinates: [anillo(f.h)] } }))),
   }), [firmaCorredor, anillosH]); // eslint-disable-line react-hooks/exhaustive-deps
   const enCorredor = H.h.flatMap((_, i) => (H.ahora[i] ? [i] : []));
-  const comunasCorredor = [...new Set(enCorredor.map((i) => H.comuna[i]))].sort();
-  const claveCorredor = enCorredor.map((i) => H.h[i]).join();
+  const comunasFuera = [...new Set(fuera.flatMap((f) => (f.comuna ? [f.comuna] : [])))].sort();
+  const comunasCorredor = [...new Set([...enCorredor.map((i) => H.comuna[i]), ...comunasFuera])].sort();
+  const claveCorredor = enCorredor.map((i) => H.h[i]).join() + fuera.map((f) => f.h).join();
+  const anillosCorredor = () => [...enCorredor.map((i) => anillosH[i]), ...fuera.map((f) => anillo(f.h))];
+  // Conectar con parques e islas verdes de las comunas vecinas (no aplica con todo Santiago elegido).
+  const vecinasOn = !!p.vecinas;
+  const hayVecinas = !nada;
+  const kmSugerido = a0km(estado.ahora.km_min);
   // Por defecto se ve el área completa (las 34 comunas si están todas); el corredor se acerca a pedido.
   const [cerca, setCerca] = useState(false);
   // Planificar viene después del filtro: sin nada elegido el mapa invita a elegir (o a usar todo Santiago a propósito).
@@ -429,7 +441,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const alDia = !ocupado && estado.seleccion.length === esperadas.length && esperadas.every((c) => estado.seleccion.includes(c)) && estado.parametros.zona === zonaIdx.length;
   const verCorredor = planListo && alDia;
   useEffect(() => setCerca(false), [encuadreArea]);
-  const encuadrePlan = useMemo(() => (cerca && enCorredor.length ? encuadreDe(enCorredor.map((i) => anillosH[i]), 0.025) : encuadreArea),
+  const encuadrePlan = useMemo(() => (cerca && enCorredor.length ? encuadreDe(anillosCorredor(), 0.025) : encuadreArea),
     [cerca, claveCorredor, encuadreArea]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function exportar() {
@@ -551,6 +563,12 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             <label htmlFor="p-km"><span>Presupuesto</span><b>{formato(pesos.km, pesos.km % 1 ? 1 : 0)} km</b></label>
             <input id="p-km" type="range" min={1} max={20} step={0.5} value={pesos.km} onChange={(e) => mover("km", Number(e.target.value))} />
           </div>
+          <label className={`vecinas${hayVecinas ? "" : " no"}`}>
+            <input type="checkbox" checked={vecinasOn && hayVecinas} disabled={!hayVecinas || ocupado} onChange={(e) => cambiar({ vecinas: e.target.checked })} />
+            <span><b>Conectar con comunas vecinas</b><small>{hayVecinas
+              ? "El corredor puede partir o llegar a parques e islas verdes de las comunas de al lado. Al menos la mitad de cada tramo va por lo elegido."
+              : "Con todo Santiago elegido ya se usan todos los parques."}</small></span>
+          </label>
         </div>
         <div className="b-plan">
           <div className="izq escalon" style={est(3)}>
@@ -604,10 +622,21 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
                 </div>
                 <div className="cifra escalon" style={est(5)}>
                   <b><Cifra valor={a.km} dec={2} sufijo={" km"} /></b>
-                  <span>en {a.hexes} cuadras{comunasCorredor.length ? `, en ${comunasCorredor.join(", ")}` : ""}. Urgencia cubierta {formato(a.urgencia_cubierta, 3)}, contra {formato(a.urgencia_azar, 3)} al azar.</span>
+                  <span>en {a.hexes} cuadras{comunasCorredor.length ? `, en ${comunasCorredor.join(", ")}` : ""}{fuera.length ? ` (${fuera.length} en comunas vecinas)` : ""}. Urgencia cubierta {formato(a.urgencia_cubierta, 3)}, contra {formato(a.urgencia_azar, 3)} al azar.</span>
                 </div>
               </>
-            ) : <p className="aviso">Sin corredor: el área no tiene un parque consolidado desde donde partir. Suma una comuna vecina.</p>}
+            ) : (
+              <div className="aviso sin-corredor">
+                <b>Sin corredor con {formato(pesos.km, pesos.km % 1 ? 1 : 0)} km.</b>
+                {kmSugerido
+                  ? <span>El tramo más corto entre dos parques{vecinasOn ? ", contando los de las comunas vecinas," : ""} mide {formato(estado.ahora.km_min ?? 0, 1)} km.</span>
+                  : <span>{vecinasOn ? "Ni lo elegido ni sus comunas vecinas tienen dos parques que se puedan unir pasando por aquí. Suma otra comuna." : "Lo elegido no tiene dos parques o islas verdes que unir."}</span>}
+                <span className="grupo" style={{ gap: 8 }}>
+                  {!vecinasOn && hayVecinas && <button type="button" className="mini" onClick={() => cambiar({ vecinas: true })}>Conectar con comunas vecinas</button>}
+                  {kmSugerido > 0 && <button type="button" className="mini" onClick={() => mover("km", kmSugerido)}>Subir el presupuesto a {formato(kmSugerido, kmSugerido % 1 ? 1 : 0)} km</button>}
+                </span>
+              </div>
+            )}
             <table className="terreno num">
               <caption>Efecto de la captura en terreno</caption>
               <thead><tr><th /><th>Sin terreno</th><th>Con terreno</th></tr></thead>

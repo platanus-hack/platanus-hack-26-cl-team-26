@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type Parametros = {
   comunas: string[]; distritos: string[]; zona: number; km: number; w_calor: number; w_arbol: number; w_personas: number;
-  w_bio?: number; birdnet?: string;
+  w_bio?: number; vecinas?: boolean; birdnet?: string;
 };
 export type InfoComunas = {
   comunas: string[]; vecinas: Record<string, string[]>; geo: Record<string, number[][][][]>;
@@ -21,7 +21,7 @@ export type HexCols = {
 };
 export type ResumenCorredor = {
   hexes: number; km: number; urgencia_cubierta: number; urgencia_azar: number; personas_cubiertas: number;
-  personas_azar: number; verificados: number;
+  personas_azar: number; verificados: number; km_min?: number | null;
 };
 export type Captura = {
   id: string; lat: number; lon: number; validacion: string; cuenta: boolean; fuente?: string; arbol_pct?: number;
@@ -43,12 +43,13 @@ export type Estado = {
   recorridos: Recorrido[]; en_vivo: boolean; antes: ResumenCorredor; ahora: ResumenCorredor;
   totales: { capturas: number; cuentan: number; escuchas: number };
   fauna_corredor?: { especies: string[]; polinizadores: number };
+  fuera?: { h: string; comuna: string | null }[];   // cuadras del corredor en comunas vecinas
 };
 export type DetalleHex = {
   h3_index: string; comuna: string | null; n_fotos: number; n_escuchas: number; fotos: Captura[]; escuchas: Escucha[];
   especies?: string[]; polinizadores?: number; flores?: number | null;
 };
-export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number; w_bio: number }>;
+export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number; w_bio: number; vecinas: boolean }>;
 
 const SONDEO_MS = 3000;
 // Sesión de este navegador en el servidor: área, presupuesto y pesos son solo suyos y se pierden al recargar.
