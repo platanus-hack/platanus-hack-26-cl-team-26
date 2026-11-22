@@ -35,6 +35,8 @@ const VERDE = ["#EFE9DA", "#C5CDA6", "#8C9A63", "#4F6E31"];
 // tonos algo terrosos para que convivan con el crema y el oliva de la página.
 const ROJO = ["#F6ECDD", "#EDB592", "#D2603F", "#96261C"];
 const NARANJO = ["#F6EFD2", "#EBD488", "#DE9A48", "#B95A24"];   // de mostaza a terracota
+// Bajo esto una cuadra no es ciudad (igual que MIN_PERSONAS_HEX del optimizador, que tampoco traza por ahí).
+const SIN_GENTE = 50;
 const ISLA = "#4F6E31";   // el oliva del logo
 const MORADO = ["#F3ECE6", "#D3BBD6", "#9A6BA8", "#5C2F78"];   // densidad de personas
 const grad = (c: string[]) => `linear-gradient(90deg,${c.join(",")})`;
@@ -204,7 +206,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const anillos = useMemo(() => B.h.map(anillo), [B.h]);
   const coleccion = (props: (i: number) => Record<string, unknown>): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
-    features: B.h.map((_, i) => ({ type: "Feature", id: i, properties: { i, c: comIdx.get(B.comuna[i]), cn: B.comuna[i], ...props(i) }, geometry: { type: "Polygon", coordinates: [anillos[i]] } })),
+    features: B.h.map((_, i) => ({ type: "Feature", id: i, properties: { i, c: comIdx.get(B.comuna[i]), cn: B.comuna[i], v: !B.parque[i] && B.pob[i] < SIN_GENTE, ...props(i) }, geometry: { type: "Polygon", coordinates: [anillos[i]] } })),
   });
 
   // Cuadras elegidas (índices de la base). null = todo Santiago.
@@ -510,6 +512,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
           <span><i className="linea" style={{ borderTop: "2px solid #2F4520" }} />Comuna</span>
           <span><i className="linea" style={{ borderTop: "2px dashed #2F4520", opacity: 0.7 }} />Sector</span>
           {estado.totales.cuentan + estado.totales.escuchas > 0 && <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Con fotos o aves de terreno: un clic para verlas</span>}
+          <span><i className="cuadro" style={{ background: "#B9B5A3", opacity: 0.45 }} />Tenue: casi sin habitantes (cerros, campo, industria)</span>
           {!nada && <span><i className="cuadro" style={{ background: "#C5CDA6", opacity: 0.35 }} />Fuera de lo elegido</span>}
           <span className="detalle num" aria-live="polite">{det != null
             ? `${B.distrito[det]}${B.parque[det] ? ", parque" : ""}: suelo ${formato(B.lst[det] ?? 0, 1)} °C${B.vivo[det] != null ? `, aire ${formato(B.vivo[det] as number, 1)} °C` : ""}, copa ${formato(B.copa[det] ?? 0, 1)} %, ${formato(B.pob[det])} personas.${terrenoDe(det)}`

@@ -17,6 +17,10 @@ export type Capa = { id: string; color: ExpressionSpecification };
 // Lo elegido: índices de comuna (propiedad c de cada cuadra) o cuadras sueltas (propiedad i). null = todo Santiago.
 export type Foco = { comunas: number[]; hexes: number[] } | null;
 const TENUE = 0.5, VELO = 0.42;   // lo no elegido: capa más transparente y un velo oscuro encima
+// Cuadras casi sin habitantes que no son parque (propiedad v: cerros, campo, aeropuerto, industria): muy tenues,
+// para que se lea la mancha urbana real y no el rectángulo con que se recortaron los datos.
+const VACIA = 0.2;
+const vacia: ExpressionSpecification = ["boolean", ["get", "v"], false];
 
 function tenir(mapa: MapaML) {
   for (const l of mapa.getStyle().layers ?? []) {
@@ -126,7 +130,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
           nuevo.addLayer({
             id: c.id, type: "fill", source: "hex",
             layout: { visibility: c.id === ini.activa ? "visible" : "none" },
-            paint: { "fill-color": c.color, "fill-opacity": OPACIDAD, "fill-opacity-transition": fundido, "fill-antialias": false },
+            paint: { "fill-color": c.color, "fill-opacity": ["case", vacia, VACIA, OPACIDAD], "fill-opacity-transition": fundido, "fill-antialias": false },
           });
         }
         // Con todo el Gran Santiago a la vista los bordes de 13 mil cuadras solo ensucian y cuestan; aparecen al acercar.
@@ -328,7 +332,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
     if (!listo || !m) return;
     // Los parques (propiedad k, solo en Planificar) nunca se apagan: son las islas verdes que une el corredor.
     const dentro: ExpressionSpecification = ["any", ["boolean", ["get", "k"], false], ["in", ["get", "c"], ["literal", foco?.comunas ?? []]], ["in", ["get", "i"], ["literal", foco?.hexes ?? []]]];
-    for (const c of capas) if (m.getLayer(c.id)) m.setPaintProperty(c.id, "fill-opacity", foco ? ["case", dentro, 0.95, TENUE] : OPACIDAD);
+    for (const c of capas) if (m.getLayer(c.id)) m.setPaintProperty(c.id, "fill-opacity", foco ? ["case", vacia, ["case", dentro, VACIA + 0.1, VACIA * 0.6], dentro, 0.95, TENUE] : ["case", vacia, VACIA, OPACIDAD]);
     m.setPaintProperty("velo", "fill-opacity", foco ? ["case", dentro, 0, VELO] : 0);
     m.setLayoutProperty("velo", "visibility", foco ? "visible" : "none");
   }, [claveFoco, capas, listo]); // eslint-disable-line react-hooks/exhaustive-deps
