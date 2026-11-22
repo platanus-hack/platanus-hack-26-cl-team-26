@@ -80,9 +80,6 @@ function Dif({ v, base, u, bueno }: { v: number; base: number; u: string; bueno?
   return <span className={`dif${peor ? " peor" : " mejor"}`}>{d > 0 ? "+" : "−"}{formato(Math.abs(d), 1)}{u}</span>;
 }
 
-const MESES_L = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
-const fechaLst = (f: string) => { const [a, m, d] = f.split("-").map(Number); return `${d} de ${MESES_L[m - 1]} de ${a}`; };
-
 // Presupuesto mínimo para que salga un corredor, redondeado hacia arriba al paso del control (0,5 km); 0 si no hay.
 const a0km = (km?: number | null) => (km ? Math.min(20, Math.ceil(km * 2) / 2) : 0);
 
@@ -500,7 +497,6 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       <Seccion id="ahora" alt>
         <div className="b-cab escalon">
           <h2>El calor <em>ahora</em></h2>
-          {estado.lst_fecha && <p className="nota" style={{ flexBasis: "100%", margin: 0 }}>Temperatura del suelo de la tarde del {fechaLst(estado.lst_fecha)} (Landsat), la misma imagen de verano con que se calcula la urgencia. Las escenas más recientes están en el histórico.</p>}
           <div className="grupo" role="group" aria-label="Capa del mapa">
             {CAPAS_AHORA.map((c) => <button key={c.id} type="button" className="pill" aria-pressed={capa === c.id} onClick={() => setCapa(c.id)}>{NOMBRE_CAPA[c.id]}</button>)}
           </div>
