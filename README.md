@@ -21,6 +21,27 @@ tan vulnerable es al calor, y traza el corredor que une isla con isla donde más
 exporta en GeoJSON, listo para QGIS: qué plantar en cada cuadra (árboles o flores) y sus datos, con el criterio
 usado y la comparación con un trazado al azar.
 
+## Resultados
+
+Con 3 km de presupuesto y los pesos por omisión, el corredor llega a más gente que un trazado al azar del mismo
+largo (promedio de 200 caminatas al azar que parten junto a un parque):
+
+| Dónde | Personas en las cuadras del corredor | Al azar | Diferencia |
+|---|---|---|---|
+| Providencia y Cerro Navia | 11.908 | 8.261 | +44 % |
+| Las 34 comunas (el corredor cae en Pudahuel) | 11.393 | 7.002 | +63 % |
+
+Y la gente que cubre el corredor de las 34 comunas es más vulnerable al calor que el promedio de Santiago (índice
+0,52 contra 0,40, ponderado por personas).
+
+Con 100 km de corredores para personas, aves y abejas («Santiago conectado»), 30 islas verdes dejan de estar
+solas (4.055 ha de hábitat unido) y la gente a menos de 300 m de un espacio verde pasa de 862.801 (14 %) a
+1.627.165 (26 % de Santiago).
+
+Para reproducirlas, con los datos del repo y sin internet: `python -m verdeh3.contrato` escribe
+`data/cifras_pitch.json` y `python red_conectada.py` escribe `web/public/data/red.json`. Los dos dejan los archivos
+idénticos a los versionados. Las cifras no usan la temperatura del aire, que cambia cada día.
+
 ## Cómo funciona
 
 ```
@@ -46,6 +67,8 @@ Estaciones DMC y SINCA ─► maximas.py, cada noche en GitHub Actions ─► da
 - **No inventamos datos.** El aire es la máxima de ayer de estaciones oficiales: entra solo en los barrios con dato
   confiable, y solo si son al menos 5. No prometemos grados de enfriamiento: no hay un coeficiente publicado que
   citar.
+
+Cada decisión, con la alternativa que descartamos y su evidencia, está en [docs/decisiones.md](docs/decisiones.md).
 
 ## Cómo correrlo
 
