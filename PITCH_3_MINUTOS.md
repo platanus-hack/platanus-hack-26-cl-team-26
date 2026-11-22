@@ -40,7 +40,7 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
   > —que sigue al mapa de referencia de Meta con correlación **0,92**, contra **0,84** del mapa global de la
   > ESA— y las personas que viven ahí según el **Censo 2024**, más la cercanía a colegios, consultorios, metro y
   > paraderos. Con eso arma un índice de urgencia: 35 % calor, 35 % falta de árboles, 20 % personas y 10 %
-  > vulnerabilidad al calor: personas mayores, niños pequeños, hacinamiento, también del Censo.
+  > vulnerabilidad: personas mayores, niños pequeños, hacinamiento, también del Censo.
   > Y suma a quienes también viven en la ciudad: **655.157** registros de aves y **1.603** de abejas nativas
   > desde 2015, de eBird, iNaturalist y museos, por barrio."*
 * Fuente de la red completa: `web/public/data/red.json` (`red_conectada.py`, «todas», 100 km; personas en las

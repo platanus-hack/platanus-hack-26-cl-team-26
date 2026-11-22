@@ -57,7 +57,7 @@ Estaciones DMC y SINCA ─► maximas.py, cada noche en GitHub Actions ─► da
   parques cuestan 0. Dijkstra da el camino más barato entre parques vecinos, y los tramos se unen en una sola red
   continua hasta llenar el presupuesto. Cada resultado se compara con corredores al azar del mismo largo.
 - **Un criterio por especie.** Personas: urgencia (35 % calor, 35 % falta de árboles, 20 % personas y 10 %
-  vulnerabilidad al calor, todos ajustables). Aves: resistencia según copa, pasto y construido, para buscar copa
+  vulnerabilidad, todos ajustables). Aves: resistencia según copa, pasto y construido, para buscar copa
   continua. Abejas: mini islas floridas, una cuadra por medio, para que el presupuesto alcance el doble de
   distancia. Con varias especies se promedian.
 - **Copa de árboles con un modelo propio** sobre Sentinel-2, entrenado con el mapa de altura de copa de Meta y

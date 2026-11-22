@@ -41,11 +41,11 @@ const TEMAS: { id: string; titulo: string; acento: string; nota?: string; mas?: 
   },
   {
     id: "personas", titulo: "Personas", acento: "y servicios",
-    nota: "La capa de personas es 70 % habitantes de la cuadra y 30 % cercanía a colegios, salud, metro y paraderos. La vulnerabilidad al calor promedia la sensibilidad (personas de 60 años o más, de 0 a 5 años y con discapacidad) y la capacidad de adaptarse (viviendas hacinadas e irrecuperables y años de escolaridad), cada parte normalizada sobre las 34 comunas; entra solo en la urgencia de las personas, con 10 % por omisión. Ninguna es ingreso: el Censo no lo pregunta.",
-    mas: ["#vulnerabilidad", "Cómo se calcula la vulnerabilidad al calor ↓"],
+    nota: "La capa de personas es 70 % habitantes de la cuadra y 30 % cercanía a colegios, salud, metro y paraderos. La vulnerabilidad promedia la sensibilidad (personas de 60 años o más, de 0 a 5 años y con discapacidad) y la capacidad de adaptarse (viviendas hacinadas e irrecuperables y años de escolaridad), cada parte normalizada sobre las 34 comunas; entra solo en la urgencia de las personas, con 10 % por omisión. Ninguna es ingreso: el Censo no lo pregunta.",
+    mas: ["#vulnerabilidad", "Cómo se calcula la vulnerabilidad ↓"],
     fuentes: [
       { nombre: "Censo de Población y Vivienda 2024", quien: "Instituto Nacional de Estadísticas (INE)",
-        uso: "Habitantes por manzana y, para la vulnerabilidad al calor, edades, discapacidad, viviendas hacinadas e irrecuperables y escolaridad, repartidos a cada cuadra según el área que comparten.",
+        uso: "Habitantes por manzana y, para la vulnerabilidad, edades, discapacidad, viviendas hacinadas e irrecuperables y escolaridad, repartidos a cada cuadra según el área que comparten.",
         url: "https://censo2024.ine.gob.cl/", enlace: "censo2024.ine.gob.cl" },
       { nombre: "OpenStreetMap", quien: "Colaboradores de OpenStreetMap · extracto de Geofabrik",
         uso: "Parques y cerros isla, colegios, centros de salud, metro y paraderos; y los nombres de autopistas y avenidas del mapa.",
@@ -112,7 +112,7 @@ export default function Fuentes() {
           {TEMAS.map((t) => (
             <Fragment key={t.id}>
               <a className="pill" href={`#${t.id}`}>{t.titulo} {t.acento}</a>
-              {t.id === "personas" && <a className="pill" href="#vulnerabilidad">Vulnerabilidad al calor</a>}
+              {t.id === "personas" && <a className="pill" href="#vulnerabilidad">Vulnerabilidad</a>}
             </Fragment>
           ))}
         </nav>

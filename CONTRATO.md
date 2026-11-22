@@ -25,7 +25,7 @@ Sin nulos y de menos de 5 MB. También existen:
 | `poblacion` | int | personas en el hexágono | Censo 2024 (INE), personas por manzana repartidas por área |
 | `social` | float 0–1 | cercanía a colegios, salud, metro y paraderos: promedio de max(0, 1 − distancia/1 km) | OpenStreetMap |
 | `es_parque` | bool | toca un parque consolidado (≥ 5.000 m²) y ≥ 25% del hexágono es área verde | OpenStreetMap |
-| `vulnerabilidad` | float 0–1 | vulnerabilidad al calor de quienes viven ahí (ver abajo) | Censo 2024 (INE), variables por manzana repartidas por área |
+| `vulnerabilidad` | float 0–1 | vulnerabilidad de quienes viven ahí (ver abajo) | Censo 2024 (INE), variables por manzana repartidas por área |
 
 Columnas extra (pueden ignorarse): `urgencia` y `en_corredor`, calculadas con los pesos por defecto y 3 km;
 `lst_fecha` (fecha de la escena de `lst_c`) y `lst_c_ultima` / `lst_fecha_ultima` (escena más reciente

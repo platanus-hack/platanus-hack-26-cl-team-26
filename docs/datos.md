@@ -79,7 +79,7 @@ python -m tests.test_contrato
 
 `optimizer.solve_corridor(df, budget_km=3.0, w_calor=0.35, w_arbol=0.35, w_personas=0.2, live=None, w_vuln=0.1)`
 devuelve el corredor continuo entre parques que más urgencia cubre dentro del presupuesto. `w_vuln` pesa la
-vulnerabilidad al calor del Censo 2024 (personas mayores, niños pequeños, discapacidad, hacinamiento, viviendas
+vulnerabilidad del Censo 2024 (personas mayores, niños pequeños, discapacidad, hacinamiento, viviendas
 irrecuperables y escolaridad); es solo de las personas, el corredor de aves y abejas no la usa.
 
 ## Aire: máxima del día

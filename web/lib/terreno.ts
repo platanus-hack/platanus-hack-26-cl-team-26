@@ -17,7 +17,7 @@ export type InfoComunas = {
 export type HexCols = {
   h: string[]; comuna: string[]; distrito: string[]; u: (number | null)[]; lst: (number | null)[]; vivo: (number | null)[];
   ndvi: (number | null)[]; copa: (number | null)[]; pob: number[]; social: (number | null)[];
-  vuln?: (number | null)[];  // vulnerabilidad al calor de quienes viven en la cuadra (Censo 2024), 0..1
+  vuln?: (number | null)[];  // vulnerabilidad de quienes viven en la cuadra (Censo 2024), 0..1
   parque: boolean[]; antes: boolean[]; ahora: boolean[]; checkpoint?: boolean[]; verificado: boolean[];
   bio?: (number | null)[]; especies?: string[]; polinizadores?: number[];
   fotos?: number[]; escuchas?: number[];  // cuántas fotos que cuentan y escuchas analizadas hay en cada cuadra

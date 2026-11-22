@@ -5,7 +5,7 @@ python -m verdeh3.contrato          # data/santiago_h3.parquet (par de la demo),
 
 Requiere antes: verdeh3.pipeline, verdeh3.marcar_gs, verdeh3.worldcover y verdeh3.censo sobre datos/salida_h3_gs.
 Población: Censo 2024 por manzana (poblacion_censo); si no está, WorldPop (poblacion).
-Vulnerabilidad al calor: de los conteos censo_* que agrega verdeh3.censo (ver vulnerabilidad()).
+Vulnerabilidad: de los conteos censo_* que agrega verdeh3.censo (ver vulnerabilidad()).
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ TIPOS = {"h3_index": "str", "h3_padre": "str", "comuna": "str", "lat": "float64"
          "ndvi": "float64", "copa_modelo_pct": "float64", "arbol_pct": "float64", "pasto_pct": "float64", "construido_pct": "float64",
          "poblacion": "int64", "social": "float64", "es_parque": "bool", "vulnerabilidad": "float64"}
 
-# Vulnerabilidad al calor (Censo 2024 por manzana, repartido a cada cuadra por verdeh3.censo). Componentes en %:
+# Vulnerabilidad (Censo 2024 por manzana, repartido a cada cuadra por verdeh3.censo). Componentes en %:
 #   sensibilidad: personas de 60 años o más, de 0 a 5 años y con discapacidad (sobre las personas de la cuadra)
 #   capacidad de adaptación baja: viviendas hacinadas e irrecuperables (sobre las viviendas ocupadas) y menos años
 #   de escolaridad (promedio de los mayores de 18, ponderado por personas)

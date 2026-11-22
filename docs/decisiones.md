@@ -65,7 +65,7 @@ reproducen con los comandos del [README](../README.md#resultados); el detalle de
 
 ## 7. Pesos por omisión 35 / 35 / 20 / 10
 
-- Calor, falta de árboles, personas y vulnerabilidad al calor. Se pueden mover en la página y se reescalan para
+- Calor, falta de árboles, personas y vulnerabilidad. Se pueden mover en la página y se reescalan para
   sumar 100 %.
 - **Descartamos 40 / 40 / 10 / 10**, que hacía espacio para la vulnerabilidad quitándole peso a «personas»: el
   corredor de las 34 comunas se iba a cuadras industriales, con 1.436 personas contra 7.002 al azar.
@@ -73,7 +73,7 @@ reproducen con los comandos del [README](../README.md#resultados); el detalle de
   Santiago (índice 0,52 contra 0,40, ponderado por personas).
 - Las cuadras con menos de 50 personas que no son parque (industria, eriazo) no entran al grafo.
 
-## 8. Vulnerabilidad al calor: del Censo, y solo para personas
+## 8. Vulnerabilidad: del Censo, y solo para personas
 
 - **Qué mide:** sensibilidad (personas de 60 años o más, de 0 a 5 años y con discapacidad) y capacidad de
   adaptación (viviendas hacinadas e irrecuperables, años de escolaridad). El Censo no pregunta ingreso

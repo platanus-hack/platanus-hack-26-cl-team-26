@@ -1,4 +1,4 @@
-"""Vulnerabilidad al calor (Censo 2024): el índice, su peso en la urgencia y que sea solo de las personas.
+"""Vulnerabilidad (Censo 2024): el índice, su peso en la urgencia y que sea solo de las personas.
 
 Uso: python -m tests.test_vulnerabilidad
 """

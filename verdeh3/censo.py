@@ -5,7 +5,7 @@ python -m verdeh3.censo --salida datos/salida_h3_gs --manzanas cache/censo2024/C
 La capa sale del zip "Cartografía País Censo 2024 (geoparquet)" de censo2024.ine.gob.cl (no se versiona).
 Agrega a santiago_h3.parquet:
   poblacion_censo   personas (n_per) de las manzanas y entidades, repartidas por fracción de área
-  censo_*           conteos para la vulnerabilidad al calor (ver VARIABLES y verdeh3.contrato.vulnerabilidad),
+  censo_*           conteos para la vulnerabilidad (ver VARIABLES y verdeh3.contrato.vulnerabilidad),
                     repartidos igual que las personas
 Cada manzana reparte sus personas entre los hexágonos que toca, en proporción al área compartida, así que
 las sumas por comuna coinciden con el censo salvo en los bordes del área de estudio.
@@ -25,7 +25,7 @@ from . import config
 
 log = logging.getLogger("verdeh3")
 
-# Conteos por manzana para la vulnerabilidad al calor → columna en santiago_h3.parquet. La escolaridad es un
+# Conteos por manzana para la vulnerabilidad → columna en santiago_h3.parquet. La escolaridad es un
 # promedio, así que se reparte como suma ponderada por personas (escolaridad × personas) y su denominador.
 VARIABLES = {
     "n_edad_60_mas": "censo_60_mas",

@@ -121,7 +121,7 @@ class Seleccion(BaseModel):
     w_arbol: float | None = Field(None, ge=0, allow_inf_nan=False)
     w_personas: float | None = Field(None, ge=0, allow_inf_nan=False)
     w_bio: float | None = Field(None, ge=0, allow_inf_nan=False)
-    w_vuln: float | None = Field(None, ge=0, allow_inf_nan=False)  # vulnerabilidad al calor: solo para personas
+    w_vuln: float | None = Field(None, ge=0, allow_inf_nan=False)  # vulnerabilidad: solo para personas
     vecinas: bool | None = None          # el corredor puede partir o llegar a parques de las comunas vecinas
     perfil: str | None = None            # humanos | fauna_aves | fauna_abejas | mixto (forma antigua de elegir especies)
     especies: list[str] | None = None    # una o más de humanos, aves, abejas: para quién se traza el corredor

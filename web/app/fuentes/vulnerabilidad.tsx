@@ -1,4 +1,4 @@
-// Sección de /fuentes: cómo se calcula la vulnerabilidad al calor, lo mismo que hacen verdeh3/censo.py y
+// Sección de /fuentes: cómo se calcula la vulnerabilidad, lo mismo que hacen verdeh3/censo.py y
 // verdeh3.contrato.vulnerabilidad, en palabras. Los rangos y las cifras por comuna salen de los datos de las 34 comunas
 // (Censo 2024); si se regeneran los datos, actualizarlos aquí.
 
@@ -45,7 +45,7 @@ const MAS: [string, string][] = [["San Ramón", "0,56"], ["Lo Espejo", "0,56"], 
 export function VulnerabilidadMetodo() {
   return (
     <section id="vulnerabilidad" className="b-sec b-pad f-tema alt v-metodo"><div className="b-in">
-      <h2>Vulnerabilidad al calor: <em>cómo se calcula</em></h2>
+      <h2>Vulnerabilidad: <em>cómo se calcula</em></h2>
       <p className="v-intro">No todos sufren igual un día de 35 °C. Este índice mide, cuadra por cuadra, cuánto le pesa el calor a quienes viven ahí, de 0 a 1, con el Censo 2024.</p>
 
       <h3>Seis datos del Censo</h3>
@@ -71,7 +71,7 @@ export function VulnerabilidadMetodo() {
           </li>
         ))}
       </ol>
-      <p className="nota f-nota">La separación en sensibilidad y capacidad de adaptación es la de los índices de vulnerabilidad al calor más usados (exposición, sensibilidad y capacidad de adaptación); la exposición ya la mide el término de calor del índice de urgencia. Que los seis componentes pesen lo mismo es una decisión nuestra: no está calibrada contra muertes ni consultas por calor, porque no hay esos datos por cuadra.</p>
+      <p className="nota f-nota">La separación en sensibilidad y capacidad de adaptación es la de los índices de vulnerabilidad más usados (exposición, sensibilidad y capacidad de adaptación); la exposición ya la mide el término de calor del índice de urgencia. Que los seis componentes pesen lo mismo es una decisión nuestra: no está calibrada contra muertes ni consultas por calor, porque no hay esos datos por cuadra.</p>
 
       <h3>En el corredor</h3>
       <ol className="v-pasos">

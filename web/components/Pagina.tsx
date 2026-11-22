@@ -71,7 +71,7 @@ const ISLA = "#6A994E";   // islas verdes de Planificar: más claras que el corr
 const MORADO = ["#F3ECE6", "#D3BBD6", "#9A6BA8", "#5C2F78"];   // densidad de personas
 const AZUL = ["#EEF0EA", "#BBD0CC", "#5E9590", "#1F4F55"];      // especies de aves registradas en el barrio (GBIF)
 const AMBAR = ["#F4EFDF", "#EFD58C", "#E3A21A", "#9A5B08"];    // abejas nativas registradas en el barrio (GBIF)
-const VINO = ["#F5EEE8", "#E8C2B4", "#C47A6B", "#7E2F3F"];     // vulnerabilidad al calor (Censo 2024)
+const VINO = ["#F5EEE8", "#E8C2B4", "#C47A6B", "#7E2F3F"];     // vulnerabilidad (Censo 2024)
 const AVES_MAX = 70;     // especies de aves por barrio desde la que el color ya no sube (percentil 90: 66)
 const ABEJAS_MAX = 15;   // registros de abejas nativas por barrio desde los que el color ya no sube
 const grad = (c: string[]) => `linear-gradient(90deg,${c.join(",")})`;
@@ -93,7 +93,7 @@ const LEYENDA: Record<string, [string, string]> = {
   calor: [grad(NARANJO), "Índice de calor: temperatura del suelo; donde hay sensores de aire confiables en al menos 5 barrios, 70 % suelo y 30 % aire"],
   copa: [grad(VERDE), "Copa de árboles, de 0 % a 25 % o más"],
   personas: [grad(MORADO), "Personas: 70 % habitantes del Censo en la cuadra y 30 % cercanía a colegios, salud, metro y paraderos"],
-  vulnerabilidad: [grad(VINO), "Vulnerabilidad al calor de quienes viven en la cuadra (Censo 2024): personas de 60 años o más, de 0 a 5 años y con discapacidad, viviendas hacinadas e irrecuperables y menos años de escolaridad. No es ingreso"],
+  vulnerabilidad: [grad(VINO), "Vulnerabilidad de quienes viven en la cuadra (Censo 2024): personas de 60 años o más, de 0 a 5 años y con discapacidad, viviendas hacinadas e irrecuperables y menos años de escolaridad. No es ingreso"],
   aves: [grad(AZUL), `Especies de aves registradas en el barrio desde 2015, de 0 a ${AVES_MAX} o más (GBIF: eBird, iNaturalist). Registros, no censo: hay más observadores en parques y cerros`],
   abejas: [grad(AMBAR), `Registros de abejas nativas en el barrio desde 2015, de 0 a ${ABEJAS_MAX} o más (GBIF, sobre todo iNaturalist). Sin la abeja de miel ni el abejorro europeo, que son exóticos`],
 };
@@ -353,7 +353,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       ${B.vivo[i] != null ? fila("Aire, máxima de ayer", `${formato(B.vivo[i] as number, 1)} °C`) : ""}
       ${fila("Copa de árboles", B.copa[i] == null ? "sin dato" : `${formato(B.copa[i] as number, 1)} %`)}
       ${fila("Personas", formato(B.pob[i]))}
-      ${B.vuln?.[i] != null ? fila("Vulnerabilidad al calor", `${formato(B.vuln[i] as number, 2)} de 1 · <a href="/fuentes#vulnerabilidad">cómo se calcula</a>`) : ""}
+      ${B.vuln?.[i] != null ? fila("Vulnerabilidad", `${formato(B.vuln[i] as number, 2)} de 1 · <a href="/fuentes#vulnerabilidad">cómo se calcula</a>`) : ""}
       ${faunaDe[i]?.an ? fila("Aves en el barrio", `${faunaDe[i]!.asp} especies`) : ""}
       ${faunaDe[i]?.bn ? fila("Abejas nativas en el barrio", `${faunaDe[i]!.bn} ${faunaDe[i]!.bn === 1 ? "registro" : "registros"}`) : ""}
       ${fila("Coordenadas", `<a href="${gmapsUrl}" target="_blank" rel="noopener noreferrer">${lat.toFixed(5)}, ${lng.toFixed(5)} ↗</a>`)}</table>
@@ -516,7 +516,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
           : null,
         km: r(a.km, 2), cuadras: a.hexes, mini_islas: a.checkpoints ?? 0, comunas: comunasCorredor,
         personas_junto_al_corredor: a.personas_cubiertas, personas_con_un_trazado_al_azar: a.personas_azar,
-        campos: "prioridad: 0 a 1 entre lo elegido, según las especies (para personas, la urgencia); suelo_c: temperatura del suelo (Landsat); aire_max_c: máxima de ayer del barrio; copa_pct: copa de árboles (modelo propio); personas: Censo 2024; vulnerabilidad al calor 0 a 1 (Censo 2024)",
+        campos: "prioridad: 0 a 1 entre lo elegido, según las especies (para personas, la urgencia); suelo_c: temperatura del suelo (Landsat); aire_max_c: máxima de ayer del barrio; copa_pct: copa de árboles (modelo propio); personas: Censo 2024; vulnerabilidad 0 a 1 (Censo 2024)",
       },
       features: [
         ...propias.map((i) => ({
@@ -635,7 +635,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
         <div className={`b-controles escalon${planListo ? "" : " espera"}`} style={est(2)}>
           {/* La vulnerabilidad es solo de las personas: sin Humanos el corredor no la usa y el control se oculta. */}
-          {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"], ["vuln", "Vulnerabilidad al calor"]] as const)
+          {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"], ["vuln", "Vulnerabilidad"]] as const)
             .filter(([k]) => k !== "vuln" || especies.includes("humanos")).map(([k, nombre]) => (
             <div className="peso" key={k}>
               <label htmlFor={`p-${k}`}><span>{nombre}</span><b>{Math.round((100 * pesos[k]) / total)} %</b></label>

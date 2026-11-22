@@ -29,7 +29,7 @@ conecta y alivia más.
 ## Impacto
 
 - Entre Providencia y Cerro Navia, con 3 km, el corredor de Viridis llega a 11.908 personas, contra 8.261 de un
-  trazado al azar del mismo largo: 44 % más. El índice pesa también la vulnerabilidad al calor de quienes viven
+  trazado al azar del mismo largo: 44 % más. El índice pesa también la vulnerabilidad de quienes viven
   ahí (personas mayores, niños pequeños, hacinamiento; Censo 2024).
 - Con 100 km de corredores sobre todo Santiago, 30 islas verdes dejan de estar solas (4.055 hectáreas de hábitat
   unido) y 764.000 personas más quedan a menos de 300 m de un espacio verde: del 14 % al 26 % de la ciudad.

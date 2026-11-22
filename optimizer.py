@@ -10,7 +10,7 @@ Urgencia por hexágono (cada término 0 a 1):
   falta    = 1 − copa_norm   (copa_modelo_pct: % de copa de árboles que predice nuestro modelo con
              Sentinel-2 de 2026, ver verdeh3.modelo_copa; sin esa columna, 1 − arbol_pct/100 de WorldCover)
   personas = 0,7·poblacion_norm + 0,3·social
-  vuln     = vulnerabilidad_norm: vulnerabilidad al calor de quienes viven en la cuadra (Censo 2024: 60+, 0 a 5
+  vuln     = vulnerabilidad_norm: vulnerabilidad de quienes viven en la cuadra (Censo 2024: 60+, 0 a 5
              años, discapacidad, viviendas hacinadas e irrecuperables, escolaridad; ver verdeh3.contrato). Es solo
              de las personas: el corredor de aves y abejas no la usa (ecologia.py). Sin la columna, no entra.
   bio      = biodiversidad_terreno del hexágono (aves oídas o vistas, polinizadores, flores; solo con
