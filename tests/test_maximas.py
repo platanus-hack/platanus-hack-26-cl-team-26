@@ -40,3 +40,13 @@ def test_dmc_tabla_lista_objeto_y_estacion_sin_datos():
                                                  {"estacion": {**est, "codigoNacional": "330021"}, "datos": None}]})
     una = fuentes.dmc_tabla({"datosEstaciones": {"estacion": est, "datos": datos}})
     assert len(red) == len(una) == 1 and red.temp_c[0] == 27.5 and red.humedad_pct[0] == 21.0
+
+
+def test_juntar_suma_sinca_sin_perder_dmc_ni_duplicar():
+    dmc = maximas.maxima(lecturas({14: 26.0, 15: 28.0, 16: 27.0}), DIA).to_frame().T
+    sinca_viejo = dmc.assign(source="SINCA_D14", temp_c=20.0)
+    previas = pd.concat([dmc, sinca_viejo], ignore_index=True)
+    previas["medido_en"] = previas.medido_en.astype(str)  # como vuelve del CSV
+    nuevas = dmc.assign(source="SINCA_D14", temp_c=24.0)
+    j = maximas.juntar(previas, nuevas)
+    assert sorted(j.source) == ["DMC_1", "SINCA_D14"] and j.set_index("source").temp_c.to_dict() == {"DMC_1": 28.0, "SINCA_D14": 24.0}
