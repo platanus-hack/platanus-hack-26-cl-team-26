@@ -36,6 +36,7 @@ const VERDE = ["#EFE9DA", "#C5CDA6", "#8C9A63", "#4F6E31"];
 const ROJO = ["#F6ECDD", "#EDB592", "#D2603F", "#96261C"];
 const NARANJO = ["#FBF4CC", "#F6D873", "#EE9B3B", "#D4601C"];
 const ISLA = "#5A9A46";
+const MORADO = ["#F3ECE6", "#D3BBD6", "#9A6BA8", "#5C2F78"];   // densidad de personas
 const grad = (c: string[]) => `linear-gradient(90deg,${c.join(",")})`;
 const escala = (prop: string, cols: string[], lo: number, hi: number): ExpressionSpecification => {
   const paso = (hi - lo) / (cols.length - 1);
@@ -45,13 +46,13 @@ const escala = (prop: string, cols: string[], lo: number, hi: number): Expressio
 const CAPAS_AHORA: Capa[] = [
   { id: "calor", color: escala("calor", ROJO, 0, 1) },
   { id: "copa", color: escala("copa", VERDE, 0, 25) },
-  { id: "personas", color: escala("personas", VERDE, 0, 1) },
+  { id: "personas", color: escala("personas", MORADO, 0, 1) },
 ];
 const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Copa de árboles", personas: "Personas" };
 const LEYENDA: Record<string, [string, string]> = {
   calor: [grad(ROJO), "Índice de calor: temperatura del suelo; donde hay sensores de aire confiables en al menos 5 barrios, 70 % suelo y 30 % aire"],
   copa: [grad(VERDE), "Copa de árboles, de 0 % a 25 % o más"],
-  personas: [grad(VERDE), "Personas: 70 % habitantes del Censo en la cuadra y 30 % cercanía a colegios, salud, metro y paraderos"],
+  personas: [grad(MORADO), "Personas: 70 % habitantes del Censo en la cuadra y 30 % cercanía a colegios, salud, metro y paraderos"],
 };
 // Cerros isla y parques grandes de Santiago: las islas verdes que el corredor busca unir.
 const ISLAS: [string, number, number][] = [
