@@ -556,7 +556,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       </Seccion>
 
       <Seccion id="planificar">
-        <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2><p>Elige dónde, mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes de lo elegido.</p></div>
+        <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2></div>
         <div className={`b-controles escalon${planListo ? "" : " espera"}`} style={est(2)}>
           {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"], ["bio", "Biodiversidad (terreno)"]] as const).map(([k, nombre]) => (
             <div className="peso" key={k}>
