@@ -226,44 +226,81 @@ def criterio_por_especies(df: pd.DataFrame, especies, w_calor=0.4, w_arbol=0.4, 
 
 
 def resolver_corredor_por_especies(df: pd.DataFrame, especies, budget_km: float = 3.0, w_calor: float = 0.4,
-                                   w_arbol: float = 0.4, w_personas: float = 0.2, live=None) -> dict:
-    """Corredor para una combinación de especies (dos o tres, o una de fauna). Mismo formato de salida que
-    resolver_corredor_por_perfil. Una sola especie usa el perfil de siempre."""
+                                   w_arbol: float = 0.4, w_personas: float = 0.2, live=None, apoyo=None) -> dict:
+    """Corredor para una o más especies. Mismo formato de salida que resolver_corredor_por_perfil, más `fuera`.
+
+    `apoyo`: cuadras de comunas vecinas (mismas columnas que df, sin repetir). Sus parques sirven de extremo y sus
+    cuadras de paso, pero cada tramo debe ir al menos la mitad por df. La prioridad que se devuelve es solo la de df.
+    Una sola especie sin apoyo usa el perfil de siempre."""
     elegidas = frozenset(e for e in ESPECIES if e in set(especies))
-    if elegidas in PERFIL_DE:
-        return resolver_corredor_por_perfil(df, PERFIL_DE[elegidas], budget_km, w_calor, w_arbol, w_personas, live)
+    hay_apoyo = apoyo is not None and len(apoyo) > 0
+    if elegidas in PERFIL_DE and not hay_apoyo:
+        r = resolver_corredor_por_perfil(df, PERFIL_DE[elegidas], budget_km, w_calor, w_arbol, w_personas, live)
+        return {**r, "fuera": []}
     prioridad, costo, u_hum, res_abejas = criterio_por_especies(df, elegidas, w_calor, w_arbol, w_personas, live)
+    propia, nucleo = prioridad, np.ones(len(df), dtype=bool)
+    if hay_apoyo:
+        # Lo elegido conserva su escala; el apoyo se mide sobre el conjunto (igual que optimizer.solve_corridor).
+        junto = pd.concat([df, apoyo])
+        pj, cj, uj, rj = criterio_por_especies(junto, elegidas, w_calor, w_arbol, w_personas, live)
+        une = lambda a, b: pd.concat([a, b.loc[apoyo.index]])
+        prioridad, costo, u_hum, res_abejas = une(prioridad, pj), une(costo, cj), une(u_hum, uj), une(res_abejas, rj)
+        nucleo = np.r_[nucleo, np.zeros(len(apoyo), dtype=bool)]
+        df = junto
     hexs = df["h3_index"].tolist()
     parque, pob = df["es_parque"].to_numpy(), df["poblacion"].to_numpy()
     idx = {h: i for i, h in enumerate(hexs)}
     vec = [[idx[v] for v in h3.grid_disk(h, 1) if v != h and v in idx] for h in hexs]
     dist, etiq, prev = _dijkstra(vec, np.where(parque, 0.0, costo.to_numpy()), parque)
     tramos = _tramos(vec, dist, etiq, prev, parque, prioridad.to_numpy())
+    if hay_apoyo:
+        tramos = [t for t in tramos if 2 * int(nucleo[t[2]].sum()) >= len(t[2])]
     paso = math.sqrt(3) * h3.average_hexagon_edge_length(9, unit="km")
-    sel, usado, parques_cubiertos, tramos_sel = [], set(), set(), []
-    for k in _red_continua(tramos, paso, budget_km):
-        a, b, cam, _ = tramos[k]
-        nuevos = [i for i in cam if i not in usado]
-        usado.update(nuevos)
-        sel += nuevos
-        tramos_sel.append([hexs[i] for i in cam])
-        parques_cubiertos.update((a, b))
-    # Con abejas: una mini isla cada tres cuadras del corredor, en la de mayor resistencia para ellas.
-    islas = []
-    if "abejas" in elegidas:
-        r = res_abejas.to_numpy()
-        islas = [max(sel[k:k + 3], key=lambda i: r[i]) for k in range(0, len(sel), 3)]
+    sel, usado, parques_cubiertos, tramos_sel, islas = [], set(), set(), [], []
+    if elegidas == {"abejas"}:
+        # Solo abejas: piedras de paso. De cada tramo se planta una cuadra por medio, hasta agotar el presupuesto.
+        n_max = max(2, int(round(budget_km / paso)))
+        for a, b, cam, _ in tramos:
+            pts = [cam[i] for i in range(0, len(cam), 2)]
+            if len(cam) > 1 and cam[-1] not in pts:
+                pts.append(cam[-1])
+            nuevos = [x for x in pts if x not in usado]
+            if not nuevos or len(islas) + len(nuevos) > n_max:
+                continue
+            islas.extend(nuevos)
+            usado.update(nuevos)
+            tramos_sel.append([hexs[i] for i in cam])
+            parques_cubiertos.update((a, b))
+        sel = sorted({idx[h] for t in tramos_sel for h in t})
+        largo, medidos = len(islas) * paso, islas
+    else:
+        for k in _red_continua(tramos, paso, budget_km):
+            a, b, cam, _ = tramos[k]
+            nuevos = [i for i in cam if i not in usado]
+            usado.update(nuevos)
+            sel += nuevos
+            tramos_sel.append([hexs[i] for i in cam])
+            parques_cubiertos.update((a, b))
+        # Con abejas: una mini isla cada tres cuadras del corredor, en la de mayor resistencia para ellas.
+        if "abejas" in elegidas:
+            r = res_abejas.to_numpy()
+            islas = [max(sel[k:k + 3], key=lambda i: r[i]) for k in range(0, len(sel), 3)]
+        largo, medidos = len(sel) * paso, sel
     return {
         "perfil": "+".join(e for e in ESPECIES if e in elegidas),
         "hexes_corredor": [hexs[i] for i in sel],
         "hexes_checkpoints": [hexs[i] for i in islas],
         "tramos": tramos_sel,
-        "length_km": len(sel) * paso,
-        "score_mapa": prioridad,
-        "urgencia_cubierta": float(u_hum.iloc[sel].mean()) if sel else 0.0,
-        "urgencia_azar": float(u_hum.mean()),
-        "personas_cubiertas": int(pob[sel].sum()) if sel else 0,
+        "length_km": largo,
+        "score_mapa": propia,
+        "urgencia_cubierta": float(u_hum.iloc[medidos].mean()) if medidos else 0.0,
+        "urgencia_azar": float(u_hum[nucleo].mean()),
+        "personas_cubiertas": int(pob[medidos].sum()) if medidos else 0,
         "personas_azar": 0,
         "parques_conectados": len(parques_cubiertos),
-        "resistencia_media": float(prioridad.iloc[sel].mean() * 100) if sel else None,
+        "resistencia_media": float(prioridad.iloc[medidos].mean() * 100) if medidos else None,
+        "fuera": [hexs[i] for i in sel if not nucleo[i]],   # cuadras del corredor en comunas vecinas
+        # Presupuesto mínimo para que salga algo: el tramo más corto (con solo abejas se planta una cuadra por medio).
+        "km_min": (min((math.ceil(len(t[2]) / 2) + (len(t[2]) % 2 == 0 and len(t[2]) > 1) if elegidas == {"abejas"} else len(t[2])
+                        for t in tramos), default=0) * paso) or None,
     }

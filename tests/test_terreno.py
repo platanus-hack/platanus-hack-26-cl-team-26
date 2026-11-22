@@ -726,3 +726,25 @@ def test_especies_combinadas():
         # La forma antigua sigue funcionando: «mixto» equivale a las tres especies.
         c.post(f"/api/seleccion?s={s}", json={"perfil": "mixto"})
         assert c.get(f"/api/estado?s={s}").json()["parametros"]["especies"] == ["humanos", "aves", "abejas"]
+
+
+def test_vecinas_con_especies():
+    """«Comunas vecinas» vale para cualquier combinación de especies, no solo para humanos."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(GS, Path(tmp), usar_claude=False, comunas=["Independencia"]))
+        s = "navegadorVECI"
+        for combo in (["aves"], ["abejas"], ["humanos", "aves"], ["humanos", "aves", "abejas"]):
+            c.post(f"/api/seleccion?s={s}", json={"especies": combo, "vecinas": False, "km": 6})
+            sin = c.get(f"/api/estado?s={s}").json()
+            assert sin["ahora"]["hexes"] == 0 and sin["fuera"] == []        # Independencia sola no tiene dos parques que unir
+            u = sin["hex"]["u"]
+            c.post(f"/api/seleccion?s={s}", json={"vecinas": True})
+            con = c.get(f"/api/estado?s={s}").json()
+            dentro = sum(con["hex"]["ahora"])
+            assert con["ahora"]["hexes"] > 0 and len(con["fuera"]) > 0, combo
+            assert dentro + len(con["fuera"]) == con["ahora"]["hexes"] and 2 * dentro >= con["ahora"]["hexes"] - 1
+            assert all(f["comuna"] != "Independencia" for f in con["fuera"])
+            assert con["hex"]["u"] == u                                      # el color de lo elegido no cambia

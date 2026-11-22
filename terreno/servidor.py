@@ -232,9 +232,9 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             r["parques_conectados"] = len(r.get("tramos", [])) + 1 if r.get("tramos") else 0
             r["resistencia_media"] = None
             return r
-        # Con aves o abejas: conectividad ecológica dentro de lo elegido (sin comunas vecinas ni fotos de terreno).
+        # Con aves o abejas: conectividad ecológica (sin fotos de terreno); las comunas vecinas valen igual.
         res = resolver_corredor_por_especies(st["sub"], especies, budget_km=p["km"], w_calor=wc, w_arbol=wa,
-                                             w_personas=wp, live=estado["live"])
+                                             w_personas=wp, live=estado["live"], apoyo=st.get("apoyo"))
         return {
             "hexes": res["hexes_corredor"],
             "checkpoints": res["hexes_checkpoints"],
@@ -246,8 +246,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             "personas_azar": res["personas_azar"],
             "tramos": res["tramos"],
             "verificados": 0,
-            "fuera": [],
-            "km_min": None,
+            "fuera": res.get("fuera", []),
+            "km_min": res.get("km_min"),
             "parques_conectados": res["parques_conectados"],
             "resistencia_media": round(res["resistencia_media"], 1) if res["resistencia_media"] is not None else None,
         }
@@ -666,7 +666,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
                             "escuchas": sum(n_escuchas.values())},
                 "fauna_corredor": _fauna(ahora["hexes"], terreno),
                 # Cuadras del corredor en comunas vecinas (opción «vecinas»): no están en `hex`, van aparte.
-                "fuera": [{"h": h, "comuna": comuna_de.get(h)} for h in ahora.get("fuera", [])],
+                "fuera": [{"h": h, "comuna": comuna_de.get(h), "isla": h in en_cp} for h in ahora.get("fuera", [])],
                 "antes": {**_resumen(antes), "personas_azar": antes["personas_azar"]},
                 "ahora": {**_resumen(ahora), "personas_azar": ahora["personas_azar"]}}
 

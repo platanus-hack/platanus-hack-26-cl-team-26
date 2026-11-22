@@ -46,7 +46,7 @@ export type Estado = {
   recorridos: Recorrido[]; en_vivo: boolean; antes: ResumenCorredor; ahora: ResumenCorredor;
   totales: { capturas: number; cuentan: number; escuchas: number };
   fauna_corredor?: { especies: string[]; polinizadores: number };
-  fuera?: { h: string; comuna: string | null }[];   // cuadras del corredor en comunas vecinas
+  fuera?: { h: string; comuna: string | null; isla?: boolean }[];   // cuadras del corredor en comunas vecinas
 };
 export type DetalleHex = {
   h3_index: string; comuna: string | null; n_fotos: number; n_escuchas: number; fotos: Captura[]; escuchas: Escucha[];

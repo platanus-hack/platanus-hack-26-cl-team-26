@@ -440,7 +440,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   // El corredor solo se rearma si cambian sus cuadras (no cada vez que llega un estado nuevo del servidor).
   // Con «comunas vecinas» el corredor puede salir de lo elegido: esas cuadras llegan aparte (estado.fuera).
   const fuera = estado.fuera ?? [];
-  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.checkpoint?.[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+!!H.checkpoint?.[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("") + fuera.map((f) => f.h).join();
+  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.checkpoint?.[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+!!H.checkpoint?.[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("") + fuera.map((f) => f.h + (f.isla ? "i" : "")).join();
   const corredor = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
     features: H.h.flatMap((h, i) => [
@@ -449,7 +449,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       ...(H.antes[i] ? ["antes"] : []),
       ...(H.verificado[i] ? ["verificado"] : []),
     ].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: h, comuna: H.comuna[i] }, geometry: { type: "Polygon" as const, coordinates: [anillosH[i]] } })))
-      .concat(fuera.map((f) => ({ type: "Feature" as const, properties: { tipo: "ahora", h3: f.h, comuna: f.comuna ?? "" }, geometry: { type: "Polygon" as const, coordinates: [anillo(f.h)] } }))),
+      .concat(fuera.flatMap((f) => ["ahora", ...(f.isla ? ["checkpoint"] : [])].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: f.h, comuna: f.comuna ?? "" }, geometry: { type: "Polygon" as const, coordinates: [anillo(f.h)] } })))),
   }), [firmaCorredor, anillosH]); // eslint-disable-line react-hooks/exhaustive-deps
   const enCorredor = H.h.flatMap((_, i) => (H.ahora[i] ? [i] : []));
   const comunasFuera = [...new Set(fuera.flatMap((f) => (f.comuna ? [f.comuna] : [])))].sort();
@@ -615,9 +615,9 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
           </div>
           <label className={`vecinas${hayVecinas ? "" : " no"}`}>
             <input type="checkbox" checked={vecinasOn && hayVecinas} disabled={!hayVecinas || ocupado} onChange={(e) => cambiar({ vecinas: e.target.checked })} />
-            <span><b>Conectar con comunas vecinas</b><small>{hayVecinas
-              ? "El corredor puede partir o llegar a parques e islas verdes de las comunas de al lado. Al menos la mitad de cada tramo va por lo elegido."
-              : "Con todo Santiago elegido ya se usan todos los parques."}</small></span>
+            <span><b>Conectar con islas y parques de comunas vecinas</b><small>{hayVecinas
+              ? "El corredor puede partir o llegar a parques e islas verdes de las comunas de al lado, para cualquier combinación de especies. Al menos la mitad de cada tramo va por lo elegido."
+              : "Elige una comuna o una zona para usarlo: con todo Santiago ya se usan todos los parques."}</small></span>
           </label>
         </div>
         <div className="b-plan">
