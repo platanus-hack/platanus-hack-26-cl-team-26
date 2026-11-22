@@ -25,6 +25,7 @@ Sin nulos y de menos de 5 MB. También existen:
 | `poblacion` | int | personas en el hexágono | Censo 2024 (INE), personas por manzana repartidas por área |
 | `social` | float 0–1 | cercanía a colegios, salud, metro y paraderos: promedio de max(0, 1 − distancia/1 km) | OpenStreetMap |
 | `es_parque` | bool | toca un parque consolidado (≥ 5.000 m²) y ≥ 25% del hexágono es área verde | OpenStreetMap |
+| `vulnerabilidad` | float 0–1 | vulnerabilidad al calor de quienes viven ahí (ver abajo) | Censo 2024 (INE), variables por manzana repartidas por área |
 
 Columnas extra (pueden ignorarse): `urgencia` y `en_corredor`, calculadas con los pesos por defecto y 3 km;
 `lst_fecha` (fecha de la escena de `lst_c`) y `lst_c_ultima` / `lst_fecha_ultima` (escena más reciente
@@ -35,11 +36,22 @@ de altura de copa de Meta y WRI (1 m, imágenes de oct–nov 2019), y `arbol_pct
 están en `data/modelo_copa.json`: por hexágono urbano, r = 0,92 y error medio de 1,8 puntos contra Meta 2019.
 El mapa 2026 no tiene una referencia medida de 2026 con qué compararlo; no usarlo para afirmar que una cuadra ganó o perdió árboles.
 
+`vulnerabilidad` (`verdeh3.contrato.vulnerabilidad`) es el promedio de dos partes, cada una el promedio de tres
+componentes normalizados de 0 a 1 (percentiles 2 y 98, sobre las 34 comunas aunque se exporte solo la demo):
+
+- sensibilidad: % de personas de 60 años o más, % de 0 a 5 años y % con discapacidad;
+- capacidad de adaptación baja: % de viviendas ocupadas hacinadas, % irrecuperables y menos años de escolaridad
+  (promedio de los mayores de 18).
+
+Los componentes quedan como columnas extra (`pct_60_mas`, `pct_0_5`, `pct_discapacidad`, `pct_viv_hacinadas`,
+`pct_viv_irrecuperables`, `escolaridad`). En cuadras con menos de 50 personas los porcentajes son ruido y se usa la
+mediana de la comuna. No mide ingreso (el Censo no lo pregunta) ni el estado de salud de cada persona.
+
 ## `optimizer.py` (Rol 1)
 
 ```python
-solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None, terreno=None,
-               w_bio=0.0) -> dict
+solve_corridor(df, budget_km=3.0, w_calor=0.35, w_arbol=0.35, w_personas=0.2, live=None, terreno=None,
+               w_bio=0.0, apoyo=None, w_vuln=0.1) -> dict
 ```
 
 - `live`: el `data/live_h3.parquet` del Rol 2 (ver abajo). Se une por `h3_padre` sin perder cuadras y se
@@ -49,6 +61,10 @@ solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live
   También trae `personas_azar`, `tramos` (cada tramo es una lista de hexágonos, de parque a parque) y
   `urgencia` (Serie por hexágono, para colorear el mapa).
 - `terreno` y `w_bio` quedan en sus valores por omisión (`None` y 0): el proyecto no usa datos de terreno.
+- `w_vuln` es solo de las personas: en `ecologia.py` lo recibe la urgencia de los humanos y no la resistencia
+  de aves y abejas. Si `df` no trae `vulnerabilidad`, el término no entra (ni a la suma de los pesos).
+- Los pesos por omisión están en `optimizer.PESOS`. Santiago conectado (`red_conectada.py`) usa los de antes,
+  sin la vulnerabilidad (`PESOS_RED`, 0,4/0,4/0,2), para que sus cifras sigan siendo las del pitch.
 
 Fórmula, con cada término normalizado de 0 a 1 (min-max entre los percentiles 2 y 98):
 
@@ -59,10 +75,12 @@ calor    = 0,7·lst_c_norm + 0,3·aire           (aire = 0,5 + (temp_aire_c − 
            (el aire va en escala fija y no min-max: décimas de grado entre pocos sensores no reordenan el corredor)
 falta    = 1 − copa_norm                       (copa_modelo_pct normalizado como los demás términos)
 personas = 0,7·poblacion_norm + 0,3·social
-U        = (w_calor·calor + w_arbol·falta + w_personas·personas) / (suma de los pesos)
+vuln     = vulnerabilidad_norm
+U        = (w_calor·calor + w_arbol·falta + w_personas·personas + w_vuln·vuln) / (suma de los pesos)
 ```
 
-Los pesos se pueden mover libremente desde el panel y se reescalan para que sumen 1.
+Los pesos se pueden mover libremente desde el panel y se reescalan para que sumen 1. Por omisión 35/35/20/10:
+con 40/40/10/10 el corredor de las 34 comunas se iba a cuadras industriales con poca gente.
 No se usa `indice_calor_c`: en Santiago el aire es seco y el índice de calor no agrega información.
 Regla de fidelidad: nunca se inventa un valor en vivo ni se muestra temperatura en vivo por cuadra.
 
@@ -128,6 +146,6 @@ python -m verdeh3.worldcover             # árboles, pasto y construido
 python -m verdeh3.arboles                # árboles estimados con la altura de copa de Meta (baja 332 MB)
 python -m verdeh3.modelo_copa            # modelo propio de copa: entrena con Meta 2019 y predice 2026 (~3 min)
 python -m verdeh3.impact                 # % de árboles Impact Observatory, año más reciente y 2021
-python -m verdeh3.censo                  # población Censo 2024 (zip del INE descomprimido en cache/censo2024/)
+python -m verdeh3.censo                  # población y conteos de vulnerabilidad, Censo 2024 (cache/censo2024/)
 python -m verdeh3.contrato               # los tres parquet y data/cifras_pitch.json
 ```

@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export type Especie = "humanos" | "aves" | "abejas";
 export type Parametros = {
   comunas: string[]; distritos: string[]; zona: number; km: number; w_calor: number; w_arbol: number; w_personas: number;
-  w_bio?: number; vecinas?: boolean; perfil?: string; especies?: Especie[]; birdnet?: string;
+  w_bio?: number; w_vuln?: number; vecinas?: boolean; perfil?: string; especies?: Especie[]; birdnet?: string;
 };
 export type InfoComunas = {
   comunas: string[]; vecinas: Record<string, string[]>; geo: Record<string, number[][][][]>;
@@ -17,6 +17,7 @@ export type InfoComunas = {
 export type HexCols = {
   h: string[]; comuna: string[]; distrito: string[]; u: (number | null)[]; lst: (number | null)[]; vivo: (number | null)[];
   ndvi: (number | null)[]; copa: (number | null)[]; pob: number[]; social: (number | null)[];
+  vuln?: (number | null)[];  // vulnerabilidad al calor de quienes viven en la cuadra (Censo 2024), 0..1
   parque: boolean[]; antes: boolean[]; ahora: boolean[]; checkpoint?: boolean[]; verificado: boolean[];
   bio?: (number | null)[]; especies?: string[]; polinizadores?: number[];
   fotos?: number[]; escuchas?: number[];  // cuántas fotos que cuentan y escuchas analizadas hay en cada cuadra
@@ -53,7 +54,7 @@ export type DetalleHex = {
   h3_index: string; comuna: string | null; n_fotos: number; n_escuchas: number; fotos: Captura[]; escuchas: Escucha[];
   especies?: string[]; polinizadores?: number; flores?: number | null;
 };
-export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number; w_bio: number; vecinas: boolean; perfil: string; especies: Especie[] }>;
+export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number; w_bio: number; w_vuln: number; vecinas: boolean; perfil: string; especies: Especie[] }>;
 
 const SONDEO_MS = 3000;
 // Sesión de este navegador en el servidor: área, presupuesto y pesos son solo suyos y se pierden al recargar.

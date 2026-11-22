@@ -3,9 +3,9 @@
 Uso: python red_conectada.py      (un par de minutos; se corre de nuevo si cambian la grilla o el optimizador)
 
 Para cada combinación de especies corre una vez el mismo cálculo que «Planificar» con todo Santiago elegido y KM_MAX
-km (optimizer.solve_corridor para personas, ecologia.resolver_corredor_por_especies para aves y abejas), sin el aire,
-como las cifras del pitch. La red de cada presupuesto menor son los primeros tramos de esa, en el orden en que el
-optimizador los suma: así la red crece sin cambiar de lugar y cada paso contiene al anterior. Escribe web/public/data/red.json, que la sección «Santiago conectado» de la
+km (optimizer.solve_corridor para personas, ecologia.resolver_corredor_por_especies para aves y abejas), sin el aire
+ni la vulnerabilidad (PESOS_RED), como las cifras del pitch. La red de cada presupuesto menor son los primeros tramos
+de esa, en el orden en que el optimizador los suma: así la red crece sin cambiar de lugar y cada paso contiene al anterior. Escribe web/public/data/red.json, que la sección «Santiago conectado» de la
 página recorre con un control deslizante sin volver a calcular nada.
 
 Cifras por presupuesto (todas medidas, salvo los árboles):
@@ -72,14 +72,17 @@ def islas_verdes(df):
 
 PASO = math.sqrt(3) * h3.average_hexagon_edge_length(9, unit="km")
 HA_CUADRA = h3.average_hexagon_area(9, unit="km^2") * 100   # largo de una cuadra del corredor
+# Pesos de la red fija: calor, árboles y personas, sin la vulnerabilidad, como las cifras del pitch. Para sumarla,
+# usa optimizer.PESOS (los de «Planificar») y vuelve a correr esto: cambian las islas, personas y hectáreas.
+PESOS_RED = {"w_calor": 0.4, "w_arbol": 0.4, "w_personas": 0.2, "w_vuln": 0.0}
 
 
 def red_completa(df, especies):
     """(tramos en el orden en que se sumaron, mini islas, ¿se planta todo el tramo?) con KM_MAX km."""
     if especies == ("humanos",):
-        r = solve_corridor(df, KM_MAX)
+        r = solve_corridor(df, KM_MAX, **PESOS_RED)
         return r["tramos"], [], True
-    r = resolver_corredor_por_especies(df, especies, budget_km=KM_MAX)
+    r = resolver_corredor_por_especies(df, especies, budget_km=KM_MAX, **PESOS_RED)
     return r["tramos"], r["hexes_checkpoints"], especies != ("abejas",)
 
 

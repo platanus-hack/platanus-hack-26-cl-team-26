@@ -96,7 +96,8 @@ def main():
 
     # Pesos: se reescalan.
     from optimizer import urgencia
-    pd.testing.assert_series_equal(urgencia(demo), urgencia(demo, 4, 4, 2))
+    pd.testing.assert_series_equal(urgencia(demo), urgencia(demo, 3.5, 3.5, 2, w_vuln=1))
+    assert demo["vulnerabilidad"].between(0, 1).all() and gs["vulnerabilidad"].between(0, 1).all()
 
     # En vivo (live de prueba): solo cambian las cuadras de barrios con confianza alta o media, y solo si hay al
     # menos AIRE_MIN_BARRIOS barrios medidos (con menos, unas décimas de grado no reordenan el corredor).

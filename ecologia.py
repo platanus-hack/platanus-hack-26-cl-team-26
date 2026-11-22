@@ -50,11 +50,12 @@ def resolver_corredor_por_perfil(
     df: pd.DataFrame,
     perfil: str = "humanos",
     budget_km: float = 3.0,
-    w_calor: float = 0.4,
-    w_arbol: float = 0.4,
+    w_calor: float = 0.35,
+    w_arbol: float = 0.35,
     w_personas: float = 0.2,
     live: pd.DataFrame | None = None,
     salto_checkpoint: int = 2,
+    w_vuln: float = 0.1,
 ) -> dict:
     """
     Ejecuta la optimización según el perfil seleccionado (Humanos, Aves, Abejas o Mixto).
@@ -69,6 +70,7 @@ def resolver_corredor_por_perfil(
             w_arbol=w_arbol,
             w_personas=w_personas,
             live=live,
+            w_vuln=w_vuln,
         )
         return {
             "perfil": perfil,
@@ -88,7 +90,7 @@ def resolver_corredor_por_perfil(
     # Para fauna o mixto construimos el grafo sobre todos los hexágonos disponibles en el filtro
     gremio = "abejas" if perfil == "fauna_abejas" else "aves"
     res_eco = calcular_resistencia_ecologica(df, gremio=gremio)
-    u_hum = urgencia(df, w_calor, w_arbol, w_personas, live)
+    u_hum = urgencia(df, w_calor, w_arbol, w_personas, live, w_vuln=w_vuln)  # la vulnerabilidad es solo de personas
 
     if perfil == "mixto":
         # Equilibrio 50% urgencia humana + 50% necesidad de conectar zonas de alta resistencia ecológica
@@ -204,13 +206,14 @@ PERFIL_DE = {frozenset({"humanos"}): "humanos", frozenset({"aves"}): "fauna_aves
 ESPECIES_DE = {"humanos": ("humanos",), "fauna_aves": ("aves",), "fauna_abejas": ("abejas",), "mixto": ESPECIES}
 
 
-def criterio_por_especies(df: pd.DataFrame, especies, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None):
+def criterio_por_especies(df: pd.DataFrame, especies, w_calor=0.35, w_arbol=0.35, w_personas=0.2, live=None,
+                          w_vuln=0.1):
     """(prioridad, costo, urgencia humana, resistencia de abejas) para un conjunto de especies. Prioridad y costo
     son el promedio simple de los de cada especie elegida, todos en 0..1."""
     especies = [e for e in ESPECIES if e in set(especies)]
     if not especies:
         raise ValueError("Elige al menos una especie")
-    u_hum = urgencia(df, w_calor, w_arbol, w_personas, live)
+    u_hum = urgencia(df, w_calor, w_arbol, w_personas, live, w_vuln=w_vuln)  # vulnerabilidad: solo la de personas
     res = {g: calcular_resistencia_ecologica(df, g) for g in ("aves", "abejas")}
     prioridades, costos = [], []
     for e in especies:
@@ -225,8 +228,9 @@ def criterio_por_especies(df: pd.DataFrame, especies, w_calor=0.4, w_arbol=0.4, 
     return prioridad, costo, u_hum, res["abejas"]
 
 
-def resolver_corredor_por_especies(df: pd.DataFrame, especies, budget_km: float = 3.0, w_calor: float = 0.4,
-                                   w_arbol: float = 0.4, w_personas: float = 0.2, live=None, apoyo=None) -> dict:
+def resolver_corredor_por_especies(df: pd.DataFrame, especies, budget_km: float = 3.0, w_calor: float = 0.35,
+                                   w_arbol: float = 0.35, w_personas: float = 0.2, live=None, apoyo=None,
+                                   w_vuln: float = 0.1) -> dict:
     """Corredor para una o más especies. Mismo formato de salida que resolver_corredor_por_perfil, más `fuera`.
 
     `apoyo`: cuadras de comunas vecinas (mismas columnas que df, sin repetir). Sus parques sirven de extremo y sus
@@ -235,14 +239,16 @@ def resolver_corredor_por_especies(df: pd.DataFrame, especies, budget_km: float 
     elegidas = frozenset(e for e in ESPECIES if e in set(especies))
     hay_apoyo = apoyo is not None and len(apoyo) > 0
     if elegidas in PERFIL_DE and not hay_apoyo:
-        r = resolver_corredor_por_perfil(df, PERFIL_DE[elegidas], budget_km, w_calor, w_arbol, w_personas, live)
+        r = resolver_corredor_por_perfil(df, PERFIL_DE[elegidas], budget_km, w_calor, w_arbol, w_personas, live,
+                                         w_vuln=w_vuln)
         return {**r, "fuera": []}
-    prioridad, costo, u_hum, res_abejas = criterio_por_especies(df, elegidas, w_calor, w_arbol, w_personas, live)
+    prioridad, costo, u_hum, res_abejas = criterio_por_especies(df, elegidas, w_calor, w_arbol, w_personas, live,
+                                                                w_vuln)
     propia, nucleo = prioridad, np.ones(len(df), dtype=bool)
     if hay_apoyo:
         # Lo elegido conserva su escala; el apoyo se mide sobre el conjunto (igual que optimizer.solve_corridor).
         junto = pd.concat([df, apoyo])
-        pj, cj, uj, rj = criterio_por_especies(junto, elegidas, w_calor, w_arbol, w_personas, live)
+        pj, cj, uj, rj = criterio_por_especies(junto, elegidas, w_calor, w_arbol, w_personas, live, w_vuln)
         une = lambda a, b: pd.concat([a, b.loc[apoyo.index]])
         prioridad, costo, u_hum, res_abejas = une(prioridad, pj), une(costo, cj), une(u_hum, uj), une(res_abejas, rj)
         nucleo = np.r_[nucleo, np.zeros(len(apoyo), dtype=bool)]

@@ -5,6 +5,7 @@ python -m verdeh3.contrato          # data/santiago_h3.parquet (par de la demo),
 
 Requiere antes: verdeh3.pipeline, verdeh3.marcar_gs, verdeh3.worldcover y verdeh3.censo sobre datos/salida_h3_gs.
 Población: Censo 2024 por manzana (poblacion_censo); si no está, WorldPop (poblacion).
+Vulnerabilidad al calor: de los conteos censo_* que agrega verdeh3.censo (ver vulnerabilidad()).
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ import h3
 import numpy as np
 import pandas as pd
 
-from optimizer import solve_corridor
+from optimizer import _norm, solve_corridor
 
 COMUNAS_DEMO = ["Providencia", "Cerro Navia"]
 PCT_VERDE_PARQUE = 25   # es_parque: toca parque consolidado (>= 5.000 m²) y >= 25% del hexágono es área verde
@@ -24,12 +25,47 @@ RADIO_SOCIAL_M = 1000   # social: promedio de max(0, 1 − distancia/1 km) a col
 CATEGORIAS_SOCIAL = ["educacion", "salud", "metro", "paradero"]
 TIPOS = {"h3_index": "str", "h3_padre": "str", "comuna": "str", "lat": "float64", "lon": "float64", "lst_c": "float64",
          "ndvi": "float64", "copa_modelo_pct": "float64", "arbol_pct": "float64", "pasto_pct": "float64", "construido_pct": "float64",
-         "poblacion": "int64", "social": "float64", "es_parque": "bool"}
+         "poblacion": "int64", "social": "float64", "es_parque": "bool", "vulnerabilidad": "float64"}
+
+# Vulnerabilidad al calor (Censo 2024 por manzana, repartido a cada cuadra por verdeh3.censo). Componentes en %:
+#   sensibilidad: personas de 60 años o más, de 0 a 5 años y con discapacidad (sobre las personas de la cuadra)
+#   capacidad de adaptación baja: viviendas hacinadas e irrecuperables (sobre las viviendas ocupadas) y menos años
+#   de escolaridad (promedio de los mayores de 18, ponderado por personas)
+# Cada componente se normaliza 0..1 (percentiles 2 y 98) sobre las 34 comunas; vulnerabilidad = promedio de
+# sensibilidad y capacidad, cada una el promedio de sus tres componentes. No es ingreso: el Censo no lo pregunta.
+MIN_PERSONAS_VULN = 50  # con menos personas los porcentajes de una cuadra son ruido: queda la mediana de la comuna
+VULN_PCT = {  # columna: (numerador, denominador) de verdeh3.censo
+    "pct_60_mas": ("censo_60_mas", "poblacion_censo"),
+    "pct_0_5": ("censo_0_5", "poblacion_censo"),
+    "pct_discapacidad": ("censo_discapacidad", "poblacion_censo"),
+    "pct_viv_hacinadas": ("censo_viv_hacinadas", "censo_viv_ocupadas"),
+    "pct_viv_irrecuperables": ("censo_viv_irrecuperables", "censo_viv_ocupadas"),
+}
+
+
+def vulnerabilidad(t: pd.DataFrame) -> pd.DataFrame:
+    """Componentes y vulnerabilidad (0..1) por cuadra, alineados con t. NaN donde hay menos de MIN_PERSONAS_VULN."""
+    if not all(c in t for num_den in VULN_PCT.values() for c in num_den):
+        print("Aviso: falta correr verdeh3.censo con las variables de vulnerabilidad; vulnerabilidad = 0")
+        return pd.DataFrame({"vulnerabilidad": 0.0}, index=t.index)
+    ok = t["poblacion_censo"] >= MIN_PERSONAS_VULN
+    v = pd.DataFrame(index=t.index)
+    for col, (num, den) in VULN_PCT.items():
+        v[col] = (100 * t[num] / t[den].where(t[den] > 0)).clip(0, 100).where(ok)
+    v["escolaridad"] = (t["censo_escolaridad_x_per"] / t["censo_per_escolaridad"].where(t["censo_per_escolaridad"] > 0)).where(ok)
+    sensibilidad = (_norm(v["pct_60_mas"]) + _norm(v["pct_0_5"]) + _norm(v["pct_discapacidad"])) / 3
+    adaptacion = (_norm(v["pct_viv_hacinadas"]) + _norm(v["pct_viv_irrecuperables"]) + 1 - _norm(v["escolaridad"])) / 3
+    v["vulnerabilidad"] = (sensibilidad + adaptacion) / 2
+    return v
 
 
 def armar(origen: Path, comunas: list[str] | None = None) -> pd.DataFrame:
     t = pd.read_parquet(origen)
-    t = t[(t["res"] == 9) & (t["comuna"].isin(comunas) if comunas else True)]
+    t = t[t["res"] == 9]
+    vuln = vulnerabilidad(t)  # sobre las 34 comunas: la escala no depende de qué comunas se exporten
+    if comunas:
+        t = t[t["comuna"].isin(comunas)]
+        vuln = vuln.loc[t.index]
     cerca = [(1 - t[f"dist_{c}_m"].fillna(np.inf) / RADIO_SOCIAL_M).clip(0, 1) for c in CATEGORIAS_SOCIAL]
     df = pd.DataFrame({
         "h3_index": t["h3"], "h3_padre": [h3.cell_to_parent(h, 7) for h in t["h3"]], "comuna": t["comuna"], "lat": t["lat"], "lon": t["lng"],
@@ -40,6 +76,8 @@ def armar(origen: Path, comunas: list[str] | None = None) -> pd.DataFrame:
         "social": sum(cerca) / len(cerca),
         "es_parque": (t["n_parques_consolidados"] > 0) & (t["pct_area_verde"] >= PCT_VERDE_PARQUE),
     }).reset_index(drop=True)
+    for c in vuln.columns:  # vulnerabilidad y sus componentes (NaN en cuadras casi vacías: se rellenan abajo)
+        df[c] = vuln[c].to_numpy()
     for c in ("lst_fecha", "lst_c_ultima", "lst_fecha_ultima"):  # extras de verdeh3.landsat, para el mapa
         if c in t:
             df[c] = t[c].to_numpy()
@@ -74,7 +112,7 @@ def mock(df: pd.DataFrame, n: int = 30, semilla: int = 0) -> pd.DataFrame:
         "lst_c": rng.uniform(30, 45, n), "ndvi": rng.uniform(0.05, 0.6, n),
         "copa_modelo_pct": arbol * 0.7, "arbol_pct": arbol, "pasto_pct": rng.uniform(0, 100 - arbol), "construido_pct": rng.uniform(20, 90, n),
         "poblacion": rng.integers(100, 2000, n), "social": rng.uniform(0, 1, n),
-        "es_parque": np.isin(np.arange(n), [0, 20, 27]),
+        "es_parque": np.isin(np.arange(n), [0, 20, 27]), "vulnerabilidad": rng.uniform(0, 1, n),
     }).round(4).astype(TIPOS)
 
 

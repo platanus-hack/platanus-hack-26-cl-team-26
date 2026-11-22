@@ -78,24 +78,27 @@ python -m verdeh3.contrato      # data/santiago_h3.parquet, _mock, _gs (34 comun
 python -m tests.test_contrato
 ```
 
-`optimizer.solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None)` devuelve el
-corredor continuo entre parques que más urgencia cubre dentro del presupuesto.
+`optimizer.solve_corridor(df, budget_km=3.0, w_calor=0.35, w_arbol=0.35, w_personas=0.2, live=None, w_vuln=0.1)`
+devuelve el corredor continuo entre parques que más urgencia cubre dentro del presupuesto. `w_vuln` pesa la
+vulnerabilidad al calor del Censo 2024 (personas mayores, niños pequeños, discapacidad, hacinamiento, viviendas
+irrecuperables y escolaridad); es solo de las personas, el corredor de aves y abejas no la usa.
 
 ## App web
 
 La página (Next, en `web/`) muestra los datos y traza el corredor; `python -m terreno.servidor --puerto 8000`
 (FastAPI) es su API: cruza los datos por comuna y calcula el corredor. Ver `web/README.md` para levantarla.
 
-- *Datos clave*: capas de calor (suelo y aire), árboles, personas, aves y abejas por cuadra, en las 34
-  comunas. Un clic en una cuadra muestra sus datos; doble clic elige su comuna; el lápiz encierra cuadras.
-- *Planificar*: corredor con presupuesto (km) y pesos de calor, árboles y personas, para humanos, aves, abejas
-  o mixto (`ecologia.py`), con las cifras contra un trazado al azar y la fauna registrada en los barrios que
+- *Datos clave*: capas de calor (suelo y aire), árboles, personas, vulnerabilidad al calor, aves y abejas por
+  cuadra, en las 34 comunas. Un clic en una cuadra muestra sus datos; doble clic elige su comuna; el lápiz encierra cuadras.
+- *Planificar*: corredor con presupuesto (km) y pesos de calor, árboles, personas y vulnerabilidad (este último
+  solo si se traza para humanos), para humanos, aves, abejas o mixto (`ecologia.py`), con las cifras contra un trazado al azar y la fauna registrada en los barrios que
   cruza.
 - *Santiago conectado*: la red completa sobre todo Santiago, de 0 a 100 km, para personas, aves, abejas o las tres:
   hectáreas de hábitat unido (islas que dejan de estar solas), personas con un espacio verde a menos de 300 m
   (indicador de la OMS Europa, 2016; hoy el 14 %), barrios con aves y mini islas para abejas. La precalcula
   `python red_conectada.py` en `web/public/data/red.json` (cada presupuesto son los primeros tramos de la red de
-  100 km, así crece sin cambiar de lugar).
+  100 km, así crece sin cambiar de lugar), con los pesos 40/40/20 de antes y sin la vulnerabilidad, para que sus
+  cifras sigan siendo las del pitch.
 - `/` lleva al sitio Viridis si está exportado (`web/out`), si no a `/mapa`. La página del teléfono
   (`/captura`) se retiró: el equipo decidió quedarse solo con el sitio.
 

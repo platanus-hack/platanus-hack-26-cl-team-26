@@ -5,15 +5,21 @@
     r["hexes"], r["length_km"], r["urgencia_cubierta"], r["urgencia_azar"], r["personas_cubiertas"]
 
 Urgencia por hexágono (cada término 0 a 1):
-  calor    = 0,6·lst_c_norm + 0,4·vivo_norm   (vivo = temp_aire_c del barrio res 7, confianza alta o media;
-             donde no hay dato en vivo, o hay menos de dos barrios con dato, solo lst_c_norm)
+  calor    = 0,7·lst_c_norm + 0,3·aire   (aire = temp_aire_c del barrio res 7 en escala fija de ±3 °C, confianza
+             alta o media; donde no hay dato, o hay menos de AIRE_MIN_BARRIOS barrios con dato, solo lst_c_norm)
   falta    = 1 − copa_norm   (copa_modelo_pct: % de copa de árboles que predice nuestro modelo con
              Sentinel-2 de 2026, ver verdeh3.modelo_copa; sin esa columna, 1 − arbol_pct/100 de WorldCover)
   personas = 0,7·poblacion_norm + 0,3·social
+  vuln     = vulnerabilidad_norm: vulnerabilidad al calor de quienes viven en la cuadra (Censo 2024: 60+, 0 a 5
+             años, discapacidad, viviendas hacinadas e irrecuperables, escolaridad; ver verdeh3.contrato). Es solo
+             de las personas: el corredor de aves y abejas no la usa (ecologia.py). Sin la columna, no entra.
   bio      = biodiversidad_terreno del hexágono (aves oídas o vistas, polinizadores, flores; solo con
              `terreno`, 0 donde no hay datos de terreno)
-  U        = (w_calor·calor + w_arbol·falta + w_personas·personas + w_bio·bio) / (suma de los pesos)
-  Los pesos se pueden mover libremente: se reescalan para sumar 1 (0,4/0,4/0,2 queda igual).
+  U        = (w_calor·calor + w_arbol·falta + w_personas·personas + w_vuln·vuln + w_bio·bio) / (suma de los pesos)
+  Los pesos se pueden mover libremente: se reescalan para sumar 1. Por omisión (PESOS) 35 % calor, 35 % falta de
+  árboles, 20 % personas y 10 % vulnerabilidad. Con 40/40/10/10 el corredor de todo Santiago se iba a cuadras
+  industriales con poca gente (1.436 personas contra 7.002 al azar); con 35/35/20/10 cubre 11.393 contra 7.002 y su
+  gente es más vulnerable que el promedio de Santiago (0,52 contra 0,40).
   w_bio = 0 por omisión (resultado idéntico al de antes). Con w_bio > 0 el corredor prefiere pasar por donde
   el equipo registró fauna: conecta hábitat que ya existe. No detectar fauna no significa que no haya, y un
   hexágono sin visitar vale 0; por eso conviene un peso bajo (el mapa usa 0,1).
@@ -48,6 +54,8 @@ AIRE_MIN_BARRIOS = 5
 AIRE_ESCALA_C = 6.0        # 0..1 cubre ±3 °C alrededor de la mediana de los barrios medidos
 AIRE_PESO = 0.3            # parte del término de calor que aporta el aire donde hay dato; el resto es el suelo
 MIN_PERSONAS_HEX = 50      # ~500 hab/km²: industria o eriazo; ahí no se planta salvo parques
+# Pesos por omisión de la urgencia de las personas: los usan la página, las cifras del pitch y Santiago conectado.
+PESOS = {"w_calor": 0.35, "w_arbol": 0.35, "w_personas": 0.2, "w_vuln": 0.1}
 N_AZAR = 200
 SEMILLAS = 20
 VIABILIDAD_MIN = 0.2       # bajo esto, un hexágono verificado en terreno no entra al grafo (salvo parques)
@@ -75,8 +83,11 @@ def biodiversidad(df, terreno) -> pd.Series:
     return df["h3_index"].map(t).fillna(0.0).clip(0, 1)
 
 
-def urgencia(df, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None, terreno=None, w_bio=0.0) -> pd.Series:
-    w = (w_calor, w_arbol, w_personas, w_bio)
+def urgencia(df, w_calor=0.35, w_arbol=0.35, w_personas=0.2, live=None, terreno=None, w_bio=0.0,
+             w_vuln=0.1) -> pd.Series:
+    if "vulnerabilidad" not in df:  # datos sin la columna: el término no entra (ni en la suma de los pesos)
+        w_vuln = 0.0
+    w = (w_calor, w_arbol, w_personas, w_bio, w_vuln)
     if min(w) < 0 or sum(w) <= 0:
         raise ValueError(f"Pesos deben ser >= 0 y no todos 0: {w}")
     calor = _norm(df["lst_c"])
@@ -97,6 +108,8 @@ def urgencia(df, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None, terreno=No
         falta = ((falta + (1 - campo.clip(0, 100) / 100)) / 2).where(campo.notna(), falta)
     personas = 0.7 * _norm(df["poblacion"]) + 0.3 * df["social"].clip(0, 1)
     u = w_calor * calor + w_arbol * falta + w_personas * personas
+    if w_vuln:
+        u = u + w_vuln * _norm(df["vulnerabilidad"])
     if w_bio:
         u = u + w_bio * biodiversidad(df, terreno)
     return (u / sum(w)).rename("urgencia")
@@ -176,16 +189,16 @@ def _red_continua(tramos, paso, budget_km):
     return max(redes, key=lambda r: r[1])[0] if redes else []
 
 
-def solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None,
-                   terreno=None, w_bio=0.0, apoyo=None) -> dict:
+def solve_corridor(df, budget_km=3.0, w_calor=0.35, w_arbol=0.35, w_personas=0.2, live=None,
+                   terreno=None, w_bio=0.0, apoyo=None, w_vuln=0.1) -> dict:
     """`apoyo`: cuadras de comunas vecinas (mismas columnas que df, sin repetir). Sus parques sirven de extremo y
     sus cuadras de paso, pero cada tramo debe ir en su mayoría por df. La urgencia que se devuelve es solo la de df."""
-    U_todo = urgencia(df, w_calor, w_arbol, w_personas, live, terreno, w_bio)
+    U_todo = urgencia(df, w_calor, w_arbol, w_personas, live, terreno, w_bio, w_vuln)
     nucleo = pd.Series(True, index=df.index)
     if apoyo is not None and len(apoyo):
         junto = pd.concat([df, apoyo])
         # La urgencia de lo elegido no cambia al sumar apoyo; la del apoyo se mide sobre el conjunto.
-        U_ap = urgencia(junto, w_calor, w_arbol, w_personas, live, terreno, w_bio).loc[apoyo.index]
+        U_ap = urgencia(junto, w_calor, w_arbol, w_personas, live, terreno, w_bio, w_vuln).loc[apoyo.index]
         nucleo = pd.concat([nucleo, pd.Series(False, index=apoyo.index)])
         U_propia, df, U_todo = U_todo, junto, pd.concat([U_todo, U_ap])
     else:

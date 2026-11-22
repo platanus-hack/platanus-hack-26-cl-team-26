@@ -12,7 +12,7 @@ import pandas as pd
 from PIL import Image
 
 import terreno.vision as vision
-from optimizer import solve_corridor
+from optimizer import PESOS, solve_corridor
 from terreno.almacen import Almacen, terreno_h3
 
 DEMO = Path("data/santiago_h3.parquet")
@@ -316,7 +316,11 @@ def test_mapa_area_y_pesos():
         sub = df[df["comuna"].isin(["Cerro Navia", "Quinta Normal"])]
         esperado = solve_corridor(sub, 8, 1, 0, 0)
         assert r["ahora"]["hexes"] == len(esperado["hexes"])
-        assert c.post("/api/seleccion", json={"w_calor": 0, "w_arbol": 0, "w_personas": 0, "w_bio": 0}).status_code == 422
+        # la vulnerabilidad es un peso más: cambia la urgencia y sola basta para trazar
+        r = c.post("/api/seleccion", json={"w_calor": 0, "w_arbol": 0, "w_personas": 0, "w_bio": 0, "w_vuln": 1}).json()
+        assert r["parametros"]["w_vuln"] == 1 and r["ahora"]["hexes"] == len(solve_corridor(sub, 8, 0, 0, 0, w_vuln=1)["hexes"])
+        assert "vuln" in c.get("/api/estado").json()["hex"]
+        assert c.post("/api/seleccion", json={"w_vuln": 0}).status_code == 422   # todos los pesos en 0
         assert c.post("/api/seleccion", json={"km": 100}).status_code == 422
         assert c.get("/api/version").json()["version"] > v0["version"]
         assert c.get("/api/salud").json() == {"ok": True}
@@ -656,11 +660,12 @@ def test_sesiones_por_navegador():
         assert c.post(f"/api/seleccion?s={a}", json={"comunas": ["Cerro Navia"], "w_calor": 0.9, "w_arbol": 0.05, "w_personas": 0.05}).status_code == 200
         ea, eb, comun = (c.get(f"/api/estado{q}").json() for q in (f"?s={a}", f"?s={b}", ""))
         assert ea["seleccion"] == ["Cerro Navia"] and ea["parametros"]["w_calor"] == 0.9
-        assert eb["seleccion"] == ["Cerro Navia", "Quinta Normal"] and eb["parametros"]["w_calor"] == 0.4
-        assert comun["seleccion"] == ["Cerro Navia", "Quinta Normal"] and comun["parametros"]["w_calor"] == 0.4
+        assert eb["seleccion"] == ["Cerro Navia", "Quinta Normal"] and eb["parametros"]["w_calor"] == PESOS["w_calor"]
+        assert comun["seleccion"] == ["Cerro Navia", "Quinta Normal"] and comun["parametros"]["w_calor"] == PESOS["w_calor"]
+        assert eb["parametros"]["w_vuln"] == PESOS["w_vuln"]
         assert ea["sel_id"] != eb["sel_id"]
         # Un navegador nuevo (recargar la página) parte con los valores por defecto.
-        assert c.get("/api/comunas?s=navegadorCCCC").json()["parametros"]["w_calor"] == 0.4
+        assert c.get("/api/comunas?s=navegadorCCCC").json()["parametros"]["w_calor"] == PESOS["w_calor"]
         assert c.get("/api/version?s=mal").status_code == 422
 
 

@@ -21,7 +21,7 @@
   },
   "urgencia_media": {
     "Cerro Navia": 0.716,
-    "Providencia": 0.484
+    "Providencia": 0.451
   },
   "verde_satelite_poca_sombra": {
     "criterio": "ndvi >= 0,3 y copa_modelo_pct < 5, sin parques",
@@ -42,22 +42,22 @@
   "corredor": {
     "km": 2.78,
     "hexagonos": 8,
-    "tramos": 4,
+    "tramos": 3,
     "por_comuna": {
       "Cerro Navia": 8
     },
-    "urgencia_cubierta": 0.754,
-    "urgencia_azar": 0.635,
-    "personas_cubiertas": 13295,
-    "personas_azar": 8334
+    "urgencia_cubierta": 0.76,
+    "urgencia_azar": 0.606,
+    "personas_cubiertas": 11908,
+    "personas_azar": 8261
   },
   "corredor_gran_santiago": {
     "por_comuna": {
       "Pudahuel": 8
     },
-    "urgencia_cubierta": 0.726,
-    "urgencia_azar": 0.566,
-    "personas_cubiertas": 10023,
+    "urgencia_cubierta": 0.714,
+    "urgencia_azar": 0.552,
+    "personas_cubiertas": 11393,
     "personas_azar": 7002
   }
 }

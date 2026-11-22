@@ -71,6 +71,7 @@ const ISLA = "#6A994E";   // islas verdes de Planificar: más claras que el corr
 const MORADO = ["#F3ECE6", "#D3BBD6", "#9A6BA8", "#5C2F78"];   // densidad de personas
 const AZUL = ["#EEF0EA", "#BBD0CC", "#5E9590", "#1F4F55"];      // especies de aves registradas en el barrio (GBIF)
 const AMBAR = ["#F4EFDF", "#EFD58C", "#E3A21A", "#9A5B08"];    // abejas nativas registradas en el barrio (GBIF)
+const VINO = ["#F5EEE8", "#E8C2B4", "#C47A6B", "#7E2F3F"];     // vulnerabilidad al calor (Censo 2024)
 const AVES_MAX = 70;     // especies de aves por barrio desde la que el color ya no sube (percentil 90: 66)
 const ABEJAS_MAX = 15;   // registros de abejas nativas por barrio desde los que el color ya no sube
 const grad = (c: string[]) => `linear-gradient(90deg,${c.join(",")})`;
@@ -83,14 +84,16 @@ const CAPAS_AHORA: Capa[] = [
   { id: "calor", color: escala("calor", NARANJO, 0, 1) },
   { id: "copa", color: escala("copa", VERDE, 0, 25) },
   { id: "personas", color: escala("personas", MORADO, 0, 1) },
+  { id: "vulnerabilidad", color: escala("vu", VINO, 0.15, 0.7) },
   { id: "aves", color: escala("av", AZUL, 0, AVES_MAX) },
   { id: "abejas", color: escala("ab", AMBAR, 0, ABEJAS_MAX) },
 ];
-const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Árboles", personas: "Personas", aves: "Aves", abejas: "Abejas" };
+const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Árboles", personas: "Personas", vulnerabilidad: "Vulnerabilidad", aves: "Aves", abejas: "Abejas" };
 const LEYENDA: Record<string, [string, string]> = {
   calor: [grad(NARANJO), "Índice de calor: temperatura del suelo; donde hay sensores de aire confiables en al menos 5 barrios, 70 % suelo y 30 % aire"],
   copa: [grad(VERDE), "Copa de árboles, de 0 % a 25 % o más"],
   personas: [grad(MORADO), "Personas: 70 % habitantes del Censo en la cuadra y 30 % cercanía a colegios, salud, metro y paraderos"],
+  vulnerabilidad: [grad(VINO), "Vulnerabilidad al calor de quienes viven en la cuadra (Censo 2024): personas de 60 años o más, de 0 a 5 años y con discapacidad, viviendas hacinadas e irrecuperables y menos años de escolaridad. No es ingreso"],
   aves: [grad(AZUL), `Especies de aves registradas en el barrio desde 2015, de 0 a ${AVES_MAX} o más (GBIF: eBird, iNaturalist). Registros, no censo: hay más observadores en parques y cerros`],
   abejas: [grad(AMBAR), `Registros de abejas nativas en el barrio desde 2015, de 0 a ${ABEJAS_MAX} o más (GBIF, sobre todo iNaturalist). Sin la abeja de miel ni el abejorro europeo, que son exóticos`],
 };
@@ -350,6 +353,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       ${B.vivo[i] != null ? fila("Aire, máxima de ayer", `${formato(B.vivo[i] as number, 1)} °C`) : ""}
       ${fila("Copa de árboles", B.copa[i] == null ? "sin dato" : `${formato(B.copa[i] as number, 1)} %`)}
       ${fila("Personas", formato(B.pob[i]))}
+      ${B.vuln?.[i] != null ? fila("Vulnerabilidad al calor", `${formato(B.vuln[i] as number, 2)} de 1`) : ""}
       ${faunaDe[i]?.an ? fila("Aves en el barrio", `${faunaDe[i]!.asp} especies`) : ""}
       ${faunaDe[i]?.bn ? fila("Abejas nativas en el barrio", `${faunaDe[i]!.bn} ${faunaDe[i]!.bn === 1 ? "registro" : "registros"}`) : ""}
       ${fila("Coordenadas", `<a href="${gmapsUrl}" target="_blank" rel="noopener noreferrer">${lat.toFixed(5)}, ${lng.toFixed(5)} ↗</a>`)}</table>
@@ -398,7 +402,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       : " Sin abejas registradas en el barrio (no significa que no haya).";
     return "";
   };
-  const datosAhora = useMemo(() => coleccion((i) => ({ calor: calor[i], copa: B.copa[i], personas: personas[i], av: faunaDe[i]?.asp ?? 0, ab: faunaDe[i]?.bn ?? 0 })), [calor, personas, anillos, faunaDe]); // eslint-disable-line react-hooks/exhaustive-deps
+  const datosAhora = useMemo(() => coleccion((i) => ({ calor: calor[i], copa: B.copa[i], personas: personas[i], vu: B.vuln?.[i] ?? null, av: faunaDe[i]?.asp ?? 0, ab: faunaDe[i]?.bn ?? 0 })), [calor, personas, anillos, faunaDe]); // eslint-disable-line react-hooks/exhaustive-deps
   // Cifras de lo elegido: el total y, debajo, cada comuna (o cada comuna que toca la zona dibujada).
   const cifras = (idx: number[]) => {
     const l = sinNulos(idx.map((i) => B.lst[i])), cp = sinNulos(idx.map((i) => B.copa[i]));
@@ -416,11 +420,12 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
 
   // ---- Planificar: presupuesto y pesos van al servidor, que recalcula el corredor
   const p = estado.parametros;
-  // Calor, árboles y personas suman 100. El peso de biodiversidad de terreno queda en 0.
+  // Calor, árboles, personas y vulnerabilidad suman 100. El peso de biodiversidad de terreno queda en 0.
   const [pesos, setPesos] = useState(() => {
-    const tot = p.w_calor + p.w_arbol + p.w_personas || 1;
+    const vu = p.w_vuln ?? 0;
+    const tot = p.w_calor + p.w_arbol + p.w_personas + vu || 1;
     return { km: p.km, calor: Math.round((100 * p.w_calor) / tot), arbol: Math.round((100 * p.w_arbol) / tot),
-             pers: Math.round((100 * p.w_personas) / tot), bio: 0 };
+             pers: Math.round((100 * p.w_personas) / tot), vuln: Math.round((100 * vu) / tot), bio: 0 };
   });
   const temporizador = useRef<ReturnType<typeof setTimeout>>(undefined);
   function mover(k: keyof typeof pesos, v: number) {
@@ -428,11 +433,11 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
     setPesos(nuevo);
     clearTimeout(temporizador.current);
     temporizador.current = setTimeout(() => {
-      const w = nuevo.calor + nuevo.arbol + nuevo.pers + nuevo.bio > 0 ? nuevo : { ...nuevo, calor: 40, arbol: 40, pers: 20, bio: 0 };
-      cambiar({ km: w.km, w_calor: w.calor, w_arbol: w.arbol, w_personas: w.pers, w_bio: w.bio });
+      const w = nuevo.calor + nuevo.arbol + nuevo.pers + nuevo.vuln + nuevo.bio > 0 ? nuevo : { ...nuevo, calor: 35, arbol: 35, pers: 20, vuln: 10, bio: 0 };
+      cambiar({ km: w.km, w_calor: w.calor, w_arbol: w.arbol, w_personas: w.pers, w_vuln: w.vuln, w_bio: w.bio });
     }, 450);
   }
-  const total = pesos.calor + pesos.arbol + pesos.pers + pesos.bio || 1;
+  const total = pesos.calor + pesos.arbol + pesos.pers + pesos.vuln + pesos.bio || 1;
   const a = estado.ahora, b = estado.antes;
   // La urgencia es relativa al área del servidor: fuera de lo elegido las cuadras quedan sin valor (gris tenue).
   const datosPlan = useMemo(() => {
@@ -593,7 +598,9 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
           <p className="criterio" aria-live="polite">{CRITERIO[claveEspecies]}</p>
         </div>
         <div className={`b-controles escalon${planListo ? "" : " espera"}`} style={est(2)}>
-          {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"]] as const).map(([k, nombre]) => (
+          {/* La vulnerabilidad es solo de las personas: sin Humanos el corredor no la usa y el control se oculta. */}
+          {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"], ["vuln", "Vulnerabilidad al calor"]] as const)
+            .filter(([k]) => k !== "vuln" || especies.includes("humanos")).map(([k, nombre]) => (
             <div className="peso" key={k}>
               <label htmlFor={`p-${k}`}><span>{nombre}</span><b>{Math.round((100 * pesos[k]) / total)} %</b></label>
               <input id={`p-${k}`} type="range" min={0} max={100} step={5} value={pesos[k]} onChange={(e) => mover(k, Number(e.target.value))} />
