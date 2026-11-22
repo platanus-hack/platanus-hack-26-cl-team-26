@@ -667,3 +667,28 @@ def test_comunas_vecinas():
         assert e["ahora"]["hexes"] == 0 and e["ahora"]["km_min"] > 3
         c.post("/api/seleccion", json={"km": e["ahora"]["km_min"] + 0.4})
         assert c.get("/api/estado").json()["ahora"]["hexes"] > 0
+
+
+def test_perfiles_de_corredor():
+    """El corredor se puede trazar para personas, aves, abejas o mixto; cada navegador guarda su perfil."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(GS, Path(tmp), usar_claude=False, comunas=["Santiago", "Providencia", "Ñuñoa"]))
+        s = "navegadorPERF"
+        base = c.get(f"/api/estado?s={s}").json()
+        assert base["parametros"]["perfil"] == "humanos" and base["ahora"]["checkpoints"] == 0
+        vistos = {}
+        for perfil in ("fauna_aves", "fauna_abejas", "mixto"):
+            assert c.post(f"/api/seleccion?s={s}", json={"perfil": perfil}).status_code == 200
+            e = c.get(f"/api/estado?s={s}").json()
+            assert e["parametros"]["perfil"] == perfil and e["ahora"]["hexes"] > 0
+            assert sum(e["hex"]["checkpoint"]) == e["ahora"]["checkpoints"]
+            vistos[perfil] = e["ahora"]
+        assert vistos["fauna_aves"]["checkpoints"] == 0 and vistos["fauna_abejas"]["checkpoints"] > 0
+        assert vistos["mixto"]["checkpoints"] > 0
+        assert c.post(f"/api/seleccion?s={s}", json={"perfil": "dragones"}).status_code == 422
+        assert c.get("/api/estado").json()["parametros"]["perfil"] == "humanos"   # la sesión compartida no cambió
+        assert c.post(f"/api/seleccion?s={s}", json={"perfil": "humanos"}).status_code == 200
+        assert c.get(f"/api/estado?s={s}").json()["ahora"]["personas_cubiertas"] == base["ahora"]["personas_cubiertas"]

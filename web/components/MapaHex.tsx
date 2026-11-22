@@ -188,6 +188,14 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
           id: "corredor-verificado", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "verificado"],
           paint: { "line-color": "#B0398B", "line-width": 3 },
         });
+        nuevo.addLayer({
+          id: "corredor-checkpoint", type: "fill", source: "corredor", filter: ["==", ["get", "tipo"], "checkpoint"],
+          paint: { "fill-color": "#C026D3", "fill-opacity": 0.94 },
+        });
+        nuevo.addLayer({
+          id: "corredor-checkpoint-borde", type: "line", source: "corredor", filter: ["==", ["get", "tipo"], "checkpoint"],
+          paint: { "line-color": "#701A75", "line-width": 2 },
+        });
         nuevo.addSource("recorridos", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "recorridos", type: "line", source: "recorridos", paint: { "line-color": "#6B3FA0", "line-width": 4, "line-opacity": 0.85 } });
         // Nombres de los cerros isla y parques grandes, con la misma fuente de letras del mapa base.

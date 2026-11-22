@@ -1,0 +1,190 @@
+"""
+Módulo de Conectividad Ecológica (Plan v5 · Corredores Vivos).
+Diferencia la optimización para:
+  - Humanos: Alivio térmico, sombra y densidad poblacional (usa optimizer.solve_corridor).
+  - Fauna · Aves: Corredor arbóreo continuo de baja resistencia entre parques/islas verdes.
+  - Fauna · Abejas: Mini islas (checkpoints / piedras de paso) para conectar parches separados.
+  - Mixto: Equilibrio entre alivio térmico humano y conectividad ecológica.
+"""
+from __future__ import annotations
+
+import math
+import h3
+import numpy as np
+import pandas as pd
+
+from optimizer import _dijkstra, _norm, _red_continua, _tramos, solve_corridor, urgencia
+
+PERFILES = {
+    "humanos": "Humanos (Alivio térmico y sombra)",
+    "fauna_aves": "Animales: Aves (Corredor arbóreo continuo)",
+    "fauna_abejas": "Animales: Abejas y Polinizadores (Mini islas / Checkpoints)",
+    "mixto": "Mixto (Humanos + Fauna)",
+}
+
+
+def calcular_resistencia_ecologica(df: pd.DataFrame, gremio: str = "aves") -> pd.Series:
+    """
+    Calcula superficie de resistencia (1 = hábitat ideal, 100 = barrera)
+    usando las coberturas reales del parquet: copa/árboles, pasto y construido.
+    """
+    col_arb = "copa_modelo_pct" if "copa_modelo_pct" in df.columns else "arbol_pct"
+    arb = df[col_arb].fillna(0).clip(0, 100) / 100.0
+    pas = df["pasto_pct"].fillna(0).clip(0, 100) / 100.0
+    con = df["construido_pct"].fillna(0).clip(0, 100) / 100.0
+    otros = (1.0 - (arb + pas + con)).clip(0, 1)
+
+    if gremio == "abejas":
+        # Abejas: pasto con flores = hábitat (1), árboles = recurso (5), construido = barrera (60)
+        res = arb * 5.0 + pas * 1.0 + con * 60.0 + otros * 40.0
+    else:
+        # Aves de bosque: árboles = hábitat (1), pasto = abierto difícil (60), construido = intermedio (40)
+        res = arb * 1.0 + pas * 60.0 + con * 40.0 + otros * 50.0
+
+    # Los parques consolidados tienen resistencia mínima
+    res = res.where(~df["es_parque"], 1.0)
+    return res.clip(1.0, 100.0).rename("resistencia")
+
+
+def resolver_corredor_por_perfil(
+    df: pd.DataFrame,
+    perfil: str = "humanos",
+    budget_km: float = 3.0,
+    w_calor: float = 0.4,
+    w_arbol: float = 0.4,
+    w_personas: float = 0.2,
+    live: pd.DataFrame | None = None,
+    salto_checkpoint: int = 2,
+) -> dict:
+    """
+    Ejecuta la optimización según el perfil seleccionado (Humanos, Aves, Abejas o Mixto).
+    Retorna un diccionario uniforme con hexes_corredor, hexes_checkpoints, tramos,
+    score_mapa (0..1 para colorear), y métricas de impacto.
+    """
+    if perfil == "humanos":
+        res = solve_corridor(
+            df,
+            budget_km=budget_km,
+            w_calor=w_calor,
+            w_arbol=w_arbol,
+            w_personas=w_personas,
+            live=live,
+        )
+        return {
+            "perfil": perfil,
+            "hexes_corredor": res["hexes"],
+            "hexes_checkpoints": [],
+            "tramos": res["tramos"],
+            "length_km": res["length_km"],
+            "score_mapa": res["urgencia"],
+            "urgencia_cubierta": res["urgencia_cubierta"],
+            "urgencia_azar": res["urgencia_azar"],
+            "personas_cubiertas": res["personas_cubiertas"],
+            "personas_azar": res["personas_azar"],
+            "parques_conectados": len(res["tramos"]) + 1 if res["tramos"] else 0,
+            "resistencia_media": float(calcular_resistencia_ecologica(df, "aves").mean()),
+        }
+
+    # Para fauna o mixto construimos el grafo sobre todos los hexágonos disponibles en el filtro
+    gremio = "abejas" if perfil == "fauna_abejas" else "aves"
+    res_eco = calcular_resistencia_ecologica(df, gremio=gremio)
+    u_hum = urgencia(df, w_calor, w_arbol, w_personas, live)
+
+    if perfil == "mixto":
+        # Equilibrio 50% urgencia humana + 50% necesidad de conectar zonas de alta resistencia ecológica
+        res_norm = _norm(res_eco)
+        prioridad = (0.5 * u_hum + 0.5 * res_norm).rename("prioridad")
+        costo_arr = (res_eco / 100.0) * 0.5 + (1.0 / (0.05 + u_hum)) * 0.5
+    else:
+        # En fauna pura priorizamos reducir barreras de resistencia entre parques separados
+        prioridad = _norm(res_eco).rename("prioridad")
+        costo_arr = res_eco / 50.0  # menor costo = más fácil de cruzar para el animal
+
+    hexs = df["h3_index"].tolist()
+    parque = df["es_parque"].to_numpy()
+    pob = df["poblacion"].to_numpy()
+    prio_arr = prioridad.to_numpy()
+    costos = np.where(parque, 0.0, costo_arr.to_numpy())
+
+    idx = {h: i for i, h in enumerate(hexs)}
+    vec = [[idx[v] for v in h3.grid_disk(h, 1) if v != h and v in idx] for h in hexs]
+
+    dist, etiq, prev = _dijkstra(vec, costos, parque)
+    tramos = _tramos(vec, dist, etiq, prev, parque, prio_arr)
+    paso = math.sqrt(3) * h3.average_hexagon_edge_length(9, unit="km")  # ~0.35 km
+
+    if perfil == "fauna_abejas":
+        # Diseño B (Piedras de paso / Mini islas): cada tramo se interviene plantando 1 de cada `salto_checkpoint` hexágonos
+        # Esto permite estirar el presupuesto para conectar MÁS parques separados mediante checkpoints
+        n_max_islas = max(2, int(round(budget_km / paso)))
+        checkpoints_idx = []
+        tramos_sel = []
+        usados = set()
+        parques_cubiertos = set()
+
+        for a, b, cam, um in tramos:
+            # Elegir puntos estratégicos (checkpoints) dentro del tramo para romper desiertos de cemento
+            pts = [cam[i] for i in range(0, len(cam), salto_checkpoint)]
+            if len(cam) > 1 and cam[-1] not in pts:
+                pts.append(cam[-1])
+            nuevos_pts = [p for p in pts if p not in usados]
+            if not nuevos_pts:
+                continue
+            if len(checkpoints_idx) + len(nuevos_pts) > n_max_islas:
+                continue
+            checkpoints_idx.extend(nuevos_pts)
+            usados.update(nuevos_pts)
+            tramos_sel.append([hexs[i] for i in cam])
+            parques_cubiertos.update((a, b))
+
+        hexes_cp = [hexs[i] for i in checkpoints_idx]
+        # También devolvemos los hexágonos de la ruta de vuelo completa entre checkpoints
+        ruta_completa = sorted({h for t in tramos_sel for h in t})
+        res_cp = float(res_eco.iloc[checkpoints_idx].mean()) if checkpoints_idx else float(res_eco.mean())
+        return {
+            "perfil": perfil,
+            "hexes_corredor": ruta_completa,
+            "hexes_checkpoints": hexes_cp,
+            "tramos": tramos_sel,
+            "length_km": len(hexes_cp) * paso,
+            "score_mapa": prioridad,
+            "urgencia_cubierta": float(u_hum.iloc[checkpoints_idx].mean()) if checkpoints_idx else 0.0,
+            "urgencia_azar": float(u_hum.mean()),
+            "personas_cubiertas": int(pob[checkpoints_idx].sum()) if checkpoints_idx else 0,
+            "personas_azar": 0,
+            "parques_conectados": len(parques_cubiertos),
+            "resistencia_media": res_cp,
+        }
+
+    # Perfil fauna_aves o mixto: corredor continuo parque-tramo-parque
+    red = _red_continua(tramos, paso, budget_km)
+    sel, usado, parques_cubiertos = [], set(), set()
+    tramos_sel = []
+    for k in red:
+        a, b, cam, _ = tramos[k]
+        nuevos = [i for i in cam if i not in usado]
+        usado.update(nuevos)
+        sel += nuevos
+        tramos_sel.append([hexs[i] for i in cam])
+        parques_cubiertos.update((a, b))
+
+    # En modo mixto, sugerimos además checkpoints en los puntos de mayor resistencia del corredor
+    checkpoints_mixto = []
+    if perfil == "mixto" and sel:
+        # Marcar los puntos más críticos (cada 3er hexágono o los de mayor resistencia) como mini islas floridas
+        checkpoints_mixto = [hexs[sel[i]] for i in range(0, len(sel), 3)]
+
+    return {
+        "perfil": perfil,
+        "hexes_corredor": [hexs[i] for i in sel],
+        "hexes_checkpoints": checkpoints_mixto,
+        "tramos": tramos_sel,
+        "length_km": len(sel) * paso,
+        "score_mapa": prioridad,
+        "urgencia_cubierta": float(u_hum.iloc[sel].mean()) if sel else 0.0,
+        "urgencia_azar": float(u_hum.mean()),
+        "personas_cubiertas": int(pob[sel].sum()) if sel else 0,
+        "personas_azar": 0,
+        "parques_conectados": len(parques_cubiertos),
+        "resistencia_media": float(res_eco.iloc[sel].mean()) if sel else float(res_eco.mean()),
+    }

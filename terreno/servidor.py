@@ -37,6 +37,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFi
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ecologia import PERFILES, resolver_corredor_por_perfil
 from optimizer import solve_corridor
 from terreno import aves
 from terreno.almacen import Almacen, cuenta, estado_validacion, hora
@@ -62,7 +63,10 @@ def _resumen(r: dict) -> dict:
     return {"hexes": len(r["hexes"]), "km": round(r["length_km"], 2),
             "urgencia_cubierta": round(r["urgencia_cubierta"], 3), "urgencia_azar": round(r["urgencia_azar"], 3),
             "personas_cubiertas": r["personas_cubiertas"], "verificados": r.get("verificados", 0),
-            "km_min": round(r["km_min"], 2) if r.get("km_min") else None}
+            "km_min": round(r["km_min"], 2) if r.get("km_min") else None,
+            "checkpoints": len(r.get("checkpoints", [])),
+            "parques_conectados": r.get("parques_conectados", 0),
+            "resistencia_media": r.get("resistencia_media")}
 
 
 def _num(x, lo=None, hi=None):
@@ -110,6 +114,7 @@ class Seleccion(BaseModel):
     w_personas: float | None = None
     w_bio: float | None = None
     vecinas: bool | None = None          # el corredor puede partir o llegar a parques de las comunas vecinas
+    perfil: str | None = None            # humanos | fauna_aves | fauna_abejas | mixto
 
 
 def distritos(df: pd.DataFrame) -> dict[tuple[str, str], str]:
@@ -197,7 +202,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     # presupuesto y pesos) identificada por `s`, que vive solo en memoria y se pierde al recargar la página.
     estado: dict = {"datos": 0, "cambios": 0, "sel_seq": 0, "sel_id": 0, "live_mtime": None, "live": None,
                     "intento_vivo": 0.0, "terreno": None,
-                    "p": {"comunas": [], "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2, W_BIO)}}
+                    "p": {"comunas": [], "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2, W_BIO), "perfil": "humanos"}}
     sesiones: OrderedDict[str, dict] = OrderedDict()
     MAX_SESIONES = 64
 
@@ -215,10 +220,36 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         return True
 
     def resolver(st: dict, terreno=None):
+        """Corredor de una sesión según su perfil: para personas (optimizer) o para fauna (ecologia)."""
         p = st["p"]
         wc, wa, wp, wb = p["w"]
-        return solve_corridor(st["sub"], p["km"], wc, wa, wp, live=estado["live"], terreno=terreno, w_bio=wb,
-                              apoyo=st.get("apoyo"))
+        perfil = p.get("perfil", "humanos")
+        if perfil == "humanos":
+            r = solve_corridor(st["sub"], p["km"], wc, wa, wp, live=estado["live"], terreno=terreno, w_bio=wb,
+                               apoyo=st.get("apoyo"))
+            r["checkpoints"] = []
+            r["parques_conectados"] = len(r.get("tramos", [])) + 1 if r.get("tramos") else 0
+            r["resistencia_media"] = None
+            return r
+        # Aves, abejas o mixto: conectividad ecológica dentro de lo elegido (sin comunas vecinas ni fotos de terreno).
+        res = resolver_corredor_por_perfil(st["sub"], perfil=perfil, budget_km=p["km"], w_calor=wc, w_arbol=wa,
+                                           w_personas=wp, live=estado["live"])
+        return {
+            "hexes": res["hexes_corredor"],
+            "checkpoints": res["hexes_checkpoints"],
+            "length_km": res["length_km"],
+            "urgencia": res["score_mapa"],
+            "urgencia_cubierta": res["urgencia_cubierta"],
+            "urgencia_azar": res["urgencia_azar"],
+            "personas_cubiertas": res["personas_cubiertas"],
+            "personas_azar": res["personas_azar"],
+            "tramos": res["tramos"],
+            "verificados": 0,
+            "fuera": [],
+            "km_min": None,
+            "parques_conectados": res["parques_conectados"],
+            "resistencia_media": round(res["resistencia_media"], 1) if res["resistencia_media"] is not None else None,
+        }
 
     def elegir(cambio: Seleccion, st: dict | None = None):
         """Fija el área (comunas → distritos → zona), presupuesto y pesos de una sesión, y su línea base sin
@@ -245,6 +276,10 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         if min(w) < 0 or sum(w) <= 0:
             raise HTTPException(422, "Pesos >= 0 y no todos 0")
         p["w"] = tuple(w)
+        if cambio.perfil is not None:
+            if cambio.perfil not in PERFILES:
+                raise HTTPException(422, "Perfil inválido")
+            p["perfil"] = cambio.perfil
         sub = df[df["comuna"].isin(p["comunas"])]
         if p["distritos"]:
             sub = sub[sub["distrito"].isin(p["distritos"])]
@@ -492,7 +527,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         p = st["p"]
         return {"comunas": p["comunas"], "distritos": p["distritos"], "zona": len(p["zona"] or []),
                 "km": p["km"], "w_calor": p["w"][0], "w_arbol": p["w"][1], "w_personas": p["w"][2],
-                "w_bio": p["w"][3], "vecinas": bool(p.get("vecinas")), "birdnet": aves.estado()}
+                "w_bio": p["w"][3], "vecinas": bool(p.get("vecinas")), "perfil": p.get("perfil", "humanos"),
+                "birdnet": aves.estado()}
 
     dist_por_comuna = {c: sorted(v, key=lambda n: int(n.rsplit(" ", 1)[1])) for c, v in distritos_de.items()}
 
@@ -595,6 +631,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         especies = sub["h3_index"].map(t_idx["especies_aves"]).fillna("") if t_idx is not None else pd.Series("", index=sub.index)
         poli = sub["h3_index"].map(t_idx["n_polinizadores"]).fillna(0) if t_idx is not None else pd.Series(0, index=sub.index)
         en_antes, en_ahora = set(antes["hexes"]), set(ahora["hexes"])
+        en_cp = set(ahora.get("checkpoints", []))
         vivo = pd.Series(float("nan"), index=sub.index)
         if live is not None and len(live):
             ok = live[live["confianza"].isin(["alta", "media"]) & live["temp_aire_c"].notna()]
@@ -608,6 +645,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             "pob": sub["poblacion"].astype(int).tolist(), "social": [_r(x, 3) for x in sub["social"]],
             "parque": sub["es_parque"].astype(bool).tolist(),
             "antes": [h in en_antes for h in hs], "ahora": [h in en_ahora for h in hs],
+            "checkpoint": [h in en_cp for h in hs],
             "verificado": [h in verif for h in hs],
             "bio": [_r(x, 3) for x in bio], "especies": especies.tolist(), "polinizadores": poli.astype(int).tolist(),
             "fotos": [n_fotos.get(h, 0) for h in hs], "escuchas": [n_escuchas.get(h, 0) for h in hs],

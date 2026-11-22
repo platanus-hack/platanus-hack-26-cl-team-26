@@ -422,11 +422,14 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   // El corredor solo se rearma si cambian sus cuadras (no cada vez que llega un estado nuevo del servidor).
   // Con «comunas vecinas» el corredor puede salir de lo elegido: esas cuadras llegan aparte (estado.fuera).
   const fuera = estado.fuera ?? [];
-  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("") + fuera.map((f) => f.h).join();
+  const firmaCorredor = H.h.map((h, i) => (H.ahora[i] || H.checkpoint?.[i] || H.antes[i] || H.verificado[i] ? `${h}${+H.ahora[i]}${+!!H.checkpoint?.[i]}${+H.antes[i]}${+H.verificado[i]}` : "")).join("") + fuera.map((f) => f.h).join();
   const corredor = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
     features: H.h.flatMap((h, i) => [
-      ...(H.ahora[i] ? ["ahora"] : []), ...(H.antes[i] ? ["antes"] : []), ...(H.verificado[i] ? ["verificado"] : []),
+      ...(H.ahora[i] ? ["ahora"] : []),
+      ...(H.checkpoint?.[i] ? ["checkpoint"] : []),
+      ...(H.antes[i] ? ["antes"] : []),
+      ...(H.verificado[i] ? ["verificado"] : []),
     ].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: h, comuna: H.comuna[i] }, geometry: { type: "Polygon" as const, coordinates: [anillosH[i]] } })))
       .concat(fuera.map((f) => ({ type: "Feature" as const, properties: { tipo: "ahora", h3: f.h, comuna: f.comuna ?? "" }, geometry: { type: "Polygon" as const, coordinates: [anillo(f.h)] } }))),
   }), [firmaCorredor, anillosH]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -559,7 +562,22 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       </Seccion>
 
       <Seccion id="planificar">
-        <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2></div>
+        <div className="b-cab escalon">
+          <h2>Planificar <em>el corredor</em></h2>
+          <div className="grupo" role="group" aria-label="Para quién se traza el corredor">
+            {([
+              ["humanos", "Humanos (Sombra)"],
+              ["fauna_aves", "Aves (Eje continuo)"],
+              ["fauna_abejas", "Abejas (Mini islas)"],
+              ["mixto", "Mixto (Ambos)"],
+            ] as const).map(([id, label]) => (
+              <button key={id} type="button" className="pill" disabled={ocupado}
+                aria-pressed={(p.perfil ?? "humanos") === id} onClick={() => cambiar({ perfil: id })}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className={`b-controles escalon${planListo ? "" : " espera"}`} style={est(2)}>
           {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"], ["bio", "Biodiversidad (terreno)"]] as const).map(([k, nombre]) => (
             <div className="peso" key={k}>
@@ -600,6 +618,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             <div className="leyenda">
               <span><i className="barra" style={{ background: grad(ROJO) }} />Urgencia</span>
               <span><i className="cuadro" style={{ background: "#22301A" }} />Corredor</span>
+              {(a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: "#C026D3" }} />Mini Isla (Checkpoint)</span>}
               <span><i className="cuadro" style={{ background: ISLA }} />Islas verdes: cerros y parques</span>
               <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Sin datos de terreno</span>
               <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno</span>
@@ -626,12 +645,18 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
               <>
                 <div className="cifra escalon" style={est(4)}>
                   <b><Cifra valor={a.personas_cubiertas} /></b>
-                  <span>personas viven junto al corredor. Con un trazado al azar del mismo largo serían <strong className="num"><Cifra valor={a.personas_azar} /></strong>.</span>
+                  <span>personas viven junto al corredor.{(p.perfil ?? "humanos") === "humanos" && <> Con un trazado al azar del mismo largo serían <strong className="num"><Cifra valor={a.personas_azar} /></strong>.</>}</span>
                 </div>
                 <div className="cifra escalon" style={est(5)}>
                   <b><Cifra valor={a.km} dec={2} sufijo={" km"} /></b>
                   <span>en {a.hexes} cuadras{comunasCorredor.length ? `, en ${comunasCorredor.join(", ")}` : ""}{fuera.length ? ` (${fuera.length} en comunas vecinas)` : ""}. Urgencia cubierta {formato(a.urgencia_cubierta, 3)}, contra {formato(a.urgencia_azar, 3)} al azar.</span>
                 </div>
+                {(a.checkpoints ?? 0) > 0 && (
+                  <div className="cifra escalon" style={est(5)}>
+                    <b><Cifra valor={a.checkpoints ?? 0} /></b>
+                    <span>mini islas (checkpoints) conectando {a.parques_conectados ?? 0} parques separados para aves y abejas.</span>
+                  </div>
+                )}
               </>
             ) : (
               <div className="aviso sin-corredor">
