@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExpressionSpecification, LngLatBoundsLike } from "maplibre-gl";
 import { cellToBoundary, cellToLatLng, cellToParent, cellsToDirectedEdge, directedEdgeToBoundary, getResolution, gridDisk, latLngToCell, polygonToCellsExperimental, POLYGON_TO_CELLS_FLAGS } from "h3-js";
-import MapaHex, { type Capa, type Foco } from "./MapaHex";
+import MapaHex, { COLOR_CORREDOR, COLOR_MINI_ISLA, type Capa, type Foco } from "./MapaHex";
 import Cifra from "./Cifra";
 import FiltroComunas from "./FiltroComunas";
 import { formato, useRevela, useVisible } from "./movimiento";
@@ -660,8 +660,8 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             <div className="leyenda">
               {/* Solo lo que el mapa dibuja en este momento, según el perfil y si hay corredor o capturas. */}
               {planListo && <span><i className="barra" style={{ background: grad(ROJO) }} />{ESCALA[claveEspecies]}</span>}
-              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: "#22301A" }} />{claveEspecies === "abejas" ? "Ruta entre mini islas" : "Corredor"}</span>}
-              {verCorredor && (a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: "#C026D3" }} />Mini isla</span>}
+              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: COLOR_CORREDOR, outline: "2px solid #2F4520", outlineOffset: -1 }} />{claveEspecies === "abejas" ? "Ruta entre mini islas" : "Corredor"}</span>}
+              {verCorredor && (a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: COLOR_MINI_ISLA, outline: "2px solid #7A5B00", outlineOffset: -1 }} />Mini isla para abejas</span>}
               <span><i className="cuadro" style={{ background: ISLA }} />Islas verdes: cerros y parques</span>
               {verCorredor && hayTerreno && soloHumanos && <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Corredor sin los datos de terreno</span>}
               {hayTerreno && <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno: un clic para ver sus fotos y aves</span>}
