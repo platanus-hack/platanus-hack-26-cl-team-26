@@ -19,10 +19,13 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
 ---
 
 ### 0:00 – 0:30 · Donde se necesita el verde
-* **Pantalla:** la portada de la página («Donde se necesita el verde») y luego «Datos clave» con Providencia
-  y Cerro Navia elegidas, para que la tabla muestre las dos comunas lado a lado.
+* **Pantalla:** la portada y luego el corto «El viaje del picaflor» (parte solo; se puede dejar correr de fondo
+  mientras se habla, o adelantarlo con la barra); después «Datos clave»
+  con Providencia y Cerro Navia elegidas, para que la tabla muestre las dos comunas lado a lado.
 * **Orador:**
-  > *"Santiago no es desigual solo en ingresos: también en sombra. La tarde del 19 de febrero de 2026, el suelo
+  > *"El picaflor chico, el colibrí que más se ve en Santiago, quiere ir del Cerro Renca al San Cristóbal. En
+  > línea recta tiene **16 cuadras seguidas sin un árbol** donde descansar. Los cerros y parques son islas, y
+  > el cemento las separa. Santiago no es desigual solo en ingresos: también en sombra. La tarde del 19 de febrero de 2026, el suelo
   > de Cerro Navia estaba en **38,9 °C** y tenía **5 %** de copa de árboles. Providencia, a unos kilómetros,
   > **35,1 °C** y **13 %**. Casi **4 grados** de diferencia en la vereda donde la gente espera la micro o lleva
   > a sus hijos al colegio. Y si contamos árboles por habitante, Lo Espejo tiene **0,07** y Vitacura **2,5**:
@@ -42,7 +45,8 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
   > paraderos. Con eso arma un índice de urgencia: 40 % calor, 40 % falta de árboles y 20 % personas.
   > Y suma a quienes también viven en la ciudad: **655.157** registros de aves y **1.603** de abejas nativas
   > desde 2015, de eBird, iNaturalist y museos, por barrio."*
-* Fuente de la red completa: `web/public/data/red.json` (`red_conectada.py`, «todas», 100 km; personas en las
+* Fuente del viaje: `web/public/data/viaje.json` (`viaje_picaflor.py`: copa de nuestro modelo por cuadra y
+  20.076 registros del picaflor chico en GBIF desde 2015). Fuente de la red completa: `web/public/data/red.json` (`red_conectada.py`, «todas», 100 km; personas en las
   cuadras de la red y sus vecinas). Fuente de la fauna: `data/fauna_h3.parquet` (GBIF, consultado el 22-11-2026; ver `CONTRATO.md`). Decirlo
   como «registros», no como censo: hay más observadores en parques y cerros.
 * Un dato que sorprende, si hay tiempo: *"Donde hay más pasto el suelo está más caliente; donde hay más copa,
