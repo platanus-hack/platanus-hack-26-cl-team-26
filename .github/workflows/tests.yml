@@ -1,0 +1,20 @@
+# Tests en cada push y pull request: optimizador, contrato de datos, vulnerabilidad, servidor y aire.
+# Sin BirdNET (experimento de captura en terreno): los tests no lo necesitan y es lo más pesado de instalar.
+name: Tests
+on:
+  push:
+  pull_request:
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: grep -vE "birdnetlib|librosa|audioread|ai-edge-litert|audioop" requirements.txt > /tmp/requisitos.txt
+      - run: pip install -r /tmp/requisitos.txt pytest
+      - run: python -m pytest -q
+      - run: python -m tests.test_contrato
+      - run: python -m tests.test_vulnerabilidad
