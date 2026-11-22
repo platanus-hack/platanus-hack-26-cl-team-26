@@ -41,8 +41,8 @@ function tenir(mapa: MapaML) {
   }
 }
 
-// Corredor en verde hoja con contorno crema, para que se lea como camino sobre el rojo y no como otra isla (personas y aves) o negro con mini islas amarillas si el plan incluye abejas.
-export const COLOR_CORREDOR = "#6BAE45", COLOR_MINI_ISLA = "#F4C430";
+// Corredor en verde #6A994E con contorno crema, para que se lea como camino sobre el rojo y no como otra isla (personas y aves) o negro con mini islas amarillas si el plan incluye abejas.
+export const COLOR_CORREDOR = "#6A994E", COLOR_MINI_ISLA = "#F4C430";
 export const TONO_CORREDOR = { verde: { fondo: COLOR_CORREDOR, borde: "#FFFDF6" }, abeja: { fondo: "#1F1F1A", borde: "#000000" } };
 export type TonoCorredor = keyof typeof TONO_CORREDOR;
 const TESELA_Z = 9;   // zoom de tesela único para cuadras, sectores y comunas (calzan entre sí y no se recargan)
