@@ -92,7 +92,8 @@ La página (Next, en `web/`) muestra los datos y traza el corredor; `python -m t
   o mixto (`ecologia.py`), con las cifras contra un trazado al azar y la fauna registrada en los barrios que
   cruza.
 - *Santiago conectado*: la red completa sobre todo Santiago, de 0 a 100 km, para personas, aves, abejas o las tres:
-  islas verdes unidas, personas a una cuadra, barrios con aves y mini islas para abejas. La precalcula
+  hectáreas de hábitat unido (islas que dejan de estar solas), personas con un espacio verde a menos de 300 m
+  (indicador de la OMS Europa, 2016; hoy el 14 %), barrios con aves y mini islas para abejas. La precalcula
   `python red_conectada.py` en `web/public/data/red.json` (cada presupuesto son los primeros tramos de la red de
   100 km, así crece sin cambiar de lugar).
 - `/` lleva al sitio Viridis si está exportado (`web/out`), si no a `/mapa`. La página del teléfono

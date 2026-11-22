@@ -10,9 +10,13 @@ import { formato, menosMovimiento } from "./movimiento";
 // Cada presupuesto son los primeros tramos de la red más larga: la red crece sin cambiar de lugar.
 type Paso = {
   km: number; largo_km: number; hexes: string[]; mini: string[]; islas: number; nombres: string[]; personas: number;
-  barrios_aves: number; aves_max: number; abejas: number; arboles: number;
+  barrios_aves: number; aves_max: number; abejas: number; arboles: number; habitat_ha: number; habitat_islas: number; verde_300m: number;
 };
-type Red = { km_max: number; paso_km: number; metros_por_arbol: number; islas_total: number; red: Record<string, Paso[]> };
+type Red = {
+  km_max: number; paso_km: number; metros_por_arbol: number; islas_total: number; personas_total: number; verde_300m_hoy: number;
+  red: Record<string, Paso[]>;
+};
+const pct = (x: number, de: number) => `${formato((100 * x) / de, 0)} %`;
 
 const PARA: [string, string, string][] = [
   ["humanos", "Personas", "Sombra donde más calor hace y más gente vive."],
@@ -107,12 +111,12 @@ export default function SantiagoConectado({ base, comunas, encuadre, hitos }: {
           {!red ? <div className="sk" style={{ height: 220 }} /> : p && (
             <>
               <div className="cifra">
-                <b><Cifra valor={p.islas} duracion={600} /></b>
-                <span>islas verdes unidas por la red{p.nombres.length ? `, entre ellas ${p.nombres.join(", ")}` : ""}.</span>
+                <b><Cifra valor={p.habitat_ha} duracion={600} sufijo=" ha" /></b>
+                <span>de hábitat unido: {p.habitat_islas} {p.habitat_islas === 1 ? "isla verde que ya no está sola" : "islas verdes que ya no están solas"}{pasos[0]?.habitat_ha ? ` (hoy, ${formato(pasos[0].habitat_ha)} ha al alcance de una abeja)` : ""}{p.nombres.length ? `, entre ellas ${p.nombres.join(", ")}` : ""}.</span>
               </div>
               <div className="cifra">
-                <b><Cifra valor={p.personas} duracion={600} /></b>
-                <span>personas viven a una cuadra de la red.</span>
+                <b><Cifra valor={p.verde_300m} duracion={600} /></b>
+                <span>personas con un espacio verde a menos de 300 m, como recomienda la OMS: {pct(p.verde_300m, red.personas_total)} de Santiago, contra {pct(red.verde_300m_hoy, red.personas_total)} hoy{p.verde_300m > red.verde_300m_hoy ? ` (${formato(p.verde_300m - red.verde_300m_hoy)} más)` : ""}.</span>
               </div>
               <div className="cifra">
                 <b><Cifra valor={p.barrios_aves} duracion={600} /></b>
@@ -125,13 +129,13 @@ export default function SantiagoConectado({ base, comunas, encuadre, hitos }: {
                   : "registros de abejas nativas en los barrios que cruza."}</span>
               </div>
               <p className="nota">Unos {formato(p.arboles)} árboles, si se planta uno cada {red.metros_por_arbol} m de corredor (supuesto, no medición).
-                Islas, personas (Censo 2024) y fauna (GBIF) son datos medidos; no estimamos grados de enfriamiento porque no hay un coeficiente publicado que citar.</p>
+                Islas, personas (Censo 2024) y fauna (GBIF) son datos medidos; los 300 m son una cuadra vecina, como en el indicador de acceso a áreas verdes de la OMS Europa (2016); no estimamos grados de enfriamiento porque no hay un coeficiente publicado que citar.</p>
             </>
           )}
         </div>
       </div>
       {total && (
-        <p className="conectado-remate escalon">Con {formato(total.largo_km, 0)} km de corredores, la red une <b>{total.islas} islas verdes</b> y deja a <b>{formato(total.personas)} personas</b> a una cuadra de la sombra.</p>
+        <p className="conectado-remate escalon">Con {formato(total.largo_km, 0)} km de corredores, <b>{total.habitat_islas} islas verdes</b> dejan de estar solas y <b>{formato(total.verde_300m - (red?.verde_300m_hoy ?? 0))} personas más</b> tienen el verde a 300 m de su casa.</p>
       )}
     </>
   );
