@@ -4,15 +4,14 @@ import type { ExpressionSpecification, LngLatBoundsLike } from "maplibre-gl";
 import { cellToBoundary, cellToLatLng, cellToParent, cellsToDirectedEdge, directedEdgeToBoundary, getResolution, gridDisk, latLngToCell, polygonToCellsExperimental, POLYGON_TO_CELLS_FLAGS } from "h3-js";
 import MapaHex, { COLOR_CORREDOR, COLOR_MINI_ISLA, type Capa, type Foco } from "./MapaHex";
 import Cifra from "./Cifra";
+import SantiagoConectado from "./SantiagoConectado";
 import FiltroComunas from "./FiltroComunas";
-import { formato, useRevela, useVisible } from "./movimiento";
-import { historico, useTerreno, type Especie, type Estado, type HexCols, type InfoComunas } from "@/lib/terreno";
+import { formato, useRevela } from "./movimiento";
+import { useTerreno, type Especie, type Estado, type HexCols, type InfoComunas } from "@/lib/terreno";
 
 type Serie = { meses: string[]; escenas_landsat: number; escenas_sentinel2: number; media_mes: (number | null)[]; lst_fecha_ultima: string };
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-const esVerano = (ym: string) => [12, 1, 2].includes(Number(ym.slice(5)));
-const mesCorto = (ym: string) => { const [a, m] = ym.split("-").map(Number); return `${MESES[m - 1]} ${a}`; };
 const sinNulos = (xs: (number | null)[]) => xs.filter((x): x is number => x != null);
 const media = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0);
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
@@ -105,7 +104,6 @@ const HITOS: GeoJSON.FeatureCollection = {
   features: ISLAS.map(([n, lng, lat]) => ({ type: "Feature", properties: { n }, geometry: { type: "Point", coordinates: [lng, lat] } })),
 };
 const CAPAS_PLAN: Capa[] = [{ id: "urg", color: ["case", ["get", "k"], ISLA, ["==", ["get", "u"], null], "#E4DFCC", escala("u", ROJO, 0, 0.85)] }];
-const CAPAS_HIST: Capa[] = [{ id: "hist", color: ["case", ["==", ["get", "hn"], null], "#E4DFCC", escala("hn", NARANJO, 0, 1)] }];
 
 function encuadreDe(anillos: number[][][], margen = 0.006): LngLatBoundsLike {
   let w = 180, s = 90, e = -180, n = -90;
@@ -164,7 +162,7 @@ export default function Pagina({ serie }: { serie: Serie }) {
     <main className="b">
       <header className={`b-pad${bajo ? " bajo" : ""}`}><div className="b-in">
         <a className="marca" href="#inicio"><img src="/viridis.svg" alt="" width={34} height={34} />VIRIDIS</a>
-        <nav aria-label="Secciones"><a href="#ahora">Datos clave</a><a href="#planificar">Planificar</a><a href="#historico">Histórico</a><a href="/fuentes">Fuentes</a></nav>
+        <nav aria-label="Secciones"><a href="#ahora">Datos clave</a><a href="#planificar">Planificar</a><a href="#conectado">Santiago conectado</a><a href="/fuentes">Fuentes</a></nav>
       </div></header>
 
       <section className="b-hero b-pad" id="inicio">
@@ -200,7 +198,7 @@ const TODO_GRIS: Foco = { comunas: [], hexes: [] };
 function Esqueletos({ error }: { error: string | null }) {
   return (
     <>
-      {[["ahora", "Datos", "clave"], ["planificar", "Planificar", "el corredor"], ["historico", "El calor", "de antes"]].map(([id, titulo, acento], k) => (
+      {[["ahora", "Datos", "clave"], ["planificar", "Planificar", "el corredor"], ["conectado", "Santiago", "conectado"]].map(([id, titulo, acento], k) => (
         <section key={id} id={id} className={`b-sec b-pad${k % 2 ? "" : " alt"}`} aria-busy={!error}><div className="b-in">
           <h2>{titulo} <em>{acento}</em></h2>
           {error ? (
@@ -436,6 +434,8 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       .concat(fuera.flatMap((f) => ["ahora", ...(f.isla ? ["checkpoint"] : [])].map((tipo) => ({ type: "Feature" as const, properties: { tipo, h3: f.h, comuna: f.comuna ?? "" }, geometry: { type: "Polygon" as const, coordinates: [anillo(f.h)] } })))),
   }), [firmaCorredor, anillosH]); // eslint-disable-line react-hooks/exhaustive-deps
   const enCorredor = H.h.flatMap((_, i) => (H.ahora[i] ? [i] : []));
+  // Santiago conectado: todo Santiago, con las islas verdes (parques y cerros) en oliva.
+  const datosRed = useMemo(() => coleccion((i) => ({ k: !!B.parque[i] })), [anillos]); // eslint-disable-line react-hooks/exhaustive-deps
   // Aves y abejas registradas (GBIF) en los barrios que cruza el corredor.
   const faunaCorredor = useMemo(() => {
     const bs = [...new Set(enCorredor.map((i) => cellToParent(H.h[i], 7)))].flatMap((b) => fauna?.barrios.get(b) ?? []);
@@ -482,38 +482,6 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
     enlace.click();
     URL.revokeObjectURL(enlace.href);
   }
-
-  // ---- Histórico: el servidor promedia las escenas del área entre dos fechas
-  const [refHist, verHist] = useVisible<HTMLDivElement>("300px");
-  const [desde, setDesde] = useState(12);
-  const [hist, setHist] = useState<Map<string, number> | null>(null);
-  const [mesesHist, setMesesHist] = useState(0);
-  const [errHist, setErrHist] = useState<string | null>(null);
-  const hasta = `${serie.meses[serie.meses.length - 1]}-28`;
-  useEffect(() => {
-    if (!verHist) return;
-    let vivo = true;
-    historico(`${serie.meses[desde]}-01`, hasta)
-      .then((r) => { if (vivo) { setHist(new Map(r.h.flatMap((h, i) => (r.lst[i] == null ? [] : [[h, r.lst[i] as number] as const])))); setMesesHist(r.meses); setErrHist(null); } })
-      .catch((e) => vivo && setErrHist(String(e.message)));
-    return () => { vivo = false; };
-  }, [verHist, desde, estado.sel_id, hasta, serie.meses]);
-  const promHex = useMemo(() => B.h.map((h) => hist?.get(h) ?? null), [hist, B.h]);
-  const escalaHist = useMemo(() => {
-    const v = sinNulos(promHex).sort((x, y) => x - y);
-    return v.length ? [v[Math.floor(v.length * 0.02)], v[Math.ceil(v.length * 0.98) - 1]] : [0, 1];
-  }, [promHex]);
-  const datosHist = useMemo(() => coleccion((i) => ({
-    hn: promHex[i] == null ? null : Math.min(1, Math.max(0, ((promHex[i] as number) - escalaHist[0]) / (escalaHist[1] - escalaHist[0] || 1))),
-  })), [promHex, escalaHist, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
-  const histComuna = useMemo(() => {
-    const por: Record<string, number[]> = {};
-    (marca ?? B.h.map((_, i) => i)).forEach((i) => { if (promHex[i] != null) (por[B.comuna[i]] ??= []).push(promHex[i] as number); });
-    return Object.entries(por).map(([c, v]) => [c, media(v)] as const).sort((x, y) => y[1] - x[1]);
-  }, [promHex, B, marca]);
-  const promElegido = media(sinNulos((marca ?? B.h.map((_, i) => i)).map((i) => promHex[i])));
-  const mm = sinNulos(serie.media_mes);
-  const lo = Math.min(...mm), hi = Math.max(...mm);
 
   return (
     <>
@@ -708,41 +676,8 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
       </Seccion>
 
-      <Seccion id="historico" alt>
-        <div className="b-cab escalon"><h2>El calor <em>de antes</em></h2><p>Elige desde qué mes promediar el calor del suelo del área: {serie.escenas_landsat} escenas Landsat, de enero de 2023 a noviembre de 2026.</p></div>
-        <div ref={refHist} className="escalon" style={{ ...est(1), display: "flex", flexDirection: "column", gap: 10 }}>
-          <div className="b-meses" role="group" aria-label="Mes desde el que se promedia">
-            {serie.meses.map((m, j) => {
-              const v = serie.media_mes[j];
-              const alto = v == null ? 8 : 14 + (86 * (v - lo)) / (hi - lo || 1);
-              return (
-                <button key={m} type="button" aria-pressed={j === desde} onClick={() => setDesde(j)}
-                  aria-label={`${mesCorto(m)}${v != null ? `, suelo medio ${formato(v, 1)} °C` : ", sin escena Landsat"}`}
-                  title={`${mesCorto(m)}${v != null ? ` · ${formato(v, 1)} °C` : " · sin escena"}`}>
-                  <span style={{ height: `${alto}%`, background: j < desde ? "#D6D9BF" : esVerano(m) ? "#4F6E31" : "#8C9A63", outline: j === desde ? "2px solid #22281A" : undefined, outlineOffset: 1 }} />
-                </button>
-              );
-            })}
-          </div>
-          <div className="b-ejes num"><span>ene 2023</span><span>ene 2024</span><span>ene 2025</span><span>ene 2026</span><span>nov 2026</span></div>
-        </div>
-        <div className="b-hist">
-          <div className="izq escalon" style={est(2)}>
-            <MapaHex {...mapaComun} datos={datosHist} capas={CAPAS_HIST} activa="hist" encuadre={encuadreArea} etiqueta="Promedio del calor del suelo por cuadra en el rango elegido">{filtro}</MapaHex>
-            <div className="leyenda" style={{ marginTop: 10 }}><span><i className="barra" style={{ background: grad(NARANJO) }} />{hist ? <span className="num">Suelo medio de {formato(escalaHist[0], 1)} °C a {formato(escalaHist[1], 1)} °C</span> : <span className="sk sk-linea" style={{ display: "inline-block", width: 190, height: 14 }} aria-label="Calculando el promedio" />}</span></div>
-          </div>
-          <div className="cifras">
-            <p style={{ margin: 0, fontSize: 16, color: "var(--oliva-osc)" }}>Rango elegido: <b>{mesCorto(serie.meses[desde])} a nov 2026</b>, {mesesHist} meses con escenas. Las barras altas son los veranos, que son los que usa el índice de calor.</p>
-            {errHist && <p className="aviso" role="alert">{errHist}</p>}
-            <div className="cifra escalon" style={est(3)}>
-              <b>{hist ? <Cifra valor={promElegido} dec={1} sufijo={" °C"} duracion={700} /> : "…"}</b>
-              <span>suelo medio del área en el rango.</span>
-            </div>
-            {histComuna.length > 1 && (
-              <p className="nota" style={{ fontSize: 15 }}>Más calientes en el rango: {histComuna.slice(0, 3).map(([c, v]) => `${c} (${formato(v, 1)} °C)`).join(", ")}. Más fresca: {histComuna[histComuna.length - 1][0]} ({formato(histComuna[histComuna.length - 1][1], 1)} °C).</p>
-            )}
-          </div>
-        </div>
+      <Seccion id="conectado" alt>
+        <SantiagoConectado base={datosRed} comunas={comunasGeo} encuadre={encuadreArea} hitos={HITOS} />
       </Seccion>
     </>
   );

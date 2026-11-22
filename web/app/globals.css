@@ -310,3 +310,11 @@ section[id], footer[id] { scroll-margin-top: 76px; }
 /* Título de sección con una indicación pequeña debajo. */
 .b-cab .titulo { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .b-cab .titulo small { font-size: 14px; line-height: 1.4; color: var(--texto3); }
+
+/* Santiago conectado: para quién, kilómetros y el botón de animación en una sola franja. */
+.conectado-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; }
+.conectado-ctl .criterio { flex: 1 1 100%; margin: 0; font-size: 15px; line-height: 1.45; color: var(--texto2); }
+.conectado-km { flex: 1 1 320px; }
+.conectado-km input { width: 100%; }
+.conectado-remate { margin: 8px 0 0; max-width: 46ch; font-family: var(--f-display); font-size: clamp(24px, 2.6vw, 34px); line-height: 1.25; color: var(--oliva-osc); }
+.conectado-remate b { color: var(--oliva); }

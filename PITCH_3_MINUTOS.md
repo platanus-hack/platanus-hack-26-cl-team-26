@@ -13,7 +13,7 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
 [0:30 - 1:00] Viridis: calor, copa, personas, aves y abejas, cuadra por cuadra, en las 34 comunas
 [1:00 - 2:00] Demo en vivo: elegir dónde, ver la fauna registrada y trazar el corredor para personas o para aves y abejas
 [2:00 - 2:40] Números: cuánta gente cubre el corredor frente a un trazado al azar
-[2:40 - 3:00] Cierre: datos públicos y medidos, sin instalar nada nuevo
+[2:40 - 3:00] Cierre: Santiago conectado, la red completa que une las islas verdes
 ```
 
 ---
@@ -42,7 +42,8 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
   > paraderos. Con eso arma un índice de urgencia: 40 % calor, 40 % falta de árboles y 20 % personas.
   > Y suma a quienes también viven en la ciudad: **655.157** registros de aves y **1.603** de abejas nativas
   > desde 2015, de eBird, iNaturalist y museos, por barrio."*
-* Fuente de la fauna: `data/fauna_h3.parquet` (GBIF, consultado el 22-11-2026; ver `CONTRATO.md`). Decirlo
+* Fuente de la red completa: `web/public/data/red.json` (`red_conectada.py`, «todas», 100 km; personas en las
+  cuadras de la red y sus vecinas). Fuente de la fauna: `data/fauna_h3.parquet` (GBIF, consultado el 22-11-2026; ver `CONTRATO.md`). Decirlo
   como «registros», no como censo: hay más observadores en parques y cerros.
 * Un dato que sorprende, si hay tiempo: *"Donde hay más pasto el suelo está más caliente; donde hay más copa,
   más fresco. El verde que importa es el que da sombra."* (r = +0,46 y −0,50, `NOTAS PITCH.md`).
@@ -83,9 +84,11 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
 ---
 
 ### 2:40 – 3:00 · Cierre
-* **Pantalla:** el mapa completo con las islas verdes (San Cristóbal, Renca, Santa Lucía, Parque O'Higgins).
+* **Pantalla:** la sección «Santiago conectado», con «Las tres» elegido: apretar «Ver crecer la red» y dejar que
+  la red llegue a 100 km mientras se habla.
 * **Orador:**
-  > *"Viridis no necesita instalar nada: usa satélites públicos, el Censo, OpenStreetMap, las estaciones
+  > *"Y si Santiago construye la red completa: con 100 km de corredores se unen **30 islas verdes** y **943.837
+  > personas** quedan a una cuadra de la sombra. Viridis no necesita instalar nada: usa satélites públicos, el Censo, OpenStreetMap, las estaciones
   > meteorológicas oficiales y lo que miles de personas han observado de aves y abejas. Le dice a un municipio
   > por dónde plantar primero, para quién y por qué. Donde se necesita el verde. Gracias."*
 
@@ -104,7 +107,7 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
    13,0 % contra 15,6 % de Meta). Fuente: `data/modelo_copa.json`.
 3. **"¿Por qué la temperatura de febrero?"**
    El calor que importa para la sombra es el de verano, y el índice usa esa escena de verano completa sobre
-   las 34 comunas. Las escenas más nuevas están en la sección «Histórico» de la página.
+   las 34 comunas.
 4. **"¿Cuántos grados baja la temperatura con el corredor?"**
    No lo afirmamos: no hay un coeficiente publicado para Santiago que podamos citar. Lo que sí medimos es a
    cuánta gente y a qué cuadras llega cada metro de corredor.
