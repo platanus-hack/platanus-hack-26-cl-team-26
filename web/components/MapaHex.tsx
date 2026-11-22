@@ -41,7 +41,7 @@ function tenir(mapa: MapaML) {
   }
 }
 
-// Corredor en el verde más oscuro (#386641), sobre islas más claras, para que se lea como camino (personas y aves) o negro con mini islas amarillas si el plan incluye abejas.
+// Corredor en el verde más oscuro (#386641), sobre islas más claras, para que se lea como camino (personas y aves) o negro con mini islas amarillas si el plan es solo para abejas (la ruta de vuelo, que no se planta).
 export const COLOR_CORREDOR = "#386641", COLOR_MINI_ISLA = "#F4C430";
 export const TONO_CORREDOR = { verde: { fondo: COLOR_CORREDOR, borde: "#1F3A25" }, abeja: { fondo: "#1F1F1A", borde: "#000000" } };
 export type TonoCorredor = keyof typeof TONO_CORREDOR;
@@ -67,7 +67,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   alComuna?: (c: string) => void;            // doble clic en una cuadra o comuna: suma o quita su comuna
   alLazo?: (anillo: [number, number][] | null, pintadas?: number[]) => void;  // contorno cerrado en [lng, lat] (o null) y cuadras pintadas con el pincel
   etiqueta: string;
-  tono?: TonoCorredor;                       // colores del corredor: verde, o negro si el plan incluye abejas
+  tono?: TonoCorredor;                       // colores del corredor: verde, o negro si es solo para abejas
   children?: React.ReactNode;                 // controles que flotan sobre el mapa
 }) {
   const [cont, visible] = useVisible<HTMLDivElement>();

@@ -476,7 +476,9 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const especies: Especie[] = p.especies?.length ? p.especies : ["humanos"];
   const claveEspecies = ESPECIES.map(([id]) => id).filter((id) => especies.includes(id)).join("+");
   const soloHumanos = claveEspecies === "humanos";
-  const tono = especies.includes("abejas") ? "abeja" : "verde";
+  // Con solo abejas la línea es la ruta de vuelo entre mini islas (no se planta): va en negro. Con personas o aves
+  // es un corredor de árboles, en verde aunque también haya abejas (sus mini islas van en amarillo encima).
+  const tono = claveEspecies === "abejas" ? "abeja" : "verde";
   // Marcar o desmarcar una especie; siempre queda al menos una.
   function alternarEspecie(id: Especie) {
     const nuevas = especies.includes(id) ? especies.filter((e) => e !== id) : [...especies, id];
@@ -676,7 +678,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             <div className="leyenda">
               {/* Solo lo que el mapa dibuja en este momento, según las especies y si hay corredor. */}
               {planListo && <span><i className="barra" style={{ background: grad(ROJO) }} />{ESCALA[claveEspecies]}</span>}
-              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: TONO_CORREDOR[tono].fondo, outline: `2px solid ${TONO_CORREDOR[tono].borde}`, outlineOffset: -1, }} />{claveEspecies === "abejas" ? "Ruta entre mini islas" : "Corredor"}</span>}
+              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: TONO_CORREDOR[tono].fondo, outline: `2px solid ${TONO_CORREDOR[tono].borde}`, outlineOffset: -1, }} />{claveEspecies === "abejas" ? "Ruta de vuelo entre mini islas (no se planta)" : "Corredor de árboles"}</span>}
               {verCorredor && (a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: COLOR_MINI_ISLA, outline: "2px solid #7A5B00", outlineOffset: -1 }} />Mini isla para abejas</span>}
               <span><i className="cuadro" style={{ background: ISLA }} />Islas verdes: cerros y parques</span>
             </div>
