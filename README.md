@@ -1,147 +1,94 @@
-# VerdeH3 · respaldo
+# Viridis
 
-Base geoespacial en grilla Uber H3 (res 8 y 9) para Providencia, Las Condes, Estación Central y Cerro Navia:
-NDVI, temperatura de superficie, áreas verdes, servicios cercanos y población por hexágono.
+<img src="./project-logo.png" alt="Logo de Viridis" width="160" />
 
-**Los datos ya calculados están en `datos/`**, así que la demo corre sin internet:
+**Corredores verdes que conectan los cerros y parques de Santiago, cuadra por cuadra, para las personas, las aves
+y las abejas.**
 
-- `datos/salida_h3/santiago_h3.parquet`: tabla final (GeoParquet, EPSG:4326, res 8 y 9 en la columna `res`).
-- `datos/salida_h3/capas_osm.gpkg`: áreas verdes y POIs limpios de OSM.
-- `datos/salida_h3/resumen_h3.json`: resumen por comuna y estado de cada fuente.
-- `datos/cache/`: rásters recortados (`ndvi_s2.tif`, `lst_landsat.tif`, `poblacion_recorte.tif`) y `comunas.gpkg`.
+Demo: **https://viridis-w7yj.onrender.com** · Track: 🌎 Physical World · Platanus Hack 26 Santiago, team-26
 
-Para regenerarlos:
+[![Tests](https://github.com/platanus-hack/platanus-hack-26-cl-team-26/actions/workflows/tests.yml/badge.svg)](https://github.com/platanus-hack/platanus-hack-26-cl-team-26/actions/workflows/tests.yml)
+
+![Planificar: el corredor propuesto sobre la urgencia de cada cuadra](docs/planificar.jpg)
+
+## Qué hace
+
+Los cerros y parques de Santiago son islas: ahí viven aves y abejas, pero el cemento y el calor las separan, y
+solo el 14 % de la gente vive a menos de 300 m de un espacio verde. Viridis divide las 34 comunas del Gran
+Santiago en 13.172 cuadras (grilla H3), mide en cada una el calor, la copa de árboles, cuánta gente vive ahí y qué
+tan vulnerable es al calor, y traza el corredor que une isla con isla donde más se necesita. Se elige para quién
+(personas, aves, abejas o todas), dónde (comunas o una zona dibujada) y cuántos kilómetros, y los tramos se
+exportan en GeoJSON.
+
+## Cómo funciona
+
+```
+Landsat, Sentinel-2, Censo 2024, OSM, GBIF ─► verdeh3/ (pipeline) ─► data/santiago_h3_gs.parquet (CONTRATO.md)
+Estaciones DMC y SINCA ─► maximas.py, cada noche en GitHub Actions ─► data/live_h3.parquet
+                                        │
+                      optimizer.py + ecologia.py: urgencia y corredor
+                                        │
+                terreno/servidor.py (FastAPI) ─► web/ (Next.js exportado, MapLibre), un solo servicio
+```
+
+- **El corredor es un camino en un grafo.** Cada cuadra es un nodo: entrar cuesta 1 / (0,05 + urgencia) y los
+  parques cuestan 0. Dijkstra da el camino más barato entre parques vecinos, y los tramos se unen en una sola red
+  continua hasta llenar el presupuesto. Cada resultado se compara con corredores al azar del mismo largo.
+- **Un criterio por especie.** Personas: urgencia (35 % calor, 35 % falta de árboles, 20 % personas y 10 %
+  vulnerabilidad al calor, todos ajustables). Aves: resistencia según copa, pasto y construido, para buscar copa
+  continua. Abejas: mini islas floridas, una cuadra por medio, para que el presupuesto alcance el doble de
+  distancia. Con varias especies se promedian.
+- **Copa de árboles con un modelo propio** sobre Sentinel-2, entrenado con el mapa de altura de copa de Meta y
+  WRI: r = 0,92 por cuadra en comunas que no vio al entrenar, contra 0,84 del mapa global de la ESA.
+- **Términos comparables.** Cada uno va de 0 a 1 entre los percentiles 2 y 98, para que pocos extremos no
+  aplasten al resto.
+- **No inventamos datos.** El aire es la máxima de ayer de estaciones oficiales: entra solo en los barrios con dato
+  confiable, y solo si son al menos 5. No prometemos grados de enfriamiento: no hay un coeficiente publicado que
+  citar.
+
+## Cómo correrlo
+
+```bash
+docker build -t viridis . && docker run -p 8000:8000 viridis     # http://localhost:8000
+```
+
+Sin Docker:
 
 ```bash
 pip install -r requirements.txt
-python -m verdeh3.pipeline --cache datos/cache --salida datos/salida_h3
+cd web && npm ci && npm run exportar && cd ..
+python -m terreno.servidor --puerto 8000
 ```
 
-El extracto OSM de Chile (`chile-latest.osm.pbf`, ~350 MB, Geofabrik) se baja solo la primera vez.
+Tests: `python -m pytest -q`, más `python -m tests.test_contrato` (columnas, rangos y que el corredor sea
+continuo) y `python -m tests.test_vulnerabilidad`. Para trabajar en la página con recarga en vivo, ver
+[web/README.md](web/README.md).
 
-Escenas usadas:
+## Estructura
 
-- NDVI: Sentinel-2 `S2B_MSIL2A_20260206T143739_R096_T19HCD` (2026-02-06, 0 % nubes).
-- LST: Landsat 8 `LC08_L2SP_233083_20260211_02_T1` (2026-02-11, 0,3 % nubes).
+| Dónde | Qué |
+|---|---|
+| `verdeh3/`, `ingesta/` | Pipeline de datos: grilla H3, satélites, modelo de copa, Censo, OSM ([docs/datos.md](docs/datos.md)) |
+| `data/` | Lo que usa la app: las cuadras, el aire del día, la fauna |
+| `datos/` | Intermedios del pipeline, versionados para poder regenerar todo sin internet |
+| `optimizer.py`, `ecologia.py` | Urgencia y corredores |
+| `maximas.py`, `interpolar.py`, `calidad.py`, `fuentes.py` | Máxima diaria del aire por barrio |
+| `fauna_gbif.py`, `red_conectada.py` | Aves y abejas de GBIF, y la red de «Santiago conectado» |
+| `terreno/` | El servidor (FastAPI): API y sitio |
+| `web/` | El sitio (Next.js 16, MapLibre) |
+| `tests/` | Tests (pytest) |
 
-Advertencias:
+Las fuentes de cada dato están en la página [/fuentes](https://viridis-w7yj.onrender.com/fuentes/) y en
+[CONTRATO.md](CONTRATO.md).
 
-- Las Condes incluye precordillera: filtra los hexágonos con `poblacion < 50` antes de comparar comunas
-  (si no, el % de área verde sube por bosques y reservas).
-- Para totales de población por comuna, pondera cada hexágono por `frac_en_estudio`; los hexágonos de borde
-  traen su población completa y la suma simple la infla.
+**Experimento retirado:** la captura en terreno desde el teléfono (fotos validadas con Claude y aves reconocidas
+por su canto con BirdNET). Quitamos la página para enfocarnos en el sitio; su API (`/api/captura`, `/api/video`,
+`/api/audio`, protegida con `TERRENO_CLAVE`) y sus tests siguen en `terreno/`.
 
-Prueba offline: `python -m tests.test_h3_sintetico`.
+## Equipo
 
-## Gran Santiago (34 comunas)
-
-Las 32 comunas de la Provincia de Santiago más Puente Alto y San Bernardo, recortadas a `BBOX_URBANO`.
-Van aparte de las 4 comunas de arriba, que no cambian:
-
-- `datos/salida_h3_gs/santiago_h3.parquet`: 1.956 hexágonos res 8 y 13.172 res 9, mismas columnas más
-  `elev_m`, `precordillera` (≥ 900 m), `baja_poblacion` (< 500 hab/km²) y `comuna_piloto` (las 4 originales).
-- `datos/salida_h3_gs/capas_osm.gpkg` y `resumen_h3.json`.
-- `datos/cache_gs/`: rásters recortados al área completa, más `elev_cop30.tif` (Copernicus DEM 30 m).
-
-Para regenerarlos (los rásters de caché no llevan el bbox en el nombre, por eso van en otra carpeta):
-
-```bash
-python -m verdeh3.mosaico_s2 --cache datos/cache_gs --fecha 2026-02-06   # ninguna tesela S2 cubre sola el área
-python -m verdeh3.pipeline --cache datos/cache_gs --salida datos/salida_h3_gs --comunas Cerrillos "Cerro Navia" \
-  Conchalí "El Bosque" "Estación Central" Huechuraba Independencia "La Cisterna" "La Florida" "La Granja" \
-  "La Pintana" "La Reina" "Las Condes" "Lo Barnechea" "Lo Espejo" "Lo Prado" Macul Maipú Ñuñoa \
-  "Pedro Aguirre Cerda" Peñalolén Providencia Pudahuel Quilicura "Quinta Normal" Recoleta Renca \
-  "San Joaquín" "San Miguel" "San Ramón" Santiago Vitacura "Puente Alto" "San Bernardo"
-python -m verdeh3.marcar_gs --cache datos/cache_gs --salida datos/salida_h3_gs
-```
-
-NDVI: mosaico de `S2A_MSIL2A_20260206T144901_R096_T19HCD` y `..._T19HCC` (2026-02-06). LST: la misma escena Landsat.
-
-Advertencias:
-
-- Para sacar el cerro usa `precordillera`; `baja_poblacion` también atrapa parques, aeropuerto e industrias.
-- El contrato v3 usa el Censo 2024 (`poblacion_censo`). WorldPop 2020 constrained (`poblacion`) reparte mal la población entre comunas (Maipú 1,58 M, Puente Alto 1,13 M,
-  Santiago 135 k; total 7,6 M). Sirve para comparar densidades, no para cifras por comuna.
-
-## Contrato v3 y optimizador (Rol 1)
-
-Ver `CONTRATO.md` y `NOTAS PITCH.md` (cifras verificadas y límites del modelo). Comunas de la demo: Providencia y Cerro Navia.
-
-```bash
-python -m verdeh3.landsat       # lst_c con la última escena de verano (dic-feb); --modo ultima agrega la más reciente
-python -m verdeh3.worldcover    # árboles, pasto y construido (ESA WorldCover 2021) en datos/salida_h3_gs
-python -m verdeh3.censo         # población Censo 2024 por manzana (zip del INE en cache/censo2024/, no versionado)
-python -m verdeh3.arboles       # árboles estimados con la altura de copa de Meta y WRI (baja 332 MB a cache/)
-python -m verdeh3.modelo_copa   # modelo propio de copa: Sentinel-2 entrenado con Meta; el índice usa su copa_modelo_pct
-python -m verdeh3.impact        # % de árboles de Impact Observatory (solo comparación)
-python -m verdeh3.contrato      # data/santiago_h3.parquet, _mock, _gs (34 comunas) y data/cifras_pitch.json
-python -m tests.test_contrato
-```
-
-`optimizer.solve_corridor(df, budget_km=3.0, w_calor=0.35, w_arbol=0.35, w_personas=0.2, live=None, w_vuln=0.1)`
-devuelve el corredor continuo entre parques que más urgencia cubre dentro del presupuesto. `w_vuln` pesa la
-vulnerabilidad al calor del Censo 2024 (personas mayores, niños pequeños, discapacidad, hacinamiento, viviendas
-irrecuperables y escolaridad); es solo de las personas, el corredor de aves y abejas no la usa.
-
-## App web
-
-La página (Next, en `web/`) muestra los datos y traza el corredor; `python -m terreno.servidor --puerto 8000`
-(FastAPI) es su API: cruza los datos por comuna y calcula el corredor. Ver `web/README.md` para levantarla.
-
-- *Datos clave*: capas de calor (suelo y aire), árboles, personas, vulnerabilidad al calor, aves y abejas por
-  cuadra, en las 34 comunas. Un clic en una cuadra muestra sus datos; doble clic elige su comuna; el lápiz encierra cuadras.
-- *Planificar*: corredor con presupuesto (km) y pesos de calor, árboles, personas y vulnerabilidad (este último
-  solo si se traza para humanos), para humanos, aves, abejas o mixto (`ecologia.py`), con las cifras contra un trazado al azar y la fauna registrada en los barrios que
-  cruza.
-- *Santiago conectado*: la red completa sobre todo Santiago, de 0 a 100 km, para personas, aves, abejas o las tres:
-  hectáreas de hábitat unido (islas que dejan de estar solas), personas con un espacio verde a menos de 300 m
-  (indicador de la OMS Europa, 2016; hoy el 14 %), barrios con aves y mini islas para abejas. La precalcula
-  `python red_conectada.py` en `web/public/data/red.json` (cada presupuesto son los primeros tramos de la red de
-  100 km, así crece sin cambiar de lugar), con los pesos 40/40/20 de antes y sin la vulnerabilidad, para que sus
-  cifras sigan siendo las del pitch.
-- `/` lleva al sitio Viridis si está exportado (`web/out`), si no a `/mapa`. La página del teléfono
-  (`/captura`) se retiró: el equipo decidió quedarse solo con el sitio.
-
-### Despliegue en Render (un solo servicio)
-
-El `Dockerfile` compila el sitio Viridis (`web/`, `npm run exportar` → archivos estáticos en `web/out`) y lo
-sirve desde el mismo servidor de terreno. Un solo enlace: `/` el sitio, `/api` los datos y `/mapa` el mapa de
-respaldo.
-
-1. En Render: **New → Blueprint**, elegir este repositorio; `render.yaml` crea el servicio `viridis` (plan
-   standard, 2 GB: el modelo de aves no cabe holgado en 512 MB) con un disco de 1 GB en `data/terreno/`.
-2. En **Environment**, escribir los secretos (nunca en el repo): `TERRENO_CLAVE` (clave de la API de subida),
-   `ANTHROPIC_API_KEY` (Claude valida las fotos), `DMC_USUARIO` y `DMC_TOKEN` (estaciones DMC del aire en vivo).
-3. Health check: `/api/salud`.
-
-Para probarlo igual en local: `cd web && npm run exportar`, y luego `python -m terreno.servidor` sirve todo en
-http://localhost:8000.
-
-## Aire: máxima del día
-
-`maximas.py` escribe `data/live_h3.parquet` con la temperatura máxima del día anterior por barrio, de las
-estaciones oficiales de la DMC y del SINCA (ver `CONTRATO.md`). Corre sola cada noche en GitHub Actions
-(`.github/workflows/maximas.yml`, con los secretos `DMC_USUARIO` y `DMC_TOKEN`). SINCA bloquea las conexiones
-desde fuera de Chile, así que se suma desde un PC en Chile con `python maximas.py --completar` (timer de systemd
-en `scripts/systemd/`).
-
-## Fauna: aves y abejas registradas
-
-`python fauna_gbif.py` (unos 5 minutos) baja de GBIF.org los registros con coordenadas desde 2015 (eBird,
-iNaturalist, museos) y escribe `data/fauna_h3.parquet` y `web/public/data/fauna.json`: por barrio, las especies
-de aves y las abejas nativas (sin la abeja de miel ni el abejorro europeo, que van aparte). Es por barrio y no
-por cuadra porque muchas ubicaciones tienen un margen de cientos de metros. Un registro dice que alguien vio la
-especie ahí: no haber registro no significa que no esté, y hay más observadores en parques y cerros.
-
-## Datos de terreno (sin página del teléfono)
-
-La página del teléfono se retiró. Lo ya capturado sigue contando: `data/terreno/*.jsonl` se agrega en
-`data/terreno_h3.parquet` (ver `CONTRATO.md`) y entra al corredor (árboles, espacio para plantar y
-biodiversidad con el peso «Biodiversidad (terreno)»). La API de subida (`/api/captura`, `/api/video`,
-`/api/audio`, protegida con `TERRENO_CLAVE`) sigue para scripts y pruebas: `python -m tests.test_terreno`.
-Nada de `data/terreno/` se versiona. BirdNET: K. Lisa Yang Center for Conservation Bioacoustics (Cornell),
-modelo CC BY-NC-SA 4.0 (uso no comercial).
-
-# Corredores Verdes · Bloque 1
-
-Ingesta geoespacial del Gran Santiago: `python -m ingesta.pipeline` (ver `ingesta/pipeline.py`).
+- Antonio Cormatches Contreras ([@sopademangos](https://github.com/sopademangos))
+- Benjamín Mauricio Alvarado Guerra ([@elvenji](https://github.com/elvenji))
+- Ian Berdichewsky García ([@iaaaanb](https://github.com/iaaaanb))
+- Emilia Isadora Cabrera Varas ([@nayru-dev](https://github.com/nayru-dev))
+- Vicente Cepeda Carrasco ([@vicentepecera](https://github.com/vicentepecera))
