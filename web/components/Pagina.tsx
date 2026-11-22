@@ -698,7 +698,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             {faunaCorredor && (
               <div className="cifra escalon" style={est(7)}>
                 <b><Cifra valor={faunaCorredor.aves} /></b>
-                <span>especies de aves registradas en el barrio más rico de los {faunaCorredor.barrios} que cruza el corredor, entre ellas {faunaCorredor.top}.{faunaCorredor.abejas ? ` Además, ${formato(faunaCorredor.abejas)} ${faunaCorredor.abejas === 1 ? "registro" : "registros"} de abejas nativas en esos barrios.` : ""} Fuente: GBIF.</span>
+                <span>especies de aves registradas {faunaCorredor.barrios === 1 ? "en el barrio que cruza el corredor" : `en el barrio más rico de los ${faunaCorredor.barrios} que cruza el corredor`}, entre ellas {faunaCorredor.top}.{faunaCorredor.abejas ? ` Además, ${formato(faunaCorredor.abejas)} ${faunaCorredor.abejas === 1 ? "registro" : "registros"} de abejas nativas en esos barrios.` : ""} Fuente: GBIF.</span>
               </div>
             )}
           </div>
