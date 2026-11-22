@@ -149,6 +149,20 @@ function useFauna() {
   return f;
 }
 
+let parquesCache: Promise<Map<string, string> | null> | null = null;
+function useParques() {
+  const [p, setP] = useState<Map<string, string> | null>(null);
+  useEffect(() => {
+    parquesCache ??= fetch("/data/parques.json").then((r) => (r.ok ? r.json() : null))
+      .then((d: Record<string, string> | null) => (d ? new Map(Object.entries(d)) : null))
+      .catch(() => null);
+    let vivo = true;
+    parquesCache.then((d) => vivo && setP(d));
+    return () => { vivo = false; };
+  }, []);
+  return p;
+}
+
 export default function Pagina({ serie }: { serie: Serie }) {
   const t = useTerreno();
   // La barra queda fija; al bajar de la portada se le marca el borde para separarla del contenido.
@@ -331,14 +345,18 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   // Globo de un clic: los datos de la cuadra y cómo elegir su comuna.
   const datoHex = (i: number): string => {
     const c = B.comuna[i], fila = (n: string, v: string) => `<tr><th scope="row">${n}</th><td>${v}</td></tr>`;
-    return `<div class="pop dato"><b>${esc(B.distrito[i])}</b>${B.parque[i] ? " · parque" : ""}
-      <table>${fila("Suelo", B.lst[i] == null ? "sin dato" : `${formato(B.lst[i] as number, 1)} °C`)}
+    const nombreParque = parques?.get(B.h[i]);
+    const [lat, lng] = cellToLatLng(B.h[i]);
+    const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(5)},${lng.toFixed(5)}`;
+    return `<div class="pop dato"><b>${esc(B.distrito[i])}</b>${nombreParque ? ` · <b>${esc(nombreParque)}</b>` : B.parque[i] ? " · parque" : ""}
+      <table>${nombreParque ? fila("Isla verde", esc(nombreParque)) : ""}
+      ${fila("Suelo", B.lst[i] == null ? "sin dato" : `${formato(B.lst[i] as number, 1)} °C`)}
       ${B.vivo[i] != null ? fila("Aire, máxima de ayer", `${formato(B.vivo[i] as number, 1)} °C`) : ""}
       ${fila("Copa de árboles", B.copa[i] == null ? "sin dato" : `${formato(B.copa[i] as number, 1)} %`)}
       ${fila("Personas", formato(B.pob[i]))}
       ${faunaDe[i]?.an ? fila("Aves en el barrio", `${faunaDe[i]!.asp} especies`) : ""}
       ${faunaDe[i]?.bn ? fila("Abejas nativas en el barrio", `${faunaDe[i]!.bn} ${faunaDe[i]!.bn === 1 ? "registro" : "registros"}`) : ""}
-      ${fila("Coordenadas", cellToLatLng(B.h[i]).map((x) => x.toFixed(5)).join(", "))}</table>
+      ${fila("Coordenadas", `<a href="${gmapsUrl}" target="_blank" rel="noopener noreferrer">${lat.toFixed(5)}, ${lng.toFixed(5)} ↗</a>`)}</table>
       <small>Doble clic para ${elegidas.includes(c) ? "quitar" : "elegir"} ${esc(c)}.</small></div>`;
   };
   const mapaComun = { comunas: comunasGeo, distritos: distritosGeo, datoHex, alComuna: tocarComuna, alLazo: lazo, foco };
@@ -372,6 +390,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
     return p.map((x, i) => 0.7 * (x ?? 0.5) + 0.3 * Math.min(1, Math.max(0, B.social[i] ?? 0.5)));   // igual que optimizer.urgencia
   }, [B]);
   const fauna = useFauna();
+  const parques = useParques();
   const faunaDe = useMemo(() => B.h.map((h) => fauna?.barrios.get(cellToParent(h, 7))), [B.h, fauna]);
   // Texto de la ficha según la capa: en el barrio, porque las ubicaciones no alcanzan para una cuadra.
   const faunaTexto = (i: number) => {
@@ -512,7 +531,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
           <span><i className="cuadro" style={{ background: "#B9B5A3", opacity: 0.45 }} />Tenue: casi sin habitantes (cerros, campo, industria)</span>
           {!nada && <span><i className="cuadro" style={{ background: "#C5CDA6", opacity: 0.35 }} />Fuera de lo elegido</span>}
           <span className="detalle num" aria-live="polite">{det != null
-            ? `${B.distrito[det]}${B.parque[det] ? ", parque" : ""}: suelo ${formato(B.lst[det] ?? 0, 1)} °C${B.vivo[det] != null ? `, aire ${formato(B.vivo[det] as number, 1)} °C` : ""}, copa ${formato(B.copa[det] ?? 0, 1)} %, ${formato(B.pob[det])} personas.${faunaTexto(det)}`
+            ? `${B.distrito[det]}${parques?.get(B.h[det]) ? ` · ${parques.get(B.h[det])}` : B.parque[det] ? ", parque" : ""}: suelo ${formato(B.lst[det] ?? 0, 1)} °C${B.vivo[det] != null ? `, aire ${formato(B.vivo[det] as number, 1)} °C` : ""}, copa ${formato(B.copa[det] ?? 0, 1)} %, ${formato(B.pob[det])} personas.${faunaTexto(det)}`
             : "Un clic en una cuadra muestra sus datos; doble clic elige o quita su comuna."}</span>
         </div>
         <div className="elegido escalon" style={est(3)}>
