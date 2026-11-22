@@ -35,7 +35,7 @@ const VERDE = ["#EFE9DA", "#C5CDA6", "#8C9A63", "#4F6E31"];
 // tonos algo terrosos para que convivan con el crema y el oliva de la página.
 const ROJO = ["#F6ECDD", "#EDB592", "#D2603F", "#96261C"];
 const NARANJO = ["#FBF4CC", "#F6D873", "#EE9B3B", "#D4601C"];
-const ISLA = "#5A9A46";
+const ISLA = "#63803C";   // oliva de la página, un punto más claro para separarse del corredor
 const MORADO = ["#F3ECE6", "#D3BBD6", "#9A6BA8", "#5C2F78"];   // densidad de personas
 const grad = (c: string[]) => `linear-gradient(90deg,${c.join(",")})`;
 const escala = (prop: string, cols: string[], lo: number, hi: number): ExpressionSpecification => {
