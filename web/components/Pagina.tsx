@@ -575,15 +575,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
         <div className="elegido escalon" style={est(3)}>
           {!elegido ? (
-            <dl className="fechas">
-              <dt>Última actualización de cada dato</dt>
-              <dd><b>Calor del suelo</b>{fechaDia(estado.fechas?.calor) ?? "sin fecha"} · Landsat</dd>
-              <dd><b>Copa de árboles</b>{fechaDia(estado.fechas?.copa) ?? "sin fecha"} · Sentinel-2</dd>
-              <dd><b>Personas</b>Censo 2024 · INE</dd>
-              <dd><b>Parques y servicios</b>{fechaDia(OSM_EXTRACTO)} · OpenStreetMap</dd>
-              <dd><b>Aire, máxima del día</b>{fechaHora(estado.fechas?.vivo) ?? "sin lecturas confiables"} · DMC y SINCA</dd>
-              <dd><b>Aves y abejas</b>{fechaDia(fauna?.consultado) ?? "sin datos"} · GBIF</dd>
-            </dl>
+            null  // sin nada elegido no se muestra nada aquí (antes, la fecha de cada dato)
           ) : (
             <>
               <div className="totales num">
