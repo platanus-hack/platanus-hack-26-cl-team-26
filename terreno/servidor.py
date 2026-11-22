@@ -147,10 +147,29 @@ def _vecinas(df: pd.DataFrame) -> dict[str, list[str]]:
     return {c: sorted(v) for c, v in pares.items()}
 
 
+def sin_islas(df: pd.DataFrame) -> pd.DataFrame:
+    """Quita los pedazos sueltos de la grilla que no tienen gente ni parques: son restos del recorte rectangular
+    de los datos (un trozo de comuna que queda separado del resto porque la unión pasa por fuera del recorte)."""
+    todos, comp = set(df["h3_index"]), {}
+    for h in df["h3_index"]:
+        if h in comp:
+            continue
+        comp[h], pila = h, [h]
+        while pila:
+            for v in h3.grid_disk(pila.pop(), 1):
+                if v in todos and v not in comp:
+                    comp[v] = h
+                    pila.append(v)
+    grupo = df["h3_index"].map(comp)
+    por = df.groupby(grupo).agg(n=("h3_index", "size"), pob=("poblacion", "sum"), parques=("es_parque", "sum"))
+    fuera = por.index[(por["n"] < por["n"].max()) & (por["pob"] == 0) & (por["parques"] == 0)]
+    return df[~grupo.isin(fuera)]
+
+
 def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path = Path("data"),
               km: float = 3.0, clave: str | None = None, usar_claude: bool = True,
               aceptar_sin_validar: bool = False, comunas: list[str] | None = None) -> FastAPI:
-    df = pd.read_parquet(datos)
+    df = sin_islas(pd.read_parquet(datos))
     nombres = distritos(df)
     df["distrito"] = [nombres[k] for k in zip(df["comuna"], df["h3_padre"])]
     alm = Almacen(data_dir, aceptar_sin_validar)

@@ -241,7 +241,12 @@ def test_seleccion_comunas():
         info = c.get("/api/comunas").json()
         assert len(info["comunas"]) == 34 and info["seleccion"] == info["comunas"]  # al abrir, todas
         df = pd.read_parquet(GS)
-        assert len(c.get("/api/estado").json()["hex"]["h"]) == len(df)
+        from terreno.servidor import sin_islas
+        hs = c.get("/api/estado").json()["hex"]["h"]
+        # El trozo suelto de San Bernardo (24 cuadras sin gente, resto del recorte) no se muestra; no se pierde nadie.
+        suelto = df[~df["h3_index"].isin(hs)]
+        assert len(hs) == len(sin_islas(df)) == len(df) - 24
+        assert set(suelto["comuna"]) == {"San Bernardo"} and suelto["poblacion"].sum() == 0 and not suelto["es_parque"].any()
         c.post("/api/seleccion", json={"comunas": ["Cerro Navia"]})
         assert "Quinta Normal" in info["vecinas"]["Cerro Navia"] and "Maipú" not in info["vecinas"]["Cerro Navia"]
         assert all(a in info["vecinas"][b] for a in info["vecinas"] for b in info["vecinas"][a])  # simétrica
