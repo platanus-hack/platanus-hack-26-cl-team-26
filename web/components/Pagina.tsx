@@ -5,6 +5,7 @@ import { cellToBoundary, cellToLatLng, cellToParent, cellsToDirectedEdge, direct
 import MapaHex, { COLOR_MINI_ISLA, TONO_CORREDOR, type Capa, type Foco } from "./MapaHex";
 import Cifra from "./Cifra";
 import SantiagoConectado from "./SantiagoConectado";
+import ViajePicaflor from "./ViajePicaflor";
 import FiltroComunas from "./FiltroComunas";
 import { formato, useRevela } from "./movimiento";
 import { useTerreno, type Especie, type Estado, type HexCols, type InfoComunas } from "@/lib/terreno";
@@ -162,7 +163,7 @@ export default function Pagina({ serie }: { serie: Serie }) {
     <main className="b">
       <header className={`b-pad${bajo ? " bajo" : ""}`}><div className="b-in">
         <a className="marca" href="#inicio"><img src="/viridis.svg" alt="" width={34} height={34} />VIRIDIS</a>
-        <nav aria-label="Secciones"><a href="#ahora">Datos clave</a><a href="#planificar">Planificar</a><a href="#conectado">Santiago conectado</a><a href="/fuentes">Fuentes</a></nav>
+        <nav aria-label="Secciones"><a href="#viaje">El viaje</a><a href="#ahora">Datos clave</a><a href="#planificar">Planificar</a><a href="#conectado">Santiago conectado</a><a href="/fuentes">Fuentes</a></nav>
       </div></header>
 
       <section className="b-hero b-pad" id="inicio">
@@ -179,6 +180,9 @@ export default function Pagina({ serie }: { serie: Serie }) {
           </div>
         </div>
       </section>
+
+      {/* El viaje del picaflor no depende del servidor: va siempre, antes de los mapas. */}
+      <section className="b-sec b-pad" id="viaje"><div className="b-in"><ViajePicaflor /></div></section>
 
       {t.info && t.estado ? <Secciones {...t} info={t.info} estado={t.estado} serie={serie} /> : <Esqueletos error={t.error} />}
 

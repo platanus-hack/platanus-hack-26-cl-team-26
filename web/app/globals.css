@@ -318,3 +318,13 @@ section[id], footer[id] { scroll-margin-top: 76px; }
 .conectado-km input { width: 100%; }
 .conectado-remate { margin: 8px 0 0; max-width: 46ch; font-family: var(--f-display); font-size: clamp(24px, 2.6vw, 34px); line-height: 1.25; color: var(--oliva-osc); }
 .conectado-remate b { color: var(--oliva); }
+
+/* El viaje del picaflor: un cortometraje en SVG con su barra de avance. */
+.corto { display: flex; flex-direction: column; gap: 14px; }
+.corto svg { width: 100%; height: auto; border-radius: 24px; display: block; background: #BFDCE6; }
+.corto-texto { animation: corto-entra 0.7s var(--ease-out) both; }
+@keyframes corto-entra { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.corto-ctl { display: flex; align-items: center; gap: 18px; }
+.corto-barra { flex: 1; height: 6px; border-radius: 3px; background: var(--salvia3, #D6D9BF); overflow: hidden; }
+.corto-barra i { display: block; height: 100%; background: var(--oliva); }
+@media (prefers-reduced-motion: reduce) { .corto-texto { animation: none; } }
