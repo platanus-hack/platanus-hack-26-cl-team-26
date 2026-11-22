@@ -1,5 +1,5 @@
 {
- "ciclo": "2026-11-22T01:34:33.244534+00:00",
+ "ciclo": "2026-11-22T02:26:39.609677+00:00",
  "lecturas": 11,
  "aceptadas": 10,
  "descartes": {
@@ -14,7 +14,8 @@
   "DMC": "RuntimeError('faltan DMC_USUARIO y DMC_TOKEN')"
  },
  "confianza": {
-  "baja": 8,
-  "media": 6
+  "baja": 196,
+  "sin dato": 85,
+  "media": 26
  }
 }
