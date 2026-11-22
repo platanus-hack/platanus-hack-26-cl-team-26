@@ -35,6 +35,7 @@ SINCA_ESTACIONES = {
     "D30": ("Quilicura", -33.3496, -70.7238),
 }
 DMC_URL = "https://climatologia.meteochile.gob.cl/application/servicios/getDatosRecientesRedEma"
+DMC_EMA_URL = "https://climatologia.meteochile.gob.cl/application/servicios/getDatosRecientesEma"
 
 
 def _tabla(filas):
@@ -107,20 +108,40 @@ def _num(texto):
     return float(texto.split()[0]) if texto else float("nan")
 
 
-def dmc_estaciones(timeout=30):
-    """Todas las lecturas recientes (unas 12 h) de las estaciones DMC de Santiago."""
+def _dmc_pedir(url, timeout):
     _cargar_env()
     usuario, token = os.getenv("DMC_USUARIO"), os.getenv("DMC_TOKEN")
     if not (usuario and token):
         raise RuntimeError("faltan DMC_USUARIO y DMC_TOKEN")
-    r = requests.get(DMC_URL, params={"usuario": usuario, "token": token}, timeout=timeout).json()
+    r = requests.get(url, params={"usuario": usuario, "token": token}, timeout=timeout).json()
+    if "datosEstaciones" not in r:
+        raise RuntimeError(r.get("mensaje", "la DMC no trajo datosEstaciones"))
+    return r
+
+
+def dmc_estaciones(timeout=30):
+    """Lecturas de la última hora (minuto a minuto) de las estaciones DMC de Santiago."""
+    return dmc_tabla(_dmc_pedir(DMC_URL, timeout))
+
+
+def dmc_12h(codigo, timeout=60):
+    """Últimas 12 horas (minuto a minuto) de una estación DMC."""
+    return dmc_tabla(_dmc_pedir(f"{DMC_EMA_URL}/{codigo}", timeout))
+
+
+def dmc_tabla(r):
+    """Respuesta de la DMC → tabla. datosEstaciones es una lista (red) o un objeto (una estación);
+    una estación sin lecturas trae datos = null."""
+    bloques = r["datosEstaciones"]
+    if isinstance(bloques, dict):
+        bloques = [bloques]
     filas = []
-    for e in r["datosEstaciones"]:
+    for e in bloques:
         x = e["estacion"]
         lat, lon = float(x["latitud"]), float(x["longitud"])
         if not (-33.75 < lat < -33.2 and -71 < lon < -70.4):
             continue
-        for d in e["datos"]:
+        for d in e.get("datos") or []:
             if d.get("temperatura"):
                 filas.append({"source": f"DMC_{x['codigoNacional']}", "lat": lat, "lon": lon,
                               "temp_c": _num(d["temperatura"]), "humedad_pct": _num(d.get("humedadRelativa")),

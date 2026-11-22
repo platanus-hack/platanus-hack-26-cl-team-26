@@ -45,8 +45,8 @@ def dmc_dia(dia):
     """Máxima del día de cada estación DMC de Santiago (sin token: tabla vacía)."""
     try:
         codigos = sorted(fuentes.dmc_estaciones().source.unique())
-    except RuntimeError as e:
-        print(f"DMC: {e}")
+    except Exception as e:  # sin token o la DMC caída: sigue con SINCA
+        print(f"DMC: {e!r}")
         return []
     filas = []
     for s in codigos:
