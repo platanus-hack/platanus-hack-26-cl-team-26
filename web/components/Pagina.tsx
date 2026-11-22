@@ -549,7 +549,8 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
               <dd><b>Copa de árboles</b>{fechaDia(estado.fechas?.copa) ?? "sin fecha"} · Sentinel-2</dd>
               <dd><b>Personas</b>Censo 2024 · INE</dd>
               <dd><b>Parques y servicios</b>{fechaDia(OSM_EXTRACTO)} · OpenStreetMap</dd>
-              <dd><b>Aire en vivo</b>{fechaHora(estado.fechas?.vivo) ?? "sin lecturas confiables ahora"}</dd>
+              <dd><b>Aire, máxima del día</b>{fechaHora(estado.fechas?.vivo) ?? "sin lecturas confiables"} · DMC y SINCA</dd>
+              <dd><b>Aves y abejas</b>{fechaDia(fauna?.consultado) ?? "sin datos"} · GBIF</dd>
             </dl>
           ) : (
             <>
