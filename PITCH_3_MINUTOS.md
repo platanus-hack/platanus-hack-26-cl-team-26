@@ -39,7 +39,8 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
   > la temperatura del suelo medida por Landsat, la copa de árboles de nuestro propio modelo sobre Sentinel-2
   > —que sigue al mapa de referencia de Meta con correlación **0,92**, contra **0,84** del mapa global de la
   > ESA— y las personas que viven ahí según el **Censo 2024**, más la cercanía a colegios, consultorios, metro y
-  > paraderos. Con eso arma un índice de urgencia: 40 % calor, 40 % falta de árboles y 20 % personas.
+  > paraderos. Con eso arma un índice de urgencia: 35 % calor, 35 % falta de árboles, 20 % personas y 10 %
+  > vulnerabilidad al calor: personas mayores, niños pequeños, hacinamiento, también del Censo.
   > Y suma a quienes también viven en la ciudad: **655.157** registros de aves y **1.603** de abejas nativas
   > desde 2015, de eBird, iNaturalist y museos, por barrio."*
 * Fuente de la red completa: `web/public/data/red.json` (`red_conectada.py`, «todas», 100 km; personas en las
@@ -56,15 +57,16 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
    muestra solo lo elegido, comparado con el promedio de Santiago.
 2. **Trazar el corredor.** Ir a «Planificar»: con **3 km** de presupuesto, el corredor une parques existentes
    pasando por las cuadras más urgentes.
-   > *"Entre las dos comunas, el corredor se va entero a Cerro Navia y cubre **13.295 personas**. Un trazado al
-   > azar del mismo largo, **8.334**."*
+   > *"Entre las dos comunas, el corredor se va entero a Cerro Navia y cubre **11.908 personas**. Un trazado al
+   > azar del mismo largo, **8.261**."*
 3. **Para quién es el corredor.** Cambiar el perfil a «Aves» o «Abejas»: el corredor busca copa continua
    (aves) o piedras de paso con flores (abejas) entre las islas verdes. Bajo las cifras aparecen las especies
    de aves registradas en los barrios que cruza y los registros de abejas nativas (GBIF).
    > *"Este corredor no es solo sombra: cruza barrios donde se han registrado estas aves, y las conecta con el
    > cerro."* (Leer las especies y la cifra que muestre la pantalla.)
 * **Ensayo:** decir siempre la cifra que muestre la pantalla. Las de este guion son con Providencia y Cerro
-  Navia elegidas, 3 km y los pesos por defecto; con solo Cerro Navia el azar sube a 10.107, y con sensores de
+  Navia elegidas, 3 km y los pesos por defecto; con solo Cerro Navia el corredor cubre 11.220 y el azar sube a 10.021 (solo 12 % más: mejor no
+  mostrar esa), y con sensores de
   aire el corredor de todo Santiago puede cambiar. No dejar que el jurado elija una comuna a ciegas:
   con 3 km, en 11 comunas chicas o sin parques cercanos el corredor no sale.
 
@@ -74,9 +76,12 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
 * **Pantalla:** el bloque de cifras de «Planificar».
 * **Orador:**
   > *"Con el mismo presupuesto de 3 km:*
-  > *- entre Providencia y Cerro Navia, el corredor de Viridis cubre **13.295 personas**, contra **8.334** al
-  > azar: **60 % más**;*
-  > *- elegido sobre todo el Gran Santiago, cae en Pudahuel y cubre **10.023**, contra **7.002**: **43 % más**."*
+  > *- entre Providencia y Cerro Navia, el corredor de Viridis cubre **11.908 personas**, contra **8.261** al
+  > azar: **44 % más**;*
+  > *- elegido sobre todo el Gran Santiago, cae en Pudahuel y cubre **11.393**, contra **7.002**: **63 % más**."*
+* Si preguntan por la vulnerabilidad: la gente que cubre el corredor de todo Santiago es más vulnerable al calor
+  que el promedio de la ciudad (índice 0,52 contra 0,40, ponderado por personas; Censo 2024). Es un índice de
+  0 a 1 armado por nosotros (`CONTRATO.md`), no un porcentaje: no decir «52 % más vulnerables».
 * Fuente: `data/cifras_pitch.json` (`corredor` y `corredor_gran_santiago`), calculadas sin la temperatura del
   aire. No citar la urgencia media. No decir grados de enfriamiento: no tenemos un coeficiente publicado que
   citar.

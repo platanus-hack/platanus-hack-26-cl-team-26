@@ -43,7 +43,7 @@ Fuente: `data/cifras_pitch.json`, `data/santiago_h3_gs.parquet` y `datos/salida_
 
 - **Brecha entre comunas:** Cerro Navia tiene 38,9 °C de temperatura de suelo y 5,0% de copa; Providencia,
   35,1 °C y 13,0% (Landsat del 19 de febrero de 2026 y nuestro modelo).
-- **Corredor de 3 km en Cerro Navia:** cubre 13.295 personas, contra 8.334 de un corredor al azar del mismo
+- **Corredor de 3 km en Cerro Navia:** cubre 11.908 personas, contra 8.261 de un corredor al azar del mismo
   largo (Censo 2024).
 - **Árboles por habitante** (árboles estimados con el mapa de Meta 2019 y Censo 2024, solo zona urbana bajo
   900 m, sin cerros): Lo Espejo 0,07, San Miguel 0,10, San Ramón 0,11 y Pedro Aguirre Cerda 0,11; Vitacura
