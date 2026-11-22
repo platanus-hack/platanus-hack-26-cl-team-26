@@ -98,7 +98,7 @@ def sinca(timeout=30):
 
 def _cargar_env(ruta=".env"):
     if os.path.exists(ruta):
-        for linea in open(ruta):
+        for linea in open(ruta, encoding="utf-8"):
             if "=" in linea and not linea.startswith("#"):
                 k, v = linea.strip().split("=", 1)
                 os.environ.setdefault(k, v)

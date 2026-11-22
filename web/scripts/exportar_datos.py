@@ -24,7 +24,7 @@ def main():
     hist = pd.read_parquet(data / "historico_h3.parquet", columns=["mes", "h3_index", "lst_c"])
     hist = hist[hist["h3_index"].isin(df["h3_index"])]
     por_mes = hist.groupby("mes")["lst_c"].mean()
-    meta = json.loads((data / "historico_meta.json").read_text())
+    meta = json.loads((data / "historico_meta.json").read_text(encoding="utf-8"))
     meses = sorted(hist["mes"].unique())
     salida = WEB / "public" / "data" / "historico.json"
     salida.parent.mkdir(parents=True, exist_ok=True)
@@ -32,7 +32,7 @@ def main():
         "meses": meses, "escenas_landsat": meta["escenas_landsat"], "escenas_sentinel2": meta["escenas_sentinel2"],
         "media_mes": [None if pd.isna(por_mes.get(m)) else round(float(por_mes[m]), 2) for m in meses],
         "lst_fecha_ultima": str(df["lst_fecha_ultima"].mode().iloc[0]),
-    }, separators=(",", ":")))
+    }, separators=(",", ":")), encoding="utf-8")
     print(f"{len(meses)} meses -> {salida}")
 
 

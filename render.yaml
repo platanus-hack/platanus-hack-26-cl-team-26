@@ -2,8 +2,8 @@ services:
   - type: web
     name: viridis
     runtime: docker
-    # standard: 2 GB de RAM. Con --captura se carga además el modelo de aves (BirdNET, del experimento de captura en
-    # terreno), que junto a los datos de las 34 comunas no cabe con holgura en los 512 MB de starter.
+    # standard: 2 GB de RAM. Los datos de las 34 comunas y el cálculo del corredor usan cerca de 500 MB: justo en el
+    # límite de los 512 MB de starter.
     plan: standard
     region: oregon
     healthCheckPath: /api/salud

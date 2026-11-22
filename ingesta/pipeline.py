@@ -1,4 +1,4 @@
-"""Pipeline del Bloque 1: python -m ingesta.pipeline [opciones]
+"""Red de calles del piloto (grafo NetworkX): python -m ingesta.pipeline [opciones]
 
 Genera salida/grafo_piloto.gpkg (capas aristas, nodos, areas_verdes, poi, comunas,
 area_estudio), salida/grafo_piloto.pkl (grafo NetworkX con atributos) y salida/resumen.json.
@@ -29,7 +29,7 @@ def _args():
     p.add_argument("--consolidar", type=float, metavar="TOL_M",
                    help="Fusiona intersecciones a menos de TOL_M metros (p. ej. 10). Reduce nodos ~30%%")
     p.add_argument("--salida", type=Path, default=Path("salida"))
-    p.add_argument("--cache", type=Path, default=Path("cache"))
+    p.add_argument("--cache", type=Path, default=Path("datos/cache"))
     return p.parse_args()
 
 
@@ -101,7 +101,7 @@ def escribir_salidas(salida: Path, G, aristas, nodos, areas, poi, comunas, poly)
         "pct_aristas_con_uso_social": round(100 * float((aristas["u_social"] > 0).mean()), 1),
         "pct_ancho_vereda_osm": round(100 * float((aristas["ancho_fuente"] == "osm").mean()), 1),
     }
-    (salida / "resumen.json").write_text(json.dumps(resumen, ensure_ascii=False, indent=2, default=str))
+    (salida / "resumen.json").write_text(json.dumps(resumen, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     return resumen
 
 

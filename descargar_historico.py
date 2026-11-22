@@ -163,7 +163,7 @@ def main():
             "fechas_s2": fechas_s2,
             "fechas_landsat": fechas_ls,
         }
-        RUTA_META.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+        RUTA_META.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
         log.info("Guardado %s (%d filas, %.2f MB)", RUTA_OUT, len(df_hist), RUTA_OUT.stat().st_size / 1e6)
     else:
         log.error("No se pudieron descargar escenas históricas.")

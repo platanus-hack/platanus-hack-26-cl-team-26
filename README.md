@@ -92,7 +92,7 @@ continuo) y `python -m tests.test_vulnerabilidad`. Para trabajar en la página c
 
 | Dónde | Qué |
 |---|---|
-| `verdeh3/`, `ingesta/` | Pipeline de datos: grilla H3, satélites, modelo de copa, Censo, OSM ([docs/datos.md](docs/datos.md)) |
+| `verdeh3/`, `ingesta/` | Pipeline de datos (`verdeh3` es el nombre interno, de cuando el proyecto se llamaba VerdeH3): grilla H3, satélites, modelo de copa, Censo, OSM ([docs/datos.md](docs/datos.md)) |
 | `data/` | Lo que usa la app: las cuadras, el aire del día, la fauna |
 | `datos/` | Intermedios del pipeline, versionados para poder regenerar todo sin internet |
 | `optimizer.py`, `ecologia.py` | Urgencia y corredores |
@@ -107,8 +107,8 @@ Las fuentes de cada dato están en la página [/fuentes](https://viridis-w7yj.on
 
 **Experimento retirado:** la captura en terreno desde el teléfono (fotos validadas con Claude y aves reconocidas
 por su canto con BirdNET). Quitamos la página para enfocarnos en el sitio. Su API de subida (`/api/captura`,
-`/api/video`, `/api/audio`) queda apagada; se activa con `python -m terreno.servidor --captura`, y sus tests siguen
-en `tests/test_terreno.py`.
+`/api/video`, `/api/audio`) queda apagada; se activa con `python -m terreno.servidor --captura` (BirdNET va aparte:
+`pip install -r requirements-captura.txt`), y sus tests siguen en `tests/test_terreno.py`.
 
 ## Equipo
 

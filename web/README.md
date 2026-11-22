@@ -1,4 +1,4 @@
-# Viridis (antes VerdeH3) · página web (experimental)
+# Viridis · página web
 
 Concepto B, "página que se recorre": portada con la rama ilustrada, y las secciones Datos clave,
 Planificar, Santiago conectado y Fuentes, con la paleta Bioentidad (crema, oliva #4F6E31, salvia) y la capa de

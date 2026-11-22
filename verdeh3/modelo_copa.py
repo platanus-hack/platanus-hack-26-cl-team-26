@@ -244,7 +244,7 @@ def main():
                                   "modelo_2026": round(float(u["copa_modelo_pct"].mean()), 2)},
     }
     a.data.mkdir(exist_ok=True)
-    (a.data / "modelo_copa.json").write_text(json.dumps(resumen, ensure_ascii=False, indent=2))
+    (a.data / "modelo_copa.json").write_text(json.dumps(resumen, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(resumen, ensure_ascii=False, indent=2))
 
     import joblib

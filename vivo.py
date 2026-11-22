@@ -52,11 +52,11 @@ def ciclo(crudo, ahora, b, previo, errores, antes=()):
                         medido_en=buenas.medido_en.map(lambda t: t.isoformat()))
     cols = ["source", "lat", "lon", "h3_padre", "temp_c", "humedad_pct", "medido_en", "oficial"]
     registros = json.loads(web[cols].to_json(orient="records"))
-    escribir(DATA / "web_sensors.json", lambda p: p.write_text(json.dumps(registros, ensure_ascii=False)))
+    escribir(DATA / "web_sensors.json", lambda p: p.write_text(json.dumps(registros, ensure_ascii=False), encoding="utf-8"))
     estado = {"ciclo": ahora.isoformat(), "lecturas": len(crudo), "aceptadas": len(buenas),
               "descartes": descartes, "errores_fuentes": errores,
               "confianza": live.confianza.value_counts().to_dict()}
-    escribir(DATA / "vivo_estado.json", lambda p: p.write_text(json.dumps(estado, ensure_ascii=False, indent=1)))
+    escribir(DATA / "vivo_estado.json", lambda p: p.write_text(json.dumps(estado, ensure_ascii=False, indent=1), encoding="utf-8"))
     print(json.dumps(estado, ensure_ascii=False))
     return buenas, set(live.h3_padre[live.alerta])
 

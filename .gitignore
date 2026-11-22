@@ -4,14 +4,12 @@ __pycache__/
 *.pyc
 *.log
 .venv/
-# datos/ se versiona, salvo las descargas pesadas que el pipeline deja en datos/cache/
-datos/cache/*.osm.pbf
-datos/cache/chl_ppp_*.tif
-datos/cache/*.part
-datos/cache/osmnx/
-datos/cache/red_cruda_*.pkl
+# datos/ se versiona (la grilla del Gran Santiago), salvo el piloto de 4 comunas (se regenera: docs/datos.md)
+datos/cache/
+datos/salida_h3/
+/salida/
 
-# Binarios y túneles locales
+# Binarios locales
 /bin/
 # fotos de terreno: pueden tener caras o patentes
 data/terreno/fotos/

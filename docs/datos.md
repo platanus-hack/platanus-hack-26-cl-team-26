@@ -8,18 +8,12 @@ Detalle del pipeline que arma la grilla H3 y sus capas. Para qué es Viridis y c
 Base geoespacial en grilla Uber H3 (res 8 y 9) para Providencia, Las Condes, Estación Central y Cerro Navia:
 NDVI, temperatura de superficie, áreas verdes, servicios cercanos y población por hexágono.
 
-**Los datos ya calculados están en `datos/`**, así que la demo corre sin internet:
-
-- `datos/salida_h3/santiago_h3.parquet`: tabla final (GeoParquet, EPSG:4326, res 8 y 9 en la columna `res`).
-- `datos/salida_h3/capas_osm.gpkg`: áreas verdes y POIs limpios de OSM.
-- `datos/salida_h3/resumen_h3.json`: resumen por comuna y estado de cada fuente.
-- `datos/cache/`: rásters recortados (`ndvi_s2.tif`, `lst_landsat.tif`, `poblacion_recorte.tif`) y `comunas.gpkg`.
-
-Para regenerarlos:
+Fue la primera versión y la reemplazó la grilla del Gran Santiago (abajo), que trae las mismas 4 comunas
+marcadas en `comuna_piloto`. Sus archivos ya no se versionan; para regenerarlos (necesita internet):
 
 ```bash
 pip install -r requirements.txt
-python -m verdeh3.pipeline --cache datos/cache --salida datos/salida_h3
+python -m verdeh3.pipeline        # escribe datos/salida_h3/ y su caché en datos/cache/
 ```
 
 El extracto OSM de Chile (`chile-latest.osm.pbf`, ~350 MB, Geofabrik) se baja solo la primera vez.
@@ -41,7 +35,7 @@ Prueba offline: `python -m tests.test_h3_sintetico`.
 ## Gran Santiago (34 comunas): la grilla que usa la app
 
 Las 32 comunas de la Provincia de Santiago más Puente Alto y San Bernardo, recortadas a `BBOX_URBANO`.
-Van aparte de las 4 comunas de arriba, que no cambian:
+Es la que versionamos y usa la app:
 
 - `datos/salida_h3_gs/santiago_h3.parquet`: 1.956 hexágonos res 8 y 13.172 res 9, mismas columnas más
   `elev_m`, `precordillera` (≥ 900 m), `baja_poblacion` (< 500 hab/km²) y `comuna_piloto` (las 4 originales).

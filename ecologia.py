@@ -1,5 +1,5 @@
 """
-Módulo de Conectividad Ecológica (Plan v5 · Corredores Vivos).
+Conectividad ecológica: un corredor distinto según para quién se traza.
 Diferencia la optimización para:
   - Humanos: Alivio térmico, sombra y densidad poblacional (usa optimizer.solve_corridor).
   - Fauna · Aves: Corredor arbóreo continuo de baja resistencia entre parques/islas verdes.

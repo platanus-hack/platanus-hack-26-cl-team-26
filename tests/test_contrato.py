@@ -118,7 +118,7 @@ def main():
     assert time.perf_counter() - t < 0.1
 
     # Modelo de copa: en comunas no vistas debe seguir a Meta mejor que WorldCover.
-    m = json.loads((DATA / "modelo_copa.json").read_text())["hexagono_urbano"]
+    m = json.loads((DATA / "modelo_copa.json").read_text(encoding="utf-8"))["hexagono_urbano"]
     assert m["modelo_2020_comunas_no_vistas_vs_meta_2019"]["r"] > max(0.85, m["worldcover_2021_vs_meta_2019"]["r"])
     assert abs(m["modelo_2020_comunas_no_vistas_vs_meta_2019"]["sesgo"]) < 1
 

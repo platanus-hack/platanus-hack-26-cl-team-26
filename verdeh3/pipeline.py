@@ -1,7 +1,7 @@
-"""VerdeH3 Bloque 1: python -m verdeh3.pipeline [opciones]
+"""Viridis, grilla H3 base: python -m verdeh3.pipeline [opciones]
 
-Genera salida_h3/santiago_h3.parquet (GeoParquet, res 8 y 9 en la misma tabla, columna `res`)
-y salida_h3/resumen_h3.json. Cada paso cachea su resultado en cache/; si una fuente falla,
+Genera datos/salida_h3/santiago_h3.parquet (GeoParquet, res 8 y 9 en la misma tabla, columna `res`)
+y datos/salida_h3/resumen_h3.json. Cada paso cachea su resultado en datos/cache/; si una fuente falla,
 el resto se calcula igual y la columna queda vacía (se avisa en el log y en el resumen).
 """
 from __future__ import annotations
@@ -23,13 +23,13 @@ log = logging.getLogger("verdeh3")
 
 
 def _args():
-    p = argparse.ArgumentParser(description="VerdeH3: base H3 pre-calculada")
+    p = argparse.ArgumentParser(description="Viridis: base H3 pre-calculada")
     p.add_argument("--comunas", nargs="+", default=config.COMUNAS_PILOTO)
     p.add_argument("--pbf", type=Path, help="Extracto OSM local (.osm.pbf); por defecto baja el de Chile")
     p.add_argument("--poblacion-tif", type=Path, help="Ráster de población local en vez de WorldPop")
     p.add_argument("--omitir", nargs="*", default=[], choices=["osm", "ndvi", "lst", "poblacion"])
-    p.add_argument("--salida", type=Path, default=Path("salida_h3"))
-    p.add_argument("--cache", type=Path, default=Path("cache"))
+    p.add_argument("--salida", type=Path, default=Path("datos/salida_h3"))
+    p.add_argument("--cache", type=Path, default=Path("datos/cache"))
     return p.parse_args()
 
 
@@ -77,7 +77,7 @@ def main():
     ruta = a.salida / "santiago_h3.parquet"
     tabla.to_parquet(ruta, index=False)
     resumen = _resumen(tabla, estado, comunas)
-    (a.salida / "resumen_h3.json").write_text(json.dumps(resumen, ensure_ascii=False, indent=2, default=str))
+    (a.salida / "resumen_h3.json").write_text(json.dumps(resumen, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     log.info("Listo en %.1f min -> %s", (time.time() - t0) / 60, ruta)
     print(json.dumps(resumen, ensure_ascii=False, indent=2, default=str))
 

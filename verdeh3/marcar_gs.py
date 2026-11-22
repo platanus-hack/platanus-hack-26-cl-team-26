@@ -49,8 +49,8 @@ def elevacion_dem(bbox, cache: Path):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--salida", type=Path, default=Path("salida_h3_gs"))
-    p.add_argument("--cache", type=Path, default=Path("cache_gs"))
+    p.add_argument("--salida", type=Path, default=Path("datos/salida_h3_gs"))
+    p.add_argument("--cache", type=Path, default=Path("datos/cache_gs"))
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
     ruta = a.salida / "santiago_h3.parquet"

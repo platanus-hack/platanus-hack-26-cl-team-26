@@ -99,7 +99,8 @@ def main():
            "tarde_12_20h": resumen(lecturas[hora.between(12, 19)]),
            "por_origen": {o: resumen(g) for o, g in lecturas.groupby("origen")}}
     tmp = "data/validacion.json.tmp"
-    json.dump(res, open(tmp, "w"), ensure_ascii=False, indent=1)
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(res, f, ensure_ascii=False, indent=1)
     os.replace(tmp, "data/validacion.json")
     print(json.dumps(res, ensure_ascii=False, indent=1))
 

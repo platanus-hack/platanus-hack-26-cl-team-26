@@ -12,7 +12,7 @@ corredor, y muestra la serie histórica satelital (data/historico_h3.parquet). S
 (máxima del día por barrio, Rol 2: lo escribe maximas.py cada noche) entra al calor de la urgencia; se relee
 cuando cambia. Con REFRESCO_VIVO_MIN > 0 (apagado por omisión), mientras alguien mira el mapa y ese archivo
 tiene más de esos minutos, se corre un ciclo de vivo.py (lectura del momento) en otro hilo.
-Si TERRENO_CLAVE (o --clave) está definida, subir fotos exige ?k=<clave>, porque la URL del túnel es pública.
+Si TERRENO_CLAVE (o --clave) está definida, subir fotos exige ?k=<clave>, porque la URL del servidor es pública.
 Solo cuentan las fotos que Claude valida como exteriores de calle; sin Claude quedan «sin validar» y no cambian
 el corredor, salvo con --aceptar-sin-validar (demo sin red).
 Credenciales de Claude: ANTHROPIC_API_KEY, un perfil de `ant auth login`, o la clave sola en el archivo
@@ -393,7 +393,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     leer_live()
     elegir(Seleccion(comunas=inicial))
     al_dia(estado)
-    app = FastAPI(title="VerdeH3")
+    app = FastAPI(title="Viridis")
 
     def revisar_clave(k: str | None):
         if clave and k != clave:
@@ -792,7 +792,7 @@ def main():
     p.add_argument("--data", type=Path, default=Path("data"), help="dónde guardar capturas y terreno_h3.parquet")
     p.add_argument("--km", type=float, default=3.0)
     p.add_argument("--puerto", type=int, default=int(os.environ.get("PORT", 8000)))
-    p.add_argument("--host", default="127.0.0.1", help="127.0.0.1 basta para cloudflared; 0.0.0.0 abre la red local")
+    p.add_argument("--host", default="127.0.0.1", help="127.0.0.1 solo este computador; 0.0.0.0 abre la red local (así corre en Docker)")
     p.add_argument("--clave", default=os.environ.get("TERRENO_CLAVE"))
     p.add_argument("--captura", action="store_true",
                    help="activa la API de subida del experimento de captura en terreno (fotos, videos y audio)")

@@ -1,4 +1,4 @@
-# Notas para el pitch · VerdeH3
+# Notas para el pitch · Viridis
 
 Todas las cifras salen de archivos del repo y se pueden regenerar. Al lado de cada una va su fuente.
 

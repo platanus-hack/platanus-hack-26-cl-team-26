@@ -1,0 +1,9 @@
+# Opcional: experimento de captura en terreno (retirado del sitio), solo para `python -m terreno.servidor --captura`.
+# Aves por sonido (terreno/aves.py): BirdNET con el motor LiteRT; birdnetlib no declara librosa ni audioread.
+# Sin esto el servidor y los tests funcionan igual: aves.disponible() da False y la escucha queda «sin analizar».
+-r requirements.txt
+birdnetlib==0.18.1
+librosa
+audioread
+ai-edge-litert
+audioop-lts; python_version >= "3.13"

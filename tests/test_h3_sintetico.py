@@ -1,4 +1,4 @@
-"""Prueba offline de VerdeH3 (grilla, áreas verdes, POIs, rásters y lectura OSM).
+"""Prueba offline del pipeline de Viridis (grilla, áreas verdes, POIs, rásters y lectura OSM).
 
 Uso: python -m tests.test_h3_sintetico
 """
@@ -44,7 +44,7 @@ def main():
 
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
-        (d / "t.osm").write_text(OSM_XML)
+        (d / "t.osm").write_text(OSM_XML, encoding="utf-8")
         areas_raw, poi_raw = fuentes.leer_osm(d / "t.osm", bbox)
         assert len(areas_raw) == 1 and len(poi_raw) == 4, (len(areas_raw), len(poi_raw))
         areas = ing_proc.limpiar_areas_verdes(areas_raw)

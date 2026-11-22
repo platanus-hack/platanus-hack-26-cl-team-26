@@ -14,16 +14,10 @@ requests
 scikit-learn>=1.4
 scipy
 joblib
-# servidor web (mapa + captura en terreno)
+# servidor (API y sitio). anthropic y pillow los usa también el experimento de captura en terreno
 fastapi
 uvicorn
 python-multipart
 pillow
 anthropic
 httpx
-# aves por sonido (terreno/aves.py): BirdNET con el motor LiteRT; birdnetlib no declara librosa ni audioread
-birdnetlib==0.18.1
-librosa
-audioread
-ai-edge-litert
-audioop-lts; python_version >= "3.13"

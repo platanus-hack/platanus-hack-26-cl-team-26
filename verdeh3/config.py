@@ -1,4 +1,4 @@
-"""Parámetros de VerdeH3, Bloque 1."""
+"""Parámetros del pipeline de datos de Viridis."""
 
 # Eje de comunas contrastadas (cambiar con --comunas).
 COMUNAS_PILOTO = ["Providencia", "Las Condes", "Estación Central", "Cerro Navia"]

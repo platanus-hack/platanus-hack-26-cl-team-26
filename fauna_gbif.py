@@ -38,7 +38,7 @@ MAX_INCERTIDUMBRE_M = 1000
 SALIDA = vivo.DATA / "fauna_h3.parquet"
 WEB = Path("web/public/data/fauna.json")
 sesion = requests.Session()
-sesion.headers["User-Agent"] = "VerdeH3 (hackathon)"
+sesion.headers["User-Agent"] = "Viridis (hackathon)"
 
 
 def pedir(ruta, **params):

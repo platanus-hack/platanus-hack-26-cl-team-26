@@ -40,7 +40,7 @@ for n, grupo in gm.groupby("n"):
                   "geometry": {"type": "MultiLineString", "coordinates": coords}})
 feats.sort(key=lambda f: (f["properties"]["k"], -f["properties"]["km"]))
 out = sys.argv[1]
-json.dump({"type": "FeatureCollection", "features": feats}, open(out, "w"), ensure_ascii=False, separators=(",", ":"))
+json.dump({"type": "FeatureCollection", "features": feats}, open(out, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
 import os
 print(len(feats), os.path.getsize(out) // 1024, "KB")
 print([f["properties"]["n"] for f in feats])

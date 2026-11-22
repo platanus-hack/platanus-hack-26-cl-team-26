@@ -162,7 +162,7 @@ def main():
                                    "personas_cubiertas": r_gs["personas_cubiertas"],
                                    "personas_azar": r_gs["personas_azar"]},
     }
-    (a.data / "cifras_pitch.json").write_text(json.dumps(cifras, ensure_ascii=False, indent=2))
+    (a.data / "cifras_pitch.json").write_text(json.dumps(cifras, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(cifras, ensure_ascii=False, indent=2))
 
 
