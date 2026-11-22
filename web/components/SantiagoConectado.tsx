@@ -80,7 +80,6 @@ export default function SantiagoConectado({ base, comunas, encuadre, hitos }: {
     <>
       <div className="b-cab escalon">
         <h2>Santiago <em>conectado</em></h2>
-        <p>Qué pasa si Santiago construye la red completa. Mueve los kilómetros y mira cómo se unen sus islas verdes: los cerros y parques donde viven aves y abejas.</p>
       </div>
       <div className="b-controles escalon conectado-ctl">
         <div className="grupo" role="group" aria-label="Para quién se traza la red">
