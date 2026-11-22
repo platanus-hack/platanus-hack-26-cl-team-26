@@ -108,7 +108,7 @@ export default function Pagina({ serie }: { serie: Serie }) {
     <main className="b">
       <header className={`b-pad${bajo ? " bajo" : ""}`}><div className="b-in">
         <a className="marca" href="#inicio"><img src="/viridis.svg" alt="" width={34} height={34} />VIRIDIS</a>
-        <nav aria-label="Secciones"><a href="#ahora">Calor, árboles y personas</a><a href="#planificar">Planificar</a><a href="#historico">Histórico</a><a href="#fuentes">Fuentes</a></nav>
+        <nav aria-label="Secciones"><a href="#ahora">Datos clave</a><a href="#planificar">Planificar</a><a href="#historico">Histórico</a><a href="#fuentes">Fuentes</a></nav>
       </div></header>
 
       <section className="b-hero b-pad" id="inicio">
@@ -121,7 +121,7 @@ export default function Pagina({ serie }: { serie: Serie }) {
           <p>Calor del suelo, copa de árboles y personas, cuadra por cuadra, para decidir por dónde plantar el próximo corredor verde. <em>Cada metro de sombra, donde más alivia.</em></p>
           <div className="grupo" style={{ gap: 12 }}>
             <a className="pill llena grande" href="#planificar">Planificar un corredor</a>
-            <a className="pill grande" href="#ahora">Ver calor, árboles y personas</a>
+            <a className="pill grande" href="#ahora">Ver los datos clave</a>
           </div>
         </div>
       </section>
@@ -148,7 +148,7 @@ const TODO_GRIS: Foco = { comunas: [], hexes: [] };
 function Esqueletos({ error }: { error: string | null }) {
   return (
     <>
-      {[["ahora", "Calor, árboles", "y personas"], ["planificar", "Planificar", "el corredor"], ["historico", "El calor", "de antes"]].map(([id, titulo, acento], k) => (
+      {[["ahora", "Datos", "clave"], ["planificar", "Planificar", "el corredor"], ["historico", "El calor", "de antes"]].map(([id, titulo, acento], k) => (
         <section key={id} id={id} className={`b-sec b-pad${k % 2 ? "" : " alt"}`} aria-busy={!error}><div className="b-in">
           <h2>{titulo} <em>{acento}</em></h2>
           {error ? (
@@ -355,7 +355,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const filtroSolo = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
     sueloComuna={sueloComuna} ocupado={ocupado} error={error} sinResumen />;
 
-  // ---- Calor, árboles y personas (sobre las 34 comunas: la escala de color no cambia al elegir)
+  // ---- Datos clave: calor, árboles y personas (sobre las 34 comunas: la escala de color no cambia al elegir)
   const [capa, setCapa] = useState("calor");
   const [pasada, setPasada] = useState<number | null>(null);
   const calor = useMemo(() => {
@@ -498,7 +498,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
     <>
       <Seccion id="ahora" alt>
         <div className="b-cab escalon">
-          <h2>Calor, árboles <em>y personas</em></h2>
+          <h2>Datos <em>clave</em></h2>
           <div className="grupo" role="group" aria-label="Capa del mapa">
             {CAPAS_AHORA.map((c) => <button key={c.id} type="button" className="pill" aria-pressed={capa === c.id} onClick={() => setCapa(c.id)}>{NOMBRE_CAPA[c.id]}</button>)}
           </div>

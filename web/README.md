@@ -1,6 +1,6 @@
 # Viridis (antes VerdeH3) · página web (experimental)
 
-Concepto B, "página que se recorre": portada con la rama ilustrada, y las secciones Calor, árboles y personas,
+Concepto B, "página que se recorre": portada con la rama ilustrada, y las secciones Datos clave,
 Planificar, Histórico y Fuentes, con la paleta Bioentidad (crema, oliva #4F6E31, salvia) y la capa de
 calor en ocre. Next.js 16 + MapLibre, sobre Carto Positron teñido.
 
@@ -25,7 +25,7 @@ Producción: `npm run build && npm start`. Si el servidor de terreno está en ot
 
 ## Qué muestra
 
-- **Calor, árboles y personas**: las 34 comunas del Gran Santiago juntas, o una comuna y sus vecinas (se tocan en el
+- **Datos clave** (calor, árboles y personas): las 34 comunas del Gran Santiago juntas, o una comuna y sus vecinas (se tocan en el
   mapa, igual que en `terreno/static/mapa.html`). Capas de calor, copa de árboles y personas. El calor es
   el índice 0,6 suelo + 0,4 aire donde hay sensores con confianza alta o media; si no, solo suelo.
 - **Planificar**: largo y pesos del corredor (los recalcula el servidor), corredor actual contra el de
