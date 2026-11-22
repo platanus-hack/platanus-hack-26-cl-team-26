@@ -120,7 +120,7 @@ def dmc_estaciones(timeout=30):
         lat, lon = float(x["latitud"]), float(x["longitud"])
         if not (-33.75 < lat < -33.2 and -71 < lon < -70.4):
             continue
-        for d in e["datos"]:
+        for d in e["datos"] or []:   # una estación sin lecturas recientes viene con datos = null
             if d.get("temperatura"):
                 filas.append({"source": f"DMC_{x['codigoNacional']}", "lat": lat, "lon": lon,
                               "temp_c": _num(d["temperatura"]), "humedad_pct": _num(d.get("humedadRelativa")),
