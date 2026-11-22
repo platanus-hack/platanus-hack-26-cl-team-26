@@ -239,11 +239,12 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   }
   function sumar(cs: string[]) { setZona(null); setElegidas((ant) => [...new Set([...ant, ...cs])]); }
   function reiniciar() { setZona(null); setElegidas([]); setPlanTodo(false); }
-  // Lápiz: las cuadras que toca el contorno dibujado; cada trazo se suma a la zona anterior.
-  function lazo(contorno: [number, number][]) {
+  // Lápiz: las cuadras pintadas con el pincel más las que quedan dentro del contorno cerrado; cada trazo se suma a la zona anterior.
+  function lazo(contorno: [number, number][] | null, pintadas: number[] = []) {
     const res = getResolution(B.h[0]);
-    let celdas = polygonToCellsExperimental(contorno.map(([lng, lat]) => [lat, lng]), res, POLYGON_TO_CELLS_FLAGS.containmentOverlapping).filter((h) => idxB.has(h));
-    if (!celdas.length) {
+    let celdas = pintadas.map((i) => B.h[i]).filter(Boolean);
+    if (contorno) celdas = celdas.concat(polygonToCellsExperimental(contorno.map(([lng, lat]) => [lat, lng]), res, POLYGON_TO_CELLS_FLAGS.containmentOverlapping).filter((h) => idxB.has(h)));
+    if (!celdas.length && contorno) {
       const [lng, lat] = contorno.reduce(([a, b], [x, y]) => [a + x / contorno.length, b + y / contorno.length], [0, 0]);
       celdas = [latLngToCell(lat, lng, res)].filter((h) => idxB.has(h));
     }
