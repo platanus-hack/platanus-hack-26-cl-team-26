@@ -67,7 +67,7 @@ const fechaHora = (f?: string | null) => {
   const p = Object.fromEntries(new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(t).map((x) => [x.type, x.value]));
   return `${Number(p.day)} ${MESES[Number(p.month) - 1]} ${p.year}, ${p.hour}:${p.minute} h`;
 };
-const ISLA = "#386641";   // islas verdes de Planificar: el verde más oscuro de la paleta elegida
+const ISLA = "#6A994E";   // islas verdes de Planificar: más claras que el corredor
 const MORADO = ["#F3ECE6", "#D3BBD6", "#9A6BA8", "#5C2F78"];   // densidad de personas
 const AZUL = ["#EEF0EA", "#BBD0CC", "#5E9590", "#1F4F55"];      // especies de aves registradas en el barrio (GBIF)
 const AMBAR = ["#F4EFDF", "#EFD58C", "#E3A21A", "#9A5B08"];    // abejas nativas registradas en el barrio (GBIF)
@@ -613,7 +613,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             <div className="leyenda">
               {/* Solo lo que el mapa dibuja en este momento, según las especies y si hay corredor. */}
               {planListo && <span><i className="barra" style={{ background: grad(ROJO) }} />{ESCALA[claveEspecies]}</span>}
-              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: TONO_CORREDOR[tono].fondo, outline: `2px solid ${TONO_CORREDOR[tono].borde}`, outlineOffset: -1, boxShadow: "0 0 0 1px #2F4520" }} />{claveEspecies === "abejas" ? "Ruta entre mini islas" : "Corredor"}</span>}
+              {verCorredor && a.hexes > 0 && <span><i className="cuadro" style={{ background: TONO_CORREDOR[tono].fondo, outline: `2px solid ${TONO_CORREDOR[tono].borde}`, outlineOffset: -1, }} />{claveEspecies === "abejas" ? "Ruta entre mini islas" : "Corredor"}</span>}
               {verCorredor && (a.checkpoints ?? 0) > 0 && <span><i className="cuadro" style={{ background: COLOR_MINI_ISLA, outline: "2px solid #7A5B00", outlineOffset: -1 }} />Mini isla para abejas</span>}
               <span><i className="cuadro" style={{ background: ISLA }} />Islas verdes: cerros y parques</span>
             </div>
