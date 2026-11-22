@@ -62,7 +62,7 @@ export default function FiltroComunas({ info, elegidas, zona, alternar, sumar, r
           </span>
         )}
         {nada
-          ? <span className="nota">Toca comunas en el mapa o encierra cuadras con el lápiz.</span>
+          ? <span className="nota">Doble clic en una comuna para elegirla, o encierra cuadras con el lápiz.</span>
           : <button type="button" className="mini volver" onClick={reiniciar}>↺ Volver a todo Santiago</button>}
         {error && <span className="aviso" role="alert" style={{ flexBasis: "100%" }}>{error}</span>}
       </div>

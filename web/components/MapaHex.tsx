@@ -38,7 +38,7 @@ function tenir(mapa: MapaML) {
 }
 
 export default function MapaHex({ datos, capas, activa, corredor, comunas, distritos, capturas, recorridos, popupCaptura,
-  popupHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, children }: {
+  popupHex, datoHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, children }: {
   datos: GeoJSON.FeatureCollection;
   capas: Capa[];
   activa: string;
@@ -53,7 +53,8 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   foco?: Foco;
   hitos?: GeoJSON.FeatureCollection;         // puntos con propiedad n: nombres de cerros isla y parques
   alPasar?: (i: number | null) => void;      // cuadra bajo el puntero
-  alComuna?: (c: string) => void;            // tocar una cuadra o comuna: suma o quita su comuna
+  datoHex?: (i: number) => string;           // HTML con los datos de una cuadra, para el globo de un clic
+  alComuna?: (c: string) => void;            // doble clic en una cuadra o comuna: suma o quita su comuna
   alLazo?: (anillo: [number, number][] | null, pintadas?: number[]) => void;  // contorno cerrado en [lng, lat] (o null) y cuadras pintadas con el pincel
   etiqueta: string;
   children?: React.ReactNode;                 // controles que flotan sobre el mapa
@@ -73,8 +74,8 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   const accion = useRef({ deshacer: () => {}, listo: () => {} });  // los botones llaman al dibujo en curso
   const pasado = useRef<number | null>(null);
   const sinClicHasta = useRef(0);   // al cerrar la zona el mapa dispara un clic que no debe elegir comuna
-  const cb = useRef({ alPasar, alComuna, alLazo, popupCaptura, popupHex, activa, datos, lapiz });
-  cb.current = { alPasar, alComuna, alLazo, popupCaptura, popupHex, activa, datos, lapiz };
+  const cb = useRef({ alPasar, alComuna, alLazo, popupCaptura, popupHex, datoHex, activa, datos, lapiz });
+  cb.current = { alPasar, alComuna, alLazo, popupCaptura, popupHex, datoHex, activa, datos, lapiz };
   const inicial = useRef({ datos, capas, activa, encuadre, hitos });
   const hayComunas = useRef(false), hayCuadras = useRef(false), claveCorredor = useRef("");
 
@@ -203,9 +204,13 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
           paint: { "circle-radius": 7, "circle-color": ["get", "color"], "circle-stroke-color": "#FFFDF6", "circle-stroke-width": 2 },
         });
 
-        // Un toque: captura → su foto; cuadra o comuna → sumar o quitar su comuna. Con el lápiz activo no se elige nada.
-        nuevo.on("click", (e) => {
-          if (cb.current.lapiz || performance.now() < sinClicHasta.current) return;
+        // Un clic: captura → su foto; cuadra → un globo con sus datos (y sus fotos y aves si tiene). Doble clic
+        // (o doble toque): suma o quita la comuna. El clic espera un momento por si llega el segundo. El mapa no
+        // hace zoom con doble clic. Con el lápiz activo no se elige nada.
+        nuevo.doubleClickZoom.disable();
+        let espera: ReturnType<typeof setTimeout> | null = null;
+        let previo = { t: 0, x: 0, y: 0 };
+        const unClic = (e: MapMouseEvent) => {
           const cap = nuevo.queryRenderedFeatures(e.point, { layers: ["capturas"] })[0];
           if (cap && cb.current.popupCaptura) {
             popup?.remove();
@@ -213,21 +218,31 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
             return;
           }
           const hex = nuevo.getLayer(cb.current.activa) ? nuevo.queryRenderedFeatures(e.point, { layers: [cb.current.activa] })[0] : undefined;
-          if (hex) {
-            // Cuadra con fotos o aves de terreno: su ficha. Cualquier otra: sumar o quitar su comuna.
-            const ficha = cb.current.popupHex?.(Number(hex.id));
-            if (ficha) {
-              popup?.remove();
-              const mio = new ml.Popup({ maxWidth: "300px" }).setLngLat(e.lngLat)
-                .setHTML('<div class="pop">Cargando fotos y aves de esta cuadra…</div>').addTo(nuevo);
-              popup = mio;
-              ficha.then((html) => mio.setHTML(html)).catch(() => mio.setHTML('<div class="pop">No se pudo cargar la cuadra.</div>'));
-              return;
-            }
-            if (hex.properties.cn) { cb.current.alComuna?.(String(hex.properties.cn)); return; }
-          }
+          if (!hex) { popup?.remove(); return; }
+          const dato = cb.current.datoHex?.(Number(hex.id)) ?? "";
+          const ficha = cb.current.popupHex?.(Number(hex.id));
+          if (!dato && !ficha) return;
+          popup?.remove();
+          const mio = new ml.Popup({ maxWidth: "300px" }).setLngLat(e.lngLat)
+            .setHTML(dato + (ficha ? '<div class="pop">Cargando fotos y aves de esta cuadra…</div>' : "")).addTo(nuevo);
+          popup = mio;
+          ficha?.then((html) => mio.setHTML(dato + html)).catch(() => mio.setHTML(dato + '<div class="pop">No se pudieron cargar las fotos de la cuadra.</div>'));
+        };
+        const dobleClic = (e: MapMouseEvent) => {
+          popup?.remove();
+          const hex = nuevo.getLayer(cb.current.activa) ? nuevo.queryRenderedFeatures(e.point, { layers: [cb.current.activa] })[0] : undefined;
+          if (hex?.properties.cn) { cb.current.alComuna?.(String(hex.properties.cn)); return; }
           const com = nuevo.queryRenderedFeatures(e.point, { layers: ["comunas-relleno"] })[0];
           if (com) cb.current.alComuna?.(String(com.properties.c));
+        };
+        nuevo.on("click", (e) => {
+          if (cb.current.lapiz || performance.now() < sinClicHasta.current) return;
+          const t = performance.now();
+          const doble = t - previo.t < 350 && Math.hypot(e.point.x - previo.x, e.point.y - previo.y) < 30;
+          previo = doble ? { t: 0, x: 0, y: 0 } : { t, x: e.point.x, y: e.point.y };
+          if (espera) { clearTimeout(espera); espera = null; }
+          if (doble) dobleClic(e);
+          else espera = setTimeout(() => { espera = null; unClic(e); }, 280);
         });
         // Al pasar el puntero: contorno de la cuadra y sus datos abajo del mapa.
         const pasar = (i: number | null) => {
@@ -304,13 +319,11 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
     const cont = m.getCanvasContainer();
     const src = m.getSource("lazo") as GeoJSONSource;
     if (!lapiz) {
-      m.doubleClickZoom.enable();
       m.dragPan.enable();
       cont.style.cursor = "";
       setNPuntos(0); setAreaKm2(0);
       return;
     }
-    m.doubleClickZoom.disable();
     m.dragPan.disable();
     cont.style.cursor = "crosshair";
     const pts: [number, number][] = [];
@@ -484,7 +497,8 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   useEffect(() => {
     const m = mapa.current;
     if (!listo || !m || cb.current.lapiz) return;   // mientras se pinta, el mapa no salta a lo ya marcado
-    m.fitBounds(encuadre, { padding: 32, duration: menosMovimiento() ? 0 : 900, essential: false });
+    // Encuadre holgado: lo elegido queda a la vista con sus vecinas, sin acercarse de golpe.
+    m.fitBounds(encuadre, { padding: 56, maxZoom: 12.2, duration: menosMovimiento() ? 0 : 900, essential: false });
   }, [encuadre, listo]);
 
   return (

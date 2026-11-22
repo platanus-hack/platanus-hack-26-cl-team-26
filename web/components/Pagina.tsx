@@ -213,9 +213,9 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const foco = useMemo<Foco>(() => (zona ? { comunas: [], hexes: zonaIdx } : elegidas.length ? { comunas: elegidas.map((c) => comIdx.get(c) ?? -1), hexes: [] } : null),
     [zona, zonaIdx, elegidas, comIdx]);
   const encuadreArea = useMemo(() => {
-    if (zona && zonaIdx.length) return encuadreDe(zonaIdx.map((i) => anillos[i]), 0.004);
+    if (zona && zonaIdx.length) return encuadreDe(zonaIdx.map((i) => anillos[i]), 0.012);
     const geo = elegidas.flatMap((c) => info.geo[c] ?? []).flatMap((poly) => poly.map((a) => a.map(([la, lo]) => [lo, la])));
-    return encuadreDe(geo.length ? geo : anillos, 0.004);
+    return encuadreDe(geo.length ? geo : anillos, geo.length ? 0.025 : 0.004);
   }, [zona, zonaIdx, elegidas, anillos, info]);
 
   const comunasGeo = useMemo<GeoJSON.FeatureCollection>(() => ({
@@ -329,7 +329,17 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         ${d.escuchas[0] ? popupEscucha(d.escuchas[0]).replace('<div class="pop">', '<div class="escucha">') : ""}</div>`;
     });
   };
-  const mapaComun = { comunas: comunasGeo, distritos: distritosGeo, recorridos: recorridosGeo, popupHex, alComuna: tocarComuna, alLazo: lazo, foco };
+  // Globo de un clic: los datos de la cuadra y cómo elegir su comuna.
+  const datoHex = (i: number): string => {
+    const c = B.comuna[i], fila = (n: string, v: string) => `<tr><th scope="row">${n}</th><td>${v}</td></tr>`;
+    return `<div class="pop dato"><b>${esc(B.distrito[i])}</b>${B.parque[i] ? " · parque" : ""}
+      <table>${fila("Suelo", B.lst[i] == null ? "sin dato" : `${formato(B.lst[i] as number, 1)} °C`)}
+      ${B.vivo[i] != null ? fila("Aire en vivo", `${formato(B.vivo[i] as number, 1)} °C`) : ""}
+      ${fila("Copa de árboles", B.copa[i] == null ? "sin dato" : `${formato(B.copa[i] as number, 1)} %`)}
+      ${fila("Personas", formato(B.pob[i]))}</table>
+      <small>Doble clic para ${elegidas.includes(c) ? "quitar" : "elegir"} ${esc(c)}.</small></div>`;
+  };
+  const mapaComun = { comunas: comunasGeo, distritos: distritosGeo, recorridos: recorridosGeo, popupHex, datoHex, alComuna: tocarComuna, alLazo: lazo, foco };
 
   const filtro = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
     sueloComuna={sueloComuna} ocupado={ocupado} error={error} />;
@@ -476,21 +486,21 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
         <div className="escalon" style={est(1)}>
           <MapaHex {...mapaComun} datos={datosAhora} capas={CAPAS_AHORA} activa={capa} corredor={terrenoGeo} encuadre={encuadreArea} alPasar={setPasada}
-            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Toca una comuna para sumarla o quitarla, o una cuadra con borde para ver sus fotos y aves.`}>{filtro}</MapaHex>
+            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Un clic en una cuadra muestra sus datos; doble clic suma o quita su comuna.`}>{filtro}</MapaHex>
         </div>
         <div className="leyenda">
           <span><i className="barra" style={{ background: LEYENDA[capa][0] }} />{LEYENDA[capa][1]}</span>
           <span><i className="linea" style={{ borderTop: "2px solid #2F4520" }} />Comuna</span>
           <span><i className="linea" style={{ borderTop: "2px dashed #2F4520", opacity: 0.7 }} />Sector</span>
-          {estado.totales.cuentan + estado.totales.escuchas > 0 && <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Con fotos o aves de terreno: tócala para verlas</span>}
+          {estado.totales.cuentan + estado.totales.escuchas > 0 && <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Con fotos o aves de terreno: un clic para verlas</span>}
           {!nada && <span><i className="cuadro" style={{ background: "#C5CDA6", opacity: 0.35 }} />Fuera de lo elegido</span>}
           <span className="detalle num" aria-live="polite">{det != null
             ? `${B.distrito[det]}${B.parque[det] ? ", parque" : ""}: suelo ${formato(B.lst[det] ?? 0, 1)} °C${B.vivo[det] != null ? `, aire ${formato(B.vivo[det] as number, 1)} °C` : ""}, copa ${formato(B.copa[det] ?? 0, 1)} %, ${formato(B.pob[det])} personas.${terrenoDe(det)}`
-            : "Pasa el puntero por una cuadra para ver sus datos."}</span>
+            : "Un clic en una cuadra muestra sus datos; doble clic elige o quita su comuna."}</span>
         </div>
         <div className="elegido escalon" style={est(3)}>
           {!elegido ? (
-            <p className="vacio">Todo Santiago: <b className="num">{formato(santiago.suelo, 1)} °C</b> de suelo, <b className="num">{formato(santiago.copa, 1)} %</b> de copa y <b className="num">{formato(santiago.personas)}</b> personas en {formato(santiago.cuadras)} cuadras. Toca comunas en el mapa o encierra cuadras con el lápiz para ver aquí sus cifras.</p>
+            <p className="vacio">Todo Santiago: <b className="num">{formato(santiago.suelo, 1)} °C</b> de suelo, <b className="num">{formato(santiago.copa, 1)} %</b> de copa y <b className="num">{formato(santiago.personas)}</b> personas en {formato(santiago.cuadras)} cuadras. Haz doble clic en comunas del mapa o encierra cuadras con el lápiz para ver aquí sus cifras.</p>
           ) : (
             <>
               <div className="totales num">
@@ -551,7 +561,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
               {!planListo && (
                 <div className="invita" role="status">
                   <b>Primero elige dónde</b>
-                  <span>Toca comunas en este mapa o encierra cuadras con el lápiz. El corredor se traza solo dentro de lo que elijas.</span>
+                  <span>Haz doble clic en comunas de este mapa o encierra cuadras con el lápiz. El corredor se traza solo dentro de lo que elijas.</span>
                   <button type="button" className="mini" onClick={() => setPlanTodo(true)}>Trazar en todo Santiago</button>
                 </div>
               )}
