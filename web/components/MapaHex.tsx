@@ -37,6 +37,8 @@ function tenir(mapa: MapaML) {
   }
 }
 
+const TESELA_Z = 9;   // zoom de tesela único para cuadras, sectores y comunas (calzan entre sí y no se recargan)
+
 export default function MapaHex({ datos, capas, activa, corredor, comunas, distritos, capturas, recorridos, popupCaptura,
   popupHex, datoHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, children }: {
   datos: GeoJSON.FeatureCollection;
@@ -117,7 +119,9 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
       nuevo.on("load", () => {
         tenir(nuevo);
         const fundido = { duration: menosMovimiento() ? 0 : 650 };
-        nuevo.addSource("hex", { type: "geojson", data: ini.datos, promoteId: "i" });
+        // maxzoom 9: las cuadras se cortan en las mismas pocas teselas para todo zoom. Así al alejar no hay que
+        // volver a generarlas (antes quedaba dibujado solo el trozo que estaba a la vista hasta que cargaba el resto).
+        nuevo.addSource("hex", { type: "geojson", data: ini.datos, promoteId: "i", maxzoom: TESELA_Z, buffer: 16 });
         for (const c of ini.capas) {
           nuevo.addLayer({
             id: c.id, type: "fill", source: "hex",
@@ -138,7 +142,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         nuevo.addSource("elegida", { type: "geojson", data: VACIO });
         nuevo.addLayer({ id: "elegida", type: "line", source: "elegida", paint: { "line-color": "#22281A", "line-width": 2.2 } });
         // Sectores: raya fina punteada entre distritos de una misma comuna, más visible al acercar.
-        nuevo.addSource("distritos", { type: "geojson", data: VACIO });
+        nuevo.addSource("distritos", { type: "geojson", data: VACIO, maxzoom: TESELA_Z, buffer: 16 });
         nuevo.addLayer({
           id: "distritos", type: "line", source: "distritos",
           paint: {
@@ -149,7 +153,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
         });
         // Comunas: halo claro debajo y línea oscura encima, para que el límite se lea sobre cualquier color.
         // El relleno es casi transparente: solo sirve para tocar una comuna donde no hay cuadras.
-        nuevo.addSource("comunas", { type: "geojson", data: VACIO });
+        nuevo.addSource("comunas", { type: "geojson", data: VACIO, maxzoom: TESELA_Z, buffer: 16 });
         nuevo.addLayer({ id: "comunas-relleno", type: "fill", source: "comunas", paint: { "fill-color": "#4F6E31", "fill-opacity": 0.001 } });
         nuevo.addLayer({
           id: "comunas-halo", type: "line", source: "comunas", layout: { "line-join": "round" },
