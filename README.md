@@ -91,7 +91,10 @@ La página (Next, en `web/`) muestra los datos y traza el corredor; `python -m t
 - *Planificar*: corredor con presupuesto (km) y pesos de calor, árboles y personas, para humanos, aves, abejas
   o mixto (`ecologia.py`), con las cifras contra un trazado al azar y la fauna registrada en los barrios que
   cruza.
-- *Histórico*: promedio del calor del suelo entre dos meses (`data/historico_h3.parquet`, 2023–2026).
+- *Santiago conectado*: la red completa sobre todo Santiago, de 0 a 100 km, para personas, aves, abejas o las tres:
+  islas verdes unidas, personas a una cuadra, barrios con aves y mini islas para abejas. La precalcula
+  `python red_conectada.py` en `web/public/data/red.json` (cada presupuesto son los primeros tramos de la red de
+  100 km, así crece sin cambiar de lugar).
 
 ### Despliegue en Render (un solo servicio)
 
