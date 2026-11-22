@@ -10,6 +10,8 @@
     "prebuild": "npm run worker",
     "build": "next build",
     "start": "next start",
+    "preexportar": "npm run worker",
+    "exportar": "next build",
     "api": "cd .. && python -m terreno.servidor --puerto 8000"
   },
   "dependencies": {

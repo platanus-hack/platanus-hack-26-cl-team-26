@@ -444,7 +444,7 @@ def test_audio():
             c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, clave="secreta", usar_claude=False))
             v0 = c.get("/api/version").json()["version"]
             pag = c.get("/captura?k=secreta")  # la misma página del teléfono, para el sitio web/
-            assert pag.status_code == 200 and "Escuchar aves" in pag.text and pag.text == c.get("/").text
+            assert pag.status_code == 200 and "Escuchar aves" in pag.text
             datos = {"lat": la, "lon": lo, "precision_m": 8, "tomado_en": "2026-11-21T15:00:00-03:00"}
             assert c.post("/api/audio", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")}).status_code == 403
             r = c.post("/api/audio?k=secreta", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")})
@@ -602,6 +602,28 @@ def test_hexagono():
             assert len(todo["capturas"]) == 3 and len(todo["escuchas"]) == 1
     finally:
         aves.detectar = original
+
+
+def test_sitio_exportado():
+    """Con web/out el servidor sirve el sitio en «/» y sus archivos; la API, /captura y /mapa siguen igual."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        web = tmp / "out"
+        (web / "_next").mkdir(parents=True)
+        (web / "index.html").write_text("<html>Viridis</html>", encoding="utf-8")
+        (web / "_next" / "app.js").write_text("console.log(1)", encoding="utf-8")
+        c = TestClient(crear_app(DEMO, tmp / "datos", comunas=COMUNAS_DEMO, usar_claude=False, web=web))
+        assert "Viridis" in c.get("/").text
+        assert c.get("/_next/app.js").text == "console.log(1)"
+        assert "Escuchar aves" in c.get("/captura").text and c.get("/mapa").status_code == 200
+        assert c.get("/api/salud").json() == {"ok": True}
+        assert c.get("/no-existe").status_code == 404
+        # sin sitio exportado, «/» sigue siendo la página del teléfono
+        c2 = TestClient(crear_app(DEMO, tmp / "datos2", comunas=COMUNAS_DEMO, usar_claude=False, web=tmp / "nada"))
+        assert "Escuchar aves" in c2.get("/").text
 
 
 def test_aves_wav():

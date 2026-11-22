@@ -94,10 +94,24 @@ corredor continuo entre parques que más urgencia cubre dentro del presupuesto.
   - Área: comunas (toque en el mapa, «Piloto», «Todas (34)»), distritos (barrios H3 res 7) y «Encerrar zona»
     para dibujar un polígono. Presupuesto, pesos y área son compartidos: la captura del teléfono responde con
     los mismos números que muestra el mapa.
-- `/?k=<clave>` (teléfono): captura en terreno, abajo.
-- Despliegue: `Dockerfile` y `render.yaml` corren este servidor (`/api/salud` como health check);
-  `TERRENO_CLAVE` y `ANTHROPIC_API_KEY` van en el panel de Render. En Render el disco es efímero: para la demo
-  la captura corre local con el túnel (`compartir_publico.sh`).
+- `/captura?k=<clave>` (teléfono): captura en terreno, abajo.
+
+### Despliegue en Render (un solo servicio)
+
+El `Dockerfile` compila el sitio Viridis (`web/`, `npm run exportar` → archivos estáticos en `web/out`) y lo
+sirve desde el mismo servidor de terreno. Un solo enlace: `/` el sitio, `/api` los datos, `/captura` el teléfono
+(HTTPS de Render, que el GPS exige) y `/mapa` el mapa de respaldo.
+
+1. En Render: **New → Blueprint**, elegir este repositorio (rama `main`); `render.yaml` crea el servicio
+   `viridis` (plan standard, 2 GB: el modelo de aves no cabe holgado en 512 MB) con un disco de 1 GB en
+   `data/terreno/` para que las capturas sobrevivan a cada despliegue.
+2. En **Environment**, escribir los secretos (nunca en el repo): `TERRENO_CLAVE` (clave de subida del
+   teléfono), `ANTHROPIC_API_KEY` (Claude valida las fotos), `DMC_USUARIO` y `DMC_TOKEN` (estaciones DMC del
+   aire en vivo).
+3. Health check: `/api/salud`. Cada push a `main` vuelve a desplegar.
+
+Para probarlo igual en local: `cd web && npm run exportar`, y luego `python -m terreno.servidor` sirve todo en
+http://localhost:8000.
 
 ## Captura en terreno (teléfono → corredor en vivo)
 

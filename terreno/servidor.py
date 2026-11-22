@@ -3,7 +3,10 @@
     python -m terreno.servidor --puerto 8000          # 34 comunas; el corredor se calcula en las elegidas
     cloudflared tunnel --url http://localhost:8000      # HTTPS público: el GPS del teléfono lo exige
 
-Teléfono: https://<túnel>/?k=<clave> (o /captura?k=<clave>, también desde el sitio web/)   ·   Mapa: /mapa
+Sitio Viridis: si existe web/out (cd web && npm run exportar), se sirve en «/» desde este mismo servidor: un
+solo servicio y un solo enlace (así se despliega en Render, ver Dockerfile). Sin web/out, «/» es la página del
+teléfono, como antes.
+Teléfono: https://<túnel>/captura?k=<clave>   ·   Mapa de respaldo: /mapa
 Aves por sonido: el teléfono graba 15 s (WAV) y BirdNET identifica especies (terreno/aves.py). Con las fotos
 (fauna y flores según Claude) arman la biodiversidad por hexágono, que entra al corredor con el peso w_bio.
 El mapa filtra por comuna, distrito (barrio H3 res 7) o una zona dibujada, mueve presupuesto y pesos del
@@ -35,6 +38,7 @@ import h3
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ecologia import ESPECIES, ESPECIES_DE, PERFIL_DE, PERFILES, resolver_corredor_por_especies
@@ -44,6 +48,7 @@ from terreno.almacen import Almacen, cuenta, estado_validacion, hora
 from terreno.vision import analizar
 
 ESTATICO = Path(__file__).resolve().parent / "static"
+WEB = Path(__file__).resolve().parent.parent / "web" / "out"   # sitio Viridis exportado (npm run exportar)
 MAX_FOTO_BYTES = 15 * 1024 * 1024
 FOTO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}(_min)?\.jpg$")
 VIDEO_OK = re.compile(r"^[0-9T]{15}-[0-9a-f]{6}\.(webm|mp4|mov)$")
@@ -174,7 +179,8 @@ def sin_islas(df: pd.DataFrame) -> pd.DataFrame:
 
 def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path = Path("data"),
               km: float = 3.0, clave: str | None = None, usar_claude: bool = True,
-              aceptar_sin_validar: bool = False, comunas: list[str] | None = None) -> FastAPI:
+              aceptar_sin_validar: bool = False, comunas: list[str] | None = None,
+              web: Path | None = WEB) -> FastAPI:
     df = sin_islas(pd.read_parquet(datos))
     nombres = distritos(df)
     df["distrito"] = [nombres[k] for k in zip(df["comuna"], df["h3_padre"])]
@@ -390,8 +396,14 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         if clave and k != clave:
             raise HTTPException(403, "Clave incorrecta: abre la página con ?k=<clave>")
 
+    sitio = web if web is not None and (Path(web) / "index.html").exists() else None
+
     @app.get("/")
-    @app.get("/captura")  # el sitio Next (web/) usa «/» para su portada y reenvía /captura aquí
+    def inicio():
+        """El sitio Viridis si está exportado; si no, la página del teléfono (como antes)."""
+        return FileResponse(Path(sitio) / "index.html" if sitio else ESTATICO / "captura.html")
+
+    @app.get("/captura")
     def captura_html():
         return FileResponse(ESTATICO / "captura.html")
 
@@ -752,6 +764,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             raise HTTPException(404)
         return FileResponse(alm.fotos / nombre, media_type="image/jpeg")
 
+    if sitio:  # al final: las rutas de arriba (API, fotos, audios, /captura, /mapa) tienen prioridad
+        app.mount("/", StaticFiles(directory=sitio, html=True), name="sitio")
     return app
 
 

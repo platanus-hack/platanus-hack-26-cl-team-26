@@ -6,7 +6,13 @@
 bin/
 data/terreno/
 data/terreno_h3.parquet
-datos/cache/
+mockup.html
 __pycache__/
 *.pyc
-mockup.html
+# Lo que el servidor no usa: entradas del pipeline y grabaciones pesadas
+datos/
+data/session_*.csv
+# El sitio se compila dentro de la imagen (Dockerfile, etapa «sitio»)
+web/node_modules/
+web/.next/
+web/out/
