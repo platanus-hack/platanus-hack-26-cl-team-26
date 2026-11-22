@@ -1,7 +1,6 @@
-"""Servidor de VerdeH3: el mapa (tiempo real, corredor Dijkstra, histórico) y la API del sitio web/.
+"""Servidor de Viridis: la API del sitio web/ (datos por cuadra, corredor de cada navegador) y el sitio exportado.
 
     python -m terreno.servidor --puerto 8000          # 34 comunas; el corredor se calcula en las elegidas
-    cloudflared tunnel --url http://localhost:8000      # HTTPS público: el GPS del teléfono lo exige
 
 Sitio Viridis: si existe web/out (cd web && npm run exportar), se sirve en «/» desde este mismo servidor: un
 solo servicio y un solo enlace (así se despliega en Render, ver Dockerfile). Sin web/out, «/» lleva a /mapa.

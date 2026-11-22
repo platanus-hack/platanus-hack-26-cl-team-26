@@ -1,4 +1,4 @@
-# Contrato de datos · VerdeH3 (plan final v3)
+# Contrato de datos · Viridis (v3)
 
 Cambiar algo de este archivo exige avisar a los tres roles. `python -m tests.test_contrato` lo verifica.
 

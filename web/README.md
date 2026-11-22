@@ -32,7 +32,7 @@ Producción: `npm run build && npm start`. Si el servidor está en otra máquina
 - **Santiago conectado**: un control de 0 a 100 km y «Ver crecer la red» sobre todo Santiago, con las islas que une,
   las personas a una cuadra y la fauna registrada (`public/data/red.json`, de `python red_conectada.py`).
 
-`historico.json` (lo usa `/fuentes`), `fauna.json` y `red.json` son estáticos. Para regenerar el primero, desde la raíz del repo:
+`fauna.json` y `red.json` son estáticos. `historico.json` (serie mensual de Landsat y Sentinel-2) ya no tiene vista en la página. Para regenerarlo, desde la raíz del repo:
 
 ```bash
 python web/scripts/exportar_datos.py

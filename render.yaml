@@ -2,12 +2,12 @@ services:
   - type: web
     name: viridis
     runtime: docker
-    # standard: 2 GB de RAM. El modelo de aves (BirdNET) más los datos de las 34 comunas no caben con holgura
-    # en los 512 MB de starter. Se paga con los créditos de Render de Platanus Hack.
+    # standard: 2 GB de RAM. El modelo de aves (BirdNET, del experimento de captura en terreno) más los datos de
+    # las 34 comunas no caben con holgura en los 512 MB de starter.
     plan: standard
     region: oregon
     healthCheckPath: /api/salud
-    # Las fotos, videos, audios y registros de terreno sobreviven a cada despliegue y reinicio.
+    # Experimento de captura en terreno (retirado del sitio): lo subido sobrevive a cada despliegue y reinicio.
     disk:
       name: terreno
       mountPath: /app/data/terreno
@@ -15,15 +15,12 @@ services:
     envVars:
       - key: PORT
         value: 8000
-      # Cada cuántos minutos se refrescan los sensores en vivo mientras alguien mira el mapa.
-      - key: REFRESCO_VIVO_MIN
-        value: 10
       # Secretos: se escriben en el panel de Render (Environment), nunca en este archivo.
-      - key: TERRENO_CLAVE        # clave de subida del teléfono: /captura?k=<clave>
+      - key: TERRENO_CLAVE        # clave de la API de subida (/api/captura, /api/video, /api/audio)
         sync: false
-      - key: ANTHROPIC_API_KEY    # Claude valida y analiza las fotos
+      - key: ANTHROPIC_API_KEY    # Claude valida las fotos subidas (experimento de captura en terreno)
         sync: false
-      - key: DMC_USUARIO          # estaciones de la Dirección Meteorológica (aire en vivo)
+      - key: DMC_USUARIO          # Dirección Meteorológica: solo para la lectura en vivo (vivo.py, apagada por omisión)
         sync: false
       - key: DMC_TOKEN
         sync: false

@@ -1,7 +1,6 @@
-# Viridis en un solo servicio: el sitio (Next.js exportado a archivos estáticos) y el servidor de terreno
-# (FastAPI) en el mismo contenedor y el mismo enlace:
-#   /          sitio Viridis           /captura   página del teléfono (foto, video, escuchar aves; ?k=<clave>)
-#   /api/...   datos, corredor, etc.   /mapa      mapa de respaldo
+# Viridis en un solo servicio: el sitio (Next.js exportado a archivos estáticos) y el servidor (FastAPI,
+# terreno/servidor.py) en el mismo contenedor y el mismo enlace:
+#   /          sitio Viridis           /api/...   datos, corredor, etc.        /mapa   mapa de respaldo
 # Render define PORT y las variables secretas (ver render.yaml).
 
 # 1) Sitio: npm run exportar deja los archivos en web/out
@@ -33,5 +32,5 @@ EXPOSE 8000
 
 HEALTHCHECK CMD curl --fail http://localhost:${PORT}/api/salud
 
-# TERRENO_CLAVE, ANTHROPIC_API_KEY, DMC_USUARIO y DMC_TOKEN llegan como variables de entorno (nunca en la imagen).
+# TERRENO_CLAVE (API de subida del experimento de captura en terreno) llega como variable de entorno, nunca en la imagen.
 CMD ["sh", "-c", "python -m terreno.servidor --host 0.0.0.0 --puerto ${PORT}"]

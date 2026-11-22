@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import type { Metadata } from "next";
 import { Fragment } from "react";
 
@@ -16,10 +14,10 @@ type Fuente = { nombre: string; quien: string; uso: string; url: string; enlace:
 const TEMAS: { id: string; titulo: string; acento: string; nota?: string; mas?: [string, string]; fuentes: Fuente[] }[] = [
   {
     id: "calor", titulo: "Calor", acento: "del suelo",
-    nota: "El mapa y el índice usan la escena de verano del 19 de febrero de 2026. El histórico usa la serie mensual: {landsat} escenas Landsat y {sentinel} Sentinel-2, de enero de 2023 a noviembre de 2026.",
+    nota: "El mapa y el índice usan la escena del 19 de febrero de 2026: la más reciente de verano (diciembre a febrero) con menos de 10 % de nubes.",
     fuentes: [
       { nombre: "Landsat 8 y 9, Collection 2 Level 2", quien: "USGS y NASA",
-        uso: "Temperatura de la superficie a 30 m (banda térmica a 100 m). Es el calor de cada cuadra y la serie del histórico.",
+        uso: "Temperatura de la superficie a 30 m (banda térmica a 100 m). Es el calor de cada cuadra.",
         url: "https://www.usgs.gov/landsat-missions/landsat-collection-2-level-2-science-products", enlace: "usgs.gov" },
       { nombre: "Planetary Computer", quien: "Microsoft",
         uso: "Catálogo desde donde se descargan las escenas Landsat y Sentinel-2 ya corregidas.",
@@ -98,14 +96,11 @@ const TEMAS: { id: string; titulo: string; acento: string; nota?: string; mas?: 
 ];
 
 export default function Fuentes() {
-  // Las cuentas de escenas salen del mismo archivo que usa el histórico de la página principal.
-  const serie = JSON.parse(readFileSync(path.join(process.cwd(), "public", "data", "historico.json"), "utf8"));
-  const conCifras = (t: string) => t.replace("{landsat}", String(serie.escenas_landsat)).replace("{sentinel}", String(serie.escenas_sentinel2));
   return (
     <main className="b fuentes">
       <header className="b-pad bajo"><div className="b-in">
         <a className="marca" href="/"><img src="/viridis-logo.webp" alt="" width={34} height={34} />VIRIDIS</a>
-        <nav aria-label="Secciones"><a href="/#ahora">Datos clave</a><a href="/#planificar">Planificar</a><a href="/#historico">Histórico</a><a href="/fuentes" aria-current="page">Fuentes</a></nav>
+        <nav aria-label="Secciones"><a href="/#ahora">Datos clave</a><a href="/#planificar">Planificar</a><a href="/#conectado">Santiago conectado</a><a href="/fuentes" aria-current="page">Fuentes</a></nav>
       </div></header>
 
       <section className="b-sec b-pad"><div className="b-in">
@@ -137,7 +132,7 @@ export default function Fuentes() {
               </li>
             ))}
           </ul>
-          {t.nota && <p className="nota f-nota">{conCifras(t.nota)}</p>}
+          {t.nota && <p className="nota f-nota">{t.nota}</p>}
           {t.mas && <a className="como" href={t.mas[0]}>{t.mas[1]}</a>}
         </div></section>
         {/* La vulnerabilidad va justo después de Personas, con el mismo fondo, como su método. */}

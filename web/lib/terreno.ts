@@ -1,7 +1,7 @@
 "use client";
-// Cliente del servidor de terreno (terreno/servidor.py, FastAPI). Next reenvía /api, /fotos, /videos y /audios a ese
-// servidor (next.config.mjs), que es quien cruza los datos por comuna: contornos, vecinas, el área elegida,
-// el corredor con y sin capturas en terreno, y la serie histórica.
+// Cliente del servidor (terreno/servidor.py, FastAPI). En desarrollo Next reenvía /api a ese servidor
+// (next.config.mjs); en producción el mismo servidor sirve el sitio. Él cruza los datos por comuna: contornos,
+// vecinas, el área elegida y el corredor de cada navegador.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 // Para quién se traza el corredor: una o más.
@@ -113,8 +113,3 @@ export async function detalleHex(h: string, n = 6) {
   return r.json() as Promise<DetalleHex>;
 }
 
-export async function historico(desde: string, hasta: string) {
-  const r = await fetch(`/api/historico?desde=${desde}&hasta=${hasta}&s=${SESION}`);
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || String(r.status));
-  return r.json() as Promise<{ meses: number; h: string[]; lst: (number | null)[]; ndvi: (number | null)[] }>;
-}

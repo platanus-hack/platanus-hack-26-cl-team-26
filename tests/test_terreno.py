@@ -13,7 +13,7 @@ from PIL import Image
 
 import terreno.vision as vision
 from optimizer import PESOS, solve_corridor
-from terreno.almacen import Almacen, terreno_h3
+from terreno.almacen import terreno_h3
 
 DEMO = Path("data/santiago_h3.parquet")
 GS = Path("data/santiago_h3_gs.parquet")
