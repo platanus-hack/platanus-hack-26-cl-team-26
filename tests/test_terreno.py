@@ -336,6 +336,10 @@ def test_mapa_area_y_pesos():
         assert "vuln" in c.get("/api/estado").json()["hex"]
         assert c.post("/api/seleccion", json={"w_vuln": 0}).status_code == 422   # todos los pesos en 0
         assert c.post("/api/seleccion", json={"km": 100}).status_code == 422
+        # NaN o infinito en un peso: 422 y la sesión sigue respondiendo
+        for malo in ('{"w_calor": NaN}', '{"w_arbol": Infinity}', '{"km": NaN}', '{"w_vuln": -1}'):
+            assert c.post("/api/seleccion", content=malo, headers={"content-type": "application/json"}).status_code == 422
+        assert c.get("/api/estado").status_code == 200
         assert c.get("/api/version").json()["version"] > v0["version"]
         assert c.get("/api/salud").json() == {"ok": True}
 

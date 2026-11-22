@@ -77,7 +77,7 @@ export function useTerreno() {
       setEstado(d);
       setError(null);
     } catch {
-      setError("No hay conexión con el servidor de terreno.");
+      setError("No hay conexión con el servidor.");
     }
   }, []);
 
@@ -85,7 +85,7 @@ export function useTerreno() {
     let vivo = true;
     fetch(`/api/comunas?s=${SESION}`).then((r) => { if (!r.ok) throw new Error(); return r.json(); })
       .then((i) => { if (vivo) { setInfo(i); sondear(true); } })
-      .catch(() => vivo && setError("No hay conexión con el servidor de terreno."));
+      .catch(() => vivo && setError("No hay conexión con el servidor."));
     const t = setInterval(() => sondear(), SONDEO_MS);
     return () => { vivo = false; clearInterval(t); };
   }, [sondear]);

@@ -36,9 +36,10 @@ import h3
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ecologia import ESPECIES, ESPECIES_DE, PERFIL_DE, PERFILES, resolver_corredor_por_especies
 from optimizer import PESOS, solve_corridor
@@ -110,16 +111,17 @@ def elegir_cuadros(cuadros: list[dict], maximo: int = MAX_CUADROS_ANALIZADOS) ->
 
 
 class Seleccion(BaseModel):
-    """Cambio de análisis desde el mapa. Lo que no viene se mantiene; zona=null o [] la borra."""
-    comunas: list[str] | None = None
-    distritos: list[str] | None = None   # nombres «Comuna - Distrito N» de las comunas elegidas; vacío = todos
-    zona: list[str] | None = None        # hexágonos encerrados con el mouse
-    km: float | None = None
-    w_calor: float | None = None
-    w_arbol: float | None = None
-    w_personas: float | None = None
-    w_bio: float | None = None
-    w_vuln: float | None = None          # vulnerabilidad al calor (Censo): solo entra en la urgencia de personas
+    """Cambio de análisis desde el mapa. Lo que no viene se mantiene; zona=null o [] la borra.
+    Los números no aceptan NaN ni infinito: un peso así dejaba la sesión respondiendo error."""
+    comunas: list[str] | None = Field(None, max_length=100)
+    distritos: list[str] | None = Field(None, max_length=1000)  # «Comuna - Distrito N» de las elegidas; vacío = todos
+    zona: list[str] | None = Field(None, max_length=20000)    # hexágonos encerrados con el mouse (hay 13.172)
+    km: float | None = Field(None, allow_inf_nan=False)
+    w_calor: float | None = Field(None, ge=0, allow_inf_nan=False)
+    w_arbol: float | None = Field(None, ge=0, allow_inf_nan=False)
+    w_personas: float | None = Field(None, ge=0, allow_inf_nan=False)
+    w_bio: float | None = Field(None, ge=0, allow_inf_nan=False)
+    w_vuln: float | None = Field(None, ge=0, allow_inf_nan=False)  # vulnerabilidad al calor: solo para personas
     vecinas: bool | None = None          # el corredor puede partir o llegar a parques de las comunas vecinas
     perfil: str | None = None            # humanos | fauna_aves | fauna_abejas | mixto (forma antigua de elegir especies)
     especies: list[str] | None = None    # una o más de humanos, aves, abejas: para quién se traza el corredor
@@ -414,6 +416,12 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     elegir(Seleccion(comunas=inicial))
     al_dia(estado)
     app = FastAPI(title="Viridis")
+
+    @app.exception_handler(RequestValidationError)
+    async def entrada_invalida(request: Request, exc: RequestValidationError):
+        """422 sin repetir lo recibido: un NaN en la entrada hacía fallar el propio mensaje de error (500)."""
+        return JSONResponse(status_code=422, content={"detail": [
+            {"loc": list(e.get("loc", ())), "msg": e.get("msg"), "type": e.get("type")} for e in exc.errors()]})
 
     def revisar_clave(k: str | None):
         if clave and k != clave:
