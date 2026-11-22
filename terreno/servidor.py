@@ -33,9 +33,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import h3
+import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -135,6 +136,24 @@ def distritos(df: pd.DataFrame) -> dict[tuple[str, str], str]:
 
 def _r(x, n=2):
     return None if x is None or x != x else round(float(x), n)
+
+
+def _a_nativo(o):
+    """Tipos de numpy a tipos de Python, para json.dumps."""
+    if isinstance(o, np.generic):
+        return o.item()
+    if isinstance(o, (set, frozenset)):
+        return sorted(o)
+    raise TypeError(f"{type(o).__name__} no se puede pasar a JSON")
+
+
+class RespuestaJSON(JSONResponse):
+    """JSON directo con json.dumps. Devolver un dict pasa antes por jsonable_encoder de FastAPI, que con las ~13.000
+    cuadras de /api/estado tarda unas seis veces más que json.dumps y frena a todos cuando entran muchos a la vez."""
+
+    def render(self, content) -> bytes:
+        return json.dumps(content, ensure_ascii=False, allow_nan=False, separators=(",", ":"),
+                          default=_a_nativo).encode("utf-8")
 
 
 def _comunas_geo(df: pd.DataFrame) -> dict:
@@ -340,7 +359,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             st["vivo_visto"] = estado["live_mtime"]
             st["datos_visto"] = None
         if st.get("datos_visto") != estado["datos"]:
-            st["ahora"] = resolver(st, estado["terreno"])
+            # Sin datos de terreno, «ahora» es el mismo corredor que «antes»: no se calcula dos veces.
+            st["ahora"] = st["antes"] if estado["terreno"] is None else resolver(st, estado["terreno"])
             st["datos_visto"] = estado["datos"]
 
     def version(st: dict) -> int:
@@ -685,7 +705,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         if live is not None and len(live) and "medido_en" in live:
             ok_v = live[live["confianza"].isin(["alta", "media"]) & live["temp_aire_c"].notna()]["medido_en"].dropna()
             vivo_fecha = str(ok_v.max()) if len(ok_v) else None
-        return {"version": ver, "sel_id": sid, "seleccion": params["comunas"], "parametros": params, "lst_fecha": lst_fecha,
+        return RespuestaJSON({"version": ver, "sel_id": sid, "seleccion": params["comunas"], "parametros": params, "lst_fecha": lst_fecha,
                 "fechas": {"calor": lst_fecha, "copa": copa_fecha, "vivo": vivo_fecha},
                 "hex": col, "recorridos": recorridos, "en_vivo": live is not None,
                 "totales": {"capturas": len(caps), "cuentan": sum(n_fotos.values()),
@@ -694,7 +714,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
                 # Cuadras del corredor en comunas vecinas (opción «vecinas»): no están en `hex`, van aparte.
                 "fuera": [{"h": h, "comuna": comuna_de.get(h), "isla": h in en_cp} for h in ahora.get("fuera", [])],
                 "antes": {**_resumen(antes), "personas_azar": antes["personas_azar"]},
-                "ahora": {**_resumen(ahora), "personas_azar": ahora["personas_azar"]}}
+                "ahora": {**_resumen(ahora), "personas_azar": ahora["personas_azar"]}})
 
     @app.get("/api/hexagono/{h}")
     def api_hexagono(h: str, n: int = Query(12, ge=1, le=60)):
