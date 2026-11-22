@@ -55,8 +55,10 @@ solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live
 Fórmula, con cada término normalizado de 0 a 1 (min-max entre los percentiles 2 y 98):
 
 ```
-calor    = 0,6·lst_c_norm + 0,4·vivo_norm     (vivo = temp_aire_c del barrio, confianza alta o media)
-           sin dato en vivo en esa cuadra, o con menos de dos barrios con dato: calor = lst_c_norm
+calor    = 0,7·lst_c_norm + 0,3·aire           (aire = 0,5 + (temp_aire_c − mediana)/6 °C, recortado a 0..1;
+                                                temp_aire_c del barrio, confianza alta o media)
+           sin dato en vivo en esa cuadra, o con menos de cinco barrios con dato: calor = lst_c_norm
+           (el aire va en escala fija y no min-max: décimas de grado entre pocos sensores no reordenan el corredor)
 falta    = 1 − copa_norm                       (copa_modelo_pct normalizado como los demás términos)
 personas = 0,7·poblacion_norm + 0,3·social
 U        = (w_calor·calor + w_arbol·falta + w_personas·personas) / (w_calor + w_arbol + w_personas)

@@ -69,6 +69,12 @@ def leer_grabacion():
     return g
 
 
+def grilla():
+    """La grilla con que trabaja el servidor (Gran Santiago); la de dos comunas solo si no está."""
+    gs = DATA / "santiago_h3_gs.parquet"
+    return gs if gs.exists() else DATA / "santiago_h3.parquet"
+
+
 def una_vez():
     """Un ciclo en vivo con la hora actual: lee, graba, filtra, interpola y escribe los archivos."""
     ahora = pd.Timestamp.now(tz="UTC")
@@ -77,11 +83,11 @@ def una_vez():
         print(f"{ahora}: ninguna fuente respondió {errores}")
         return
     grabar(crudo, ahora)
-    ciclo(crudo, ahora, interpolar.barrios(pd.read_parquet(DATA / "santiago_h3.parquet")), None, errores)
+    ciclo(crudo, ahora, interpolar.barrios(pd.read_parquet(grilla())), None, errores)
 
 
 def main():
-    b = interpolar.barrios(pd.read_parquet(DATA / "santiago_h3.parquet"))
+    b = interpolar.barrios(pd.read_parquet(grilla()))
     previo, antes = None, set()
     if os.getenv("MODO") == "reproducir":
         for leido_en, crudo in leer_grabacion().groupby("leido_en"):

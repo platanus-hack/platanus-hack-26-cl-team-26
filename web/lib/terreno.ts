@@ -27,12 +27,14 @@ export type Captura = {
 };
 export type Recorrido = { id: string; inicio?: string; duracion_s?: number; archivo?: string; linea: [number, number][] };
 export type Estado = {
-  version: number; sel_id: number; seleccion: string[]; parametros: Parametros; hex: HexCols;
+  version: number; sel_id: number; seleccion: string[]; parametros: Parametros; hex: HexCols; lst_fecha: string | null;
   capturas: Captura[]; recorridos: Recorrido[]; en_vivo: boolean; antes: ResumenCorredor; ahora: ResumenCorredor;
 };
 export type Cambio = Partial<{ comunas: string[]; distritos: string[]; zona: string[] | null; km: number; w_calor: number; w_arbol: number; w_personas: number }>;
 
 const SONDEO_MS = 3000;
+// Sesión de este navegador en el servidor: área, presupuesto y pesos son solo suyos y se pierden al recargar.
+const SESION = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}${Math.random()}`).replace(/[^A-Za-z0-9]/g, "").slice(0, 32);
 
 export function useTerreno() {
   const [info, setInfo] = useState<InfoComunas | null>(null);
@@ -44,9 +46,9 @@ export function useTerreno() {
   // El servidor manda los polígonos solo si no le decimos el sel_id actual; los arma h3-js aquí.
   const sondear = useCallback(async (forzar = false) => {
     try {
-      const v = await (await fetch("/api/version")).json();
+      const v = await (await fetch(`/api/version?s=${SESION}`)).json();
       if (!forzar && v.version === visto.current.version && v.sel_id === visto.current.sel_id) return;
-      const d: Estado = await (await fetch(`/api/estado?sel_id=${v.sel_id}`)).json();
+      const d: Estado = await (await fetch(`/api/estado?sel_id=${v.sel_id}&s=${SESION}`)).json();
       visto.current = { version: d.version, sel_id: d.sel_id };
       setEstado(d);
       setError(null);
@@ -57,7 +59,7 @@ export function useTerreno() {
 
   useEffect(() => {
     let vivo = true;
-    fetch("/api/comunas").then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+    fetch(`/api/comunas?s=${SESION}`).then((r) => { if (!r.ok) throw new Error(); return r.json(); })
       .then((i) => { if (vivo) { setInfo(i); sondear(true); } })
       .catch(() => vivo && setError("No hay conexión con el servidor de terreno."));
     const t = setInterval(() => sondear(), SONDEO_MS);
@@ -67,7 +69,7 @@ export function useTerreno() {
   const cambiar = useCallback(async (cuerpo: Cambio) => {
     setOcupado(true);
     try {
-      const r = await fetch("/api/seleccion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+      const r = await fetch(`/api/seleccion?s=${SESION}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || String(r.status));
       await sondear(true);
     } catch (e) {
@@ -81,7 +83,7 @@ export function useTerreno() {
 }
 
 export async function historico(desde: string, hasta: string) {
-  const r = await fetch(`/api/historico?desde=${desde}&hasta=${hasta}`);
+  const r = await fetch(`/api/historico?desde=${desde}&hasta=${hasta}&s=${SESION}`);
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || String(r.status));
   return r.json() as Promise<{ meses: number; h: string[]; lst: (number | null)[]; ndvi: (number | null)[] }>;
 }

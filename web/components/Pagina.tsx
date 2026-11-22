@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExpressionSpecification, LngLatBoundsLike } from "maplibre-gl";
-import { cellToBoundary, cellsToDirectedEdge, directedEdgeToBoundary, getResolution, gridDisk, latLngToCell, polygonToCellsExperimental, POLYGON_TO_CELLS_FLAGS } from "h3-js";
+import { cellToBoundary, cellToParent, cellsToDirectedEdge, directedEdgeToBoundary, getResolution, gridDisk, latLngToCell, polygonToCellsExperimental, POLYGON_TO_CELLS_FLAGS } from "h3-js";
 import MapaHex, { type Capa, type Foco } from "./MapaHex";
 import Cifra from "./Cifra";
 import FiltroComunas from "./FiltroComunas";
@@ -42,7 +42,7 @@ const CAPAS_AHORA: Capa[] = [
 ];
 const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Copa de árboles", personas: "Personas" };
 const LEYENDA: Record<string, [string, string]> = {
-  calor: [grad(OCRE), "Índice de calor: 60 % suelo y 40 % aire donde hay sensores con confianza alta o media; si no, solo suelo"],
+  calor: [grad(OCRE), "Índice de calor: temperatura del suelo; donde hay sensores de aire confiables en al menos 5 barrios, 70 % suelo y 30 % aire"],
   copa: [grad(VERDE), "Copa de árboles, de 0 % a 25 % o más"],
   personas: [grad(VERDE), "Personas: 70 % habitantes del Censo en la cuadra y 30 % cercanía a colegios, salud, metro y paraderos"],
 };
@@ -71,6 +71,9 @@ function Dif({ v, base, u, bueno }: { v: number; base: number; u: string; bueno?
   const peor = bueno ? d < 0 : d > 0;
   return <span className={`dif${peor ? " peor" : " mejor"}`}>{d > 0 ? "+" : "−"}{formato(Math.abs(d), 1)}{u}</span>;
 }
+
+const MESES_L = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const fechaLst = (f: string) => { const [a, m, d] = f.split("-").map(Number); return `${d} de ${MESES_L[m - 1]} de ${a}`; };
 
 function Seccion({ id, alt, children }: { id: string; alt?: boolean; children: React.ReactNode }) {
   const ref = useRevela<HTMLElement>();
@@ -291,10 +294,19 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const [capa, setCapa] = useState("calor");
   const [pasada, setPasada] = useState<number | null>(null);
   const calor = useMemo(() => {
-    // Igual que optimizer.indice_calor: la temperatura del aire no reemplaza a la del suelo, se combina.
-    const suelo = norm(B.lst), aire = norm(B.vivo);
-    const conAire = new Set(B.vivo.flatMap((v, i) => (v == null ? [] : [i])));
-    return suelo.map((s, i) => (s == null ? null : conAire.size && aire[i] != null ? 0.6 * s + 0.4 * (aire[i] as number) : s));
+    // Igual que optimizer.urgencia: el aire en vivo no reemplaza al suelo, se combina (30 %) y en escala fija de
+    // ±3 °C alrededor de la mediana, solo si hay al menos 5 barrios medidos.
+    const suelo = norm(B.lst);
+    const barrios = new Map<string, number>();
+    B.vivo.forEach((v, i) => { if (v != null) barrios.set(cellToParent(B.h[i], 7), v); });
+    const vals = [...barrios.values()].sort((a, b) => a - b);
+    const mediana = vals.length ? (vals[(vals.length - 1) >> 1] + vals[vals.length >> 1]) / 2 : 0;
+    const usar = barrios.size >= 5;
+    return suelo.map((s, i) => {
+      const v = B.vivo[i];
+      if (s == null) return null;
+      return usar && v != null ? 0.7 * s + 0.3 * Math.min(1, Math.max(0, 0.5 + (v - mediana) / 6)) : s;
+    });
   }, [B]);
   const personas = useMemo(() => {
     const p = norm(B.pob);
@@ -411,6 +423,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       <Seccion id="ahora" alt>
         <div className="b-cab escalon">
           <h2>El calor <em>ahora</em></h2>
+          {estado.lst_fecha && <p className="nota" style={{ flexBasis: "100%", margin: 0 }}>Temperatura del suelo de la tarde del {fechaLst(estado.lst_fecha)} (Landsat), la misma imagen de verano con que se calcula la urgencia. Las escenas más recientes están en el histórico.</p>}
           <div className="grupo" role="group" aria-label="Capa del mapa">
             {CAPAS_AHORA.map((c) => <button key={c.id} type="button" className="pill" aria-pressed={capa === c.id} onClick={() => setCapa(c.id)}>{NOMBRE_CAPA[c.id]}</button>)}
           </div>

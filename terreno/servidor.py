@@ -24,6 +24,7 @@ import os
 import re
 import threading
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -152,14 +153,23 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     geo = _comunas_geo(df)
     poligonos = {h: [[round(la, 6), round(lo, 6)] for la, lo in h3.cell_to_boundary(h)] for h in df["h3_index"]}
     distritos_de = {c: set(v) for c, v in df.groupby("comuna")["distrito"].unique().items()}
-    lst_hoy = df["lst_c_ultima"].fillna(df["lst_c"]) if "lst_c_ultima" in df else df["lst_c"]
+    # El mapa muestra la misma escena de verano que usa el índice (optimizer.urgencia usa lst_c), con su fecha;
+    # las escenas más nuevas están en el histórico.
+    lst_hoy = df["lst_c"]
+    lst_fecha = df["lst_fecha"].mode().iat[0] if "lst_fecha" in df and df["lst_fecha"].notna().any() else None
     copa = df["copa_modelo_pct"] if "copa_modelo_pct" in df else df["arbol_pct"]
     lock = threading.Lock()
     refresco_s = float(os.getenv("REFRESCO_VIVO_MIN", "10")) * 60
     if Path(data_dir).resolve() != Path("data").resolve():
         refresco_s = 0  # vivo.py escribe en ./data
-    estado: dict = {"version": 0, "sel_id": 0, "live_mtime": None, "live": None, "intento_vivo": 0.0,
+    # `estado` guarda lo que es de todos (capturas en terreno, lectura en vivo) y además es la sesión por defecto,
+    # la que usan el mapa antiguo y el teléfono. Cada navegador de la página Next tiene su propia sesión (área,
+    # presupuesto y pesos) identificada por `s`, que vive solo en memoria y se pierde al recargar la página.
+    estado: dict = {"datos": 0, "cambios": 0, "sel_seq": 0, "sel_id": 0, "live_mtime": None, "live": None,
+                    "intento_vivo": 0.0, "terreno": None,
                     "p": {"comunas": [], "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2)}}
+    sesiones: OrderedDict[str, dict] = OrderedDict()
+    MAX_SESIONES = 64
 
     def leer_live() -> bool:
         """Relee data/live_h3.parquet si cambió. Devuelve si cambió."""
@@ -174,13 +184,15 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         estado["live_mtime"] = mt
         return True
 
-    def resolver(terreno=None):
-        p = estado["p"]
-        return solve_corridor(estado["sub"], p["km"], *p["w"], live=estado["live"], terreno=terreno)
+    def resolver(st: dict, terreno=None):
+        p = st["p"]
+        return solve_corridor(st["sub"], p["km"], *p["w"], live=estado["live"], terreno=terreno)
 
-    def elegir(cambio: Seleccion):
-        """Fija el área (comunas → distritos → zona), presupuesto y pesos, y la línea base sin terreno («antes»)."""
-        p = dict(estado["p"])
+    def elegir(cambio: Seleccion, st: dict | None = None):
+        """Fija el área (comunas → distritos → zona), presupuesto y pesos de una sesión, y su línea base sin
+        terreno («antes»). El corredor con terreno («ahora») lo calcula al_dia()."""
+        st = estado if st is None else st
+        p = dict(st["p"])
         if cambio.comunas is not None:
             if set(cambio.comunas) - set(todas):
                 raise HTTPException(422, "Comuna desconocida")
@@ -207,18 +219,52 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             en_zona = sub[sub["h3_index"].isin(p["zona"])]
             if len(en_zona):  # como en la app de Rol 3: una zona fuera del área no la vacía
                 sub = en_zona
-        anterior = estado.get("area")
-        estado["p"], estado["sub"] = p, sub
-        estado["area"] = tuple(sub.index)
-        if estado["area"] != anterior:
-            estado["sel_id"] += 1
-        estado["antes"] = resolver()
+        anterior = st.get("area")
+        st["p"], st["sub"] = p, sub
+        st["area"] = tuple(sub.index)
+        if st["area"] != anterior:
+            estado["sel_seq"] += 1          # un contador para todas las sesiones: un sel_id nunca se repite
+            st["sel_id"] = estado["sel_seq"]
+        st["antes"] = resolver(st)
+        st["vivo_visto"] = estado["live_mtime"]
+        st["datos_visto"] = None
+        st["cambios"] = st.get("cambios", 0) + 1
 
     def recalcular():
-        terreno = alm.escribir_h3() if alm.capturas() else None
-        estado["terreno"] = terreno
-        estado["ahora"] = resolver(terreno)
-        estado["version"] += 1
+        """Llegó una captura o un video: el terreno cambia para todas las sesiones."""
+        estado["terreno"] = alm.escribir_h3() if alm.capturas() else None
+        estado["datos"] += 1
+        al_dia(estado)
+
+    def al_dia(st: dict):
+        """Recalcula el corredor de una sesión si cambiaron el terreno o la lectura en vivo desde su último cálculo."""
+        if st.get("vivo_visto") != estado["live_mtime"]:
+            st["antes"] = resolver(st)
+            st["vivo_visto"] = estado["live_mtime"]
+            st["datos_visto"] = None
+        if st.get("datos_visto") != estado["datos"]:
+            st["ahora"] = resolver(st, estado["terreno"])
+            st["datos_visto"] = estado["datos"]
+
+    def version(st: dict) -> int:
+        return estado["datos"] * 1_000_000 + st["cambios"]
+
+    def sesion(s: str | None) -> dict:
+        """La sesión de un navegador (se crea con el área y los pesos por defecto); sin `s`, la compartida."""
+        if not s:
+            return estado
+        if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", s):
+            raise HTTPException(422, "Sesión inválida")
+        st = sesiones.get(s)
+        if st is None:
+            st = {"p": {"comunas": list(inicial), "distritos": [], "zona": None, "km": km, "w": (0.4, 0.4, 0.2)}}
+            elegir(Seleccion(), st)
+            sesiones[s] = st
+            while len(sesiones) > MAX_SESIONES:
+                sesiones.popitem(last=False)
+        sesiones.move_to_end(s)
+        al_dia(st)
+        return st
 
     def refrescar_vivo():
         """Lanza un ciclo de vivo.py si live_h3.parquet está viejo; leer_live() lo toma en un próximo sondeo.
@@ -240,8 +286,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     def revisar_live():
         refrescar_vivo()
         if leer_live():
-            estado["antes"] = resolver()
-            recalcular()
+            estado["datos"] += 1
+            al_dia(estado)
 
     inicial = comunas or todas  # al abrir se ven todas; el mapa permite separar por comuna
     faltan = set(inicial) - set(todas)
@@ -249,7 +295,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         raise ValueError(f"Comunas que no están en {datos}: {sorted(faltan)}")
     leer_live()
     elegir(Seleccion(comunas=inicial))
-    recalcular()
+    al_dia(estado)
     app = FastAPI(title="VerdeH3")
 
     def revisar_clave(k: str | None):
@@ -361,8 +407,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         return (request.client is not None and request.client.host in ("127.0.0.1", "::1", "testclient")
                 and "cf-connecting-ip" not in request.headers)
 
-    def _parametros() -> dict:
-        p = estado["p"]
+    def _parametros(st: dict) -> dict:
+        p = st["p"]
         return {"comunas": p["comunas"], "distritos": p["distritos"], "zona": len(p["zona"] or []),
                 "km": p["km"], "w_calor": p["w"][0], "w_arbol": p["w"][1], "w_personas": p["w"][2]}
 
@@ -373,35 +419,42 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         return {"ok": True}
 
     @app.get("/api/comunas")
-    def api_comunas():
-        return {"comunas": todas, "vecinas": vecinas, "geo": geo, "distritos": dist_por_comuna,
-                "seleccion": estado["p"]["comunas"], "parametros": _parametros()}
+    def api_comunas(s: str | None = Query(None)):
+        with lock:
+            st = sesion(s)
+            return {"comunas": todas, "vecinas": vecinas, "geo": geo, "distritos": dist_por_comuna,
+                    "seleccion": st["p"]["comunas"], "parametros": _parametros(st)}
 
     @app.post("/api/seleccion")
-    def api_seleccion(request: Request, cambio: Seleccion, k: str | None = Query(None)):
-        """Cambia área, presupuesto o pesos. Desde el mismo computador no pide clave; por el túnel sí."""
-        if not es_local(request):
+    def api_seleccion(request: Request, cambio: Seleccion, k: str | None = Query(None), s: str | None = Query(None)):
+        """Cambia área, presupuesto o pesos. Con `s` solo cambia la sesión de ese navegador y no pide clave; la
+        sesión compartida (sin `s`) no pide clave desde el mismo computador, pero por el túnel sí."""
+        if not s and not es_local(request):
             revisar_clave(k)
         with lock:
-            elegir(cambio)
-            recalcular()
-            return {"seleccion": estado["p"]["comunas"], "parametros": _parametros(),
-                    "antes": _resumen(estado["antes"]), "ahora": _resumen(estado["ahora"])}
+            st = sesion(s)
+            elegir(cambio, st)
+            al_dia(st)
+            return {"seleccion": st["p"]["comunas"], "parametros": _parametros(st),
+                    "antes": _resumen(st["antes"]), "ahora": _resumen(st["ahora"])}
 
     @app.get("/api/version")
-    def api_version():
+    def api_version(s: str | None = Query(None)):
         """Sondeo barato del mapa: cambia con cada captura, video, selección o lectura en vivo nueva."""
         with lock:
             revisar_live()
-            return {"version": estado["version"], "sel_id": estado["sel_id"]}
+            st = sesion(s)
+            return {"version": version(st), "sel_id": st["sel_id"]}
 
     @app.get("/api/estado")
-    def api_estado(sel_id: int | None = Query(None)):
+    def api_estado(sel_id: int | None = Query(None), s: str | None = Query(None)):
         """Hexágonos del área en columnas. Los polígonos solo van si el mapa no tiene los de esta área (sel_id)."""
         with lock:
             revisar_live()
-            ahora, terreno, antes, sub, live = (estado[x] for x in ("ahora", "terreno", "antes", "sub", "live"))
-            version, sid, params = estado["version"], estado["sel_id"], _parametros()
+            st = sesion(s)
+            ahora, antes, sub = (st[x] for x in ("ahora", "antes", "sub"))
+            terreno, live = estado["terreno"], estado["live"]
+            ver, sid, params = version(st), st["sel_id"], _parametros(st)
             caps = [{**c, "validacion": estado_validacion(c), "cuenta": cuenta(c, aceptar_sin_validar)}
                     for c in alm.capturas()]
         verif = set(terreno["h3_index"]) if terreno is not None else set()
@@ -426,13 +479,13 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         recorridos = [{"id": r["id"], "inicio": r.get("inicio"), "duracion_s": r.get("duracion_s"),
                        "archivo": r.get("archivo"), "linea": [[p["lat"], p["lon"]] for p in r.get("track", [])]}
                       for r in alm.recorridos()]
-        return {"version": version, "sel_id": sid, "seleccion": params["comunas"], "parametros": params,
+        return {"version": ver, "sel_id": sid, "seleccion": params["comunas"], "parametros": params, "lst_fecha": lst_fecha,
                 "hex": col, "capturas": caps, "recorridos": recorridos, "en_vivo": live is not None,
                 "antes": {**_resumen(antes), "personas_azar": antes["personas_azar"]},
                 "ahora": {**_resumen(ahora), "personas_azar": ahora["personas_azar"]}}
 
     @app.get("/api/historico")
-    def api_historico(desde: str = Query(...), hasta: str = Query(...)):
+    def api_historico(desde: str = Query(...), hasta: str = Query(...), s: str | None = Query(None)):
         """Promedio por hexágono de LST y NDVI de las escenas entre dos fechas (YYYY-MM-DD), para el área actual."""
         try:
             d0, d1 = pd.Timestamp(desde), pd.Timestamp(hasta)
@@ -446,7 +499,7 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             hist["df"] = pd.read_parquet(ruta_hist)
             hist["meta"] = json.loads(ruta_meta.read_text(encoding="utf-8")) if ruta_meta.exists() else {}
         with lock:
-            hs = set(estado["sub"]["h3_index"])
+            hs = set(sesion(s)["sub"]["h3_index"])
         h = hist["df"]
         sub_h = h[(h["fecha"] >= d0) & (h["fecha"] < d1 + pd.Timedelta(days=1)) & h["h3_index"].isin(hs)]
         prom = sub_h.groupby("h3_index")[["lst_c", "ndvi"]].mean()

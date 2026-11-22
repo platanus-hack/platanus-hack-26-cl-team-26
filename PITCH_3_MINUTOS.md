@@ -1,90 +1,103 @@
-# VerdeH3 · Pitch de 3 Minutos y Guion de Demostración
-**Platanus Hack 26 · Track Physical World**  
-*Equipo VerdeH3 · Integrante 3 (Panel, Visualización & Pitch)*
+# Viridis · Pitch de 3 minutos y guion de demo
+**Platanus Hack 26 · Track Physical World**
+
+Todas las cifras de este guion salen de archivos del repo; al lado de cada una va su fuente. Las mismas cifras,
+con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
 
 ---
 
-## 🎯 Estructura y Cronograma del Pitch (180 Segundos)
+## Estructura (180 segundos)
 
 ```
-[0:00 - 0:30] EL DOLOR URBANO: La brecha térmica invisible de Santiago
-[0:30 - 1:00] LA SOLUCIÓN VERDEH3: Macro satélite + micro calle en grilla H3
-[1:00 - 2:00] DEMOSTRACIÓN EN VIVO (Mesa del Jurado): El lazo físico cerrado
-[2:00 - 2:40] IMPACTO Y NÚMEROS REALES: Maximizar enfriamiento por km
-[2:40 - 3:00] CIERRE Y ESCALABILIDAD: Cero infraestructura nueva requerida
+[0:00 - 0:30] El problema: la brecha de calor y de sombra dentro de Santiago
+[0:30 - 1:00] Viridis: calor, copa y personas, cuadra por cuadra, en las 34 comunas
+[1:00 - 2:00] Demo en vivo: elegir dónde, trazar el corredor y corregirlo con una foto de la calle
+[2:00 - 2:40] Números: cuánta gente cubre el corredor frente a un trazado al azar
+[2:40 - 3:00] Cierre: datos públicos, sin sensores nuevos en cada esquina
 ```
 
 ---
 
-### Minuto 0:00 – 0:30 | La Brecha Térmica Invisible de Santiago
-* **Qué se muestra en pantalla:**  
-  `/mapa`, vista *Tiempo real* con el botón «Piloto (Providencia + Cerro Navia)»: métricas de calor, copa y población.
-* **Qué dice el orador:**  
-  > *"Santiago no solo es desigual en ingresos; es brutalmente desigual en sombra y temperatura.  
-  > Mientras en Providencia y Las Condes la temperatura superficial de verano promedia **32.8 °C** con un **47%** de cobertura verde, a solo unos kilómetros al poniente, en Cerro Navia y Estación Central, la superficie hierve a **37.2 °C** con apenas un **6%** de áreas verdes.  
-  > Son casi **5 grados Celsius de diferencia** en la vereda donde la gente camina, espera el transporte público o lleva a sus hijos al colegio. Plantar árboles al azar no alcanza: cada metro cuadrado de sombra debe colocarse donde más vidas alivia."*
+### 0:00 – 0:30 · Donde se necesita el verde
+* **Pantalla:** la portada de la página («Donde se necesita el verde») y luego «El calor ahora» con Providencia
+  y Cerro Navia elegidas, para que la tabla muestre las dos comunas lado a lado.
+* **Orador:**
+  > *"Santiago no es desigual solo en ingresos: también en sombra. La tarde del 19 de febrero de 2026, el suelo
+  > de Cerro Navia estaba en **38,9 °C** y tenía **5 %** de copa de árboles. Providencia, a unos kilómetros,
+  > **35,1 °C** y **13 %**. Casi **4 grados** de diferencia en la vereda donde la gente espera la micro o lleva
+  > a sus hijos al colegio. Y si contamos árboles por habitante, Lo Espejo tiene **0,07** y Vitacura **2,5**:
+  > casi 40 veces más. Plantar al azar no alcanza; cada metro de sombra tiene que ir donde más alivia."*
+* Fuentes: `data/cifras_pitch.json` (Landsat 8/9 del 19-02-2026 y nuestro modelo de copa); árboles por
+  habitante en `NOTAS PITCH.md` (Meta 2019 y Censo 2024, zona urbana bajo 900 m).
 
 ---
 
-### Minuto 0:30 – 1:00 | La Solución VerdeH3: Macro + Micro en Grilla H3
-* **Qué se muestra en pantalla:**  
-  `/mapa` con la grilla hexagonal H3 de resolución 9 (~174 m por lado); vista *Corredor* para el corredor óptimo.
-* **Qué dice el orador:**  
-  > *"El satélite ve el calor cada 100 metros con Landsat y Sentinel-2, pero no puede ver qué pasa bajo la copa de un árbol o en una vereda estrecha. Por otro lado, las fotos a nivel de calle ven cada árbol, pero no la isla de calor completa.  
-  > **VerdeH3 fusiona ambos mundos en una grilla hexagonal H3**: cruzamos temperatura satelital, índice de vegetación, equipamiento social (colegios y centros de salud) e imágenes de calle tomadas desde vehículos —que en producción se alimentan de las dashcams de los buses Red del transporte público— para priorizar qué corredor verde conviene plantar primero."*
+### 0:30 – 1:00 · Qué hace Viridis
+* **Pantalla:** el mapa con las capas Calor, Copa de árboles y Personas.
+* **Orador:**
+  > *"Viridis divide las 34 comunas del Gran Santiago en hexágonos del tamaño de una cuadra. En cada una cruza
+  > la temperatura del suelo medida por Landsat, la copa de árboles de nuestro propio modelo sobre Sentinel-2
+  > —que sigue al mapa de referencia de Meta con correlación **0,92**, contra **0,84** del mapa global de la
+  > ESA— y las personas que viven ahí según el **Censo 2024**, más la cercanía a colegios, consultorios, metro y
+  > paraderos. Con eso arma un índice de urgencia: 40 % calor, 40 % falta de árboles y 20 % personas."*
+* Un dato que sorprende, si hay tiempo: *"Donde hay más pasto el suelo está más caliente; donde hay más copa,
+  más fresco. El verde que importa es el que da sombra."* (r = +0,46 y −0,50, `NOTAS PITCH.md`).
 
 ---
 
-### Minuto 1:00 – 2:00 | Demo Física en Vivo: El Lazo Cerrado (El Jurado Actúa)
-* **Acción física:**  
-  Se le pide a uno de los jueces que participe en la maqueta sobre la mesa.
-* **Qué dice el orador:**  
-  > *"Pero no vinimos a mostrar una simulación estática; esto es el track Physical World. Miren nuestra maqueta y nuestra cámara en vivo."*
-* **Paso a paso de la interacción:**
-  1. *"Invito a uno de los jurados a retirar o mover esta planta (árbol) de la vereda en la maqueta."*
-  2. *(El juez mueve la planta)*.
-  3. La cámara detecta en tiempo real la caída de sombra (de 65% a menos de 30% en menos de 1 segundo).
-  4. El hexágono en el mapa pasa inmediatamente a rojo por estrés térmico.
-  5. El corredor verde se **recalcula automáticamente** en pantalla para absorber ese punto crítico.
-  6. **Salida física instantánea:**  
-     - La baliza parpadea en rojo.  
-     - El parlante anuncia por voz TTS:  
-       *«Alerta de estrés térmico detectada en vereda. Prioridad alta de arborización.»*
-  7. *(Opcional)* Se muestra la curva real del día grabada por el teléfono en la ventana (`ventana_timelapse.csv`).
+### 1:00 – 2:00 · Demo en vivo
+1. **Elegir dónde.** Tocar Cerro Navia en el mapa (o encerrar unas cuadras con el lápiz: arrastrar pinta
+   cuadras y volver al inicio del trazo rellena la zona). El resto de Santiago queda atenuado y la tabla
+   muestra solo lo elegido, comparado con el promedio de Santiago.
+2. **Trazar el corredor.** Ir a «Planificar»: con **3 km** de presupuesto, el corredor une parques existentes
+   pasando por las cuadras más urgentes.
+   > *"Este corredor cubre **13.295 personas**. Un trazado al azar del mismo largo, **8.334**."*
+3. **El mundo físico entra al mapa.** Con el teléfono, sacar una foto de una calle (o mostrar una ya subida).
+   Claude revisa que la foto sirva y estima cuánta copa se ve; esa cuadra queda marcada como verificada en
+   terreno y el índice usa la foto junto al satélite. Si hay sensores de aire en vivo (SINCA, Sensor.Community)
+   en suficientes barrios, también entran al índice de calor.
+* **Ensayo:** probar con Cerro Navia o Pudahuel, que dan buen resultado. No dejar que el jurado elija una
+  comuna a ciegas: en algunas comunas chicas el corredor de 3 km no sale.
 
 ---
 
-### Minuto 2:00 – 2:40 | Métricas de Impacto: Eficiencia Comprobada
-* **Qué se muestra en pantalla:**  
-  Métricas en tarjetas y gráfico comparativo de impacto (`assets/comparativa_impacto.png`).
-* **Qué dice el orador:**  
-  > *"Con un presupuesto municipal realista de apenas **3 kilómetros** de nuevo arbolado:  
-  > - VerdeH3 beneficia a **más de 25.000 habitantes** directos que hoy viven bajo islas de calor severas.  
-  > - Genera un **74% más de efectividad térmica y social** comparado con la planificación tradicional o trazados aleatorios.  
-  > Cada dólar y cada árbol invertido tiene el triple de impacto."*
+### 2:00 – 2:40 · Números
+* **Pantalla:** el bloque de cifras de «Planificar».
+* **Orador:**
+  > *"Con el mismo presupuesto de 3 km:*
+  > *- en Cerro Navia el corredor de Viridis cubre **13.295 personas**, contra **8.334** al azar: **60 % más**;*
+  > *- elegido sobre todo el Gran Santiago, cae en Pudahuel y cubre **10.023**, contra **7.002**: **43 % más**;*
+  > *- y la urgencia media de las cuadras que cubre es **0,75**, contra **0,64** al azar."*
+* Fuente: `data/cifras_pitch.json` (`corredor` y `corredor_gran_santiago`). No decir grados de enfriamiento:
+  no tenemos un coeficiente publicado que citar.
 
 ---
 
-### Minuto 2:40 – 3:00 | Cierre y Escalabilidad
-* **Qué se muestra en pantalla:**  
-  El mapa completo de Santiago con el corredor interconectando parques y colegios.
-* **Qué dice el orador:**  
-  > *"Lo más potente de VerdeH3: **no requiere instalar costosas redes de sensores en cada esquina de la ciudad**.  
-  > Aprovecha lo que las ciudades ya pagan —satélites públicos y cámaras móviles en flotas de buses municipales— y lo transforma en una respuesta física directa, auditada en vivo para enfriar donde más duele.  
-  > Muchas gracias."*
+### 2:40 – 3:00 · Cierre
+* **Pantalla:** el mapa completo con las islas verdes (San Cristóbal, Renca, Santa Lucía, Parque O'Higgins).
+* **Orador:**
+  > *"Viridis no necesita instalar sensores en cada esquina: usa satélites públicos, el Censo, OpenStreetMap
+  > y una foto desde el teléfono cuando hace falta confirmar una cuadra. Le dice a un municipio por dónde
+  > plantar primero, y por qué. Donde se necesita el verde. Gracias."*
 
 ---
 
-## 🛡️ Guía Rápida para Preguntas Difíciles del Jurado (Q&A)
+## Preguntas difíciles
 
-1. **"¿Por qué esto no es solo una app de mapas o una simulación?"**
-   - *Respuesta:* Porque el núcleo interactúa bidireccionalmente con el entorno físico en tiempo real. La cámara física audita la sombra real de la vereda segundo a segundo (entrada física) y dispara una baliza y advertencia acústica (salida física). El lazo se cierra en el mundo real, no en una base de datos estática.
-
-2. **"¿Qué pasa si se nubla o es de noche?"**
-   - *Respuesta:* Es un fenómeno meteorológico real que el sistema registra fielmente en el time-lapse. Para garantizar una demo 100% confiable y sin depender del clima, la maqueta cuenta con su propia fuente lumínica calibrada.
-
-3. **"¿Cómo se diferencia de Treepedia del MIT Senseable City Lab?"**
-   - *Respuesta:* Treepedia mide el verde visible desde Street View de forma pasiva y estática. VerdeH3 combina esa visión a nivel de calle con la temperatura satelital térmica (LST) en una grilla H3, calcula rutas de plantación con optimización matemática bajo presupuesto, y audita la sombra en vivo con hardware físico.
-
-4. **"¿De dónde salen las fotos en una implementación real?"**
-   - *Respuesta:* Los buses del sistema Red de Santiago recorren todas las comunas a diario y ya cuentan con cámaras frontales. En lugar de procesar petabytes sin rumbo, VerdeH3 audita los tramos más calientes automáticamente.
+1. **"¿Por qué es Physical World y no solo un mapa?"**
+   La calle corrige al satélite: una foto con GPS desde el teléfono, validada por Claude, cambia la copa
+   estimada de esa cuadra y puede mover el corredor. Además el índice de calor puede tomar la temperatura del
+   aire de sensores en vivo (SINCA y Sensor.Community).
+2. **"¿Qué tan bueno es su mapa de árboles?"**
+   Correlación 0,92 con el mapa de Meta por cuadra, en comunas que el modelo no vio al entrenar (WorldCover de
+   la ESA: 0,84). No ubica árboles individuales y se queda algo corto donde hay muchos árboles (Providencia:
+   13,0 % contra 15,6 % de Meta). Fuente: `data/modelo_copa.json`.
+3. **"¿Por qué la temperatura de febrero?"**
+   El calor que importa para la sombra es el de verano, y el índice usa esa escena de verano completa sobre
+   las 34 comunas. Las escenas más nuevas están en la sección «Histórico» de la página.
+4. **"¿Cuántos grados baja la temperatura con el corredor?"**
+   No lo afirmamos: no hay un coeficiente publicado para Santiago que podamos citar. Lo que sí medimos es a
+   cuánta gente y a qué cuadras llega cada metro de corredor.
+5. **"¿Cómo se diferencia de Treepedia (MIT)?"**
+   Treepedia mide verde visible en Street View. Viridis cruza copa de árboles con temperatura del suelo y
+   población, y traza un corredor bajo un presupuesto en km que une parques existentes.

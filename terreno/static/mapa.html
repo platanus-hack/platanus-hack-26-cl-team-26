@@ -144,7 +144,7 @@
       <li><b>Población:</b> Censo 2024 (INE, manzana). <b>Equipamiento y parques:</b> OpenStreetMap.</li>
       <li><b>Sensores en vivo por barrio (res 7):</b> DMC, SINCA y Sensor.Community → <code>data/live_h3.parquet</code>.</li>
       <li><b>Terreno:</b> fotos y videos con GPS desde el teléfono, validados y analizados por Claude → <code>data/terreno_h3.parquet</code>.</li>
-      <li><i>El índice social combina 50 % densidad (Censo) y 50 % cercanía a servicios (OSM); no es ingreso. La foto de calle complementa al satélite, no lo reemplaza.</i></li>
+      <li><i>El índice social combina 70 % densidad (Censo) y 30 % cercanía a servicios (OSM); no es ingreso. La foto de calle complementa al satélite, no lo reemplaza.</i></li>
     </ul>
   </details>
 </aside>
@@ -414,7 +414,7 @@ function colores() {
   }
   if ($("cSocial").checked) {
     const p = norm(H.pob);
-    capas.push(H.social.map((s, i) => mezcla(0.5 * p[i] + 0.5 * Math.min(1, Math.max(0, s ?? 0.5)), [238, 242, 255], [79, 70, 229])));
+    capas.push(H.social.map((s, i) => mezcla(0.7 * p[i] + 0.3 * Math.min(1, Math.max(0, s ?? 0.5)), [238, 242, 255], [79, 70, 229])));
   }
   if (!capas.length) return H.h.map(() => [[200, 205, 215], .6]);
   return Array.from({ length: n }, (_, i) => [[0, 1, 2].map(k => prom(capas.map(c => c[i][k]))), .8]);

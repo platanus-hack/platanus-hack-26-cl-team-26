@@ -37,6 +37,11 @@ import pandas as pd
 
 EPS = 0.05
 CONFIANZA_OK = ("alta", "media")
+# Aire en vivo: entra solo con varios barrios medidos y en escala fija, para que décimas de grado entre pocos
+# sensores no reordenen el corredor entero (antes se estiraba a 0..1 el rango que hubiera, aunque fuera de 1 °C).
+AIRE_MIN_BARRIOS = 5
+AIRE_ESCALA_C = 6.0        # 0..1 cubre ±3 °C alrededor de la mediana de los barrios medidos
+AIRE_PESO = 0.3            # parte del término de calor que aporta el aire donde hay dato; el resto es el suelo
 MIN_PERSONAS_HEX = 50      # ~500 hab/km²: industria o eriazo; ahí no se planta salvo parques
 N_AZAR = 200
 SEMILLAS = 20
@@ -67,8 +72,9 @@ def urgencia(df, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None, terreno=No
         ok = live[live["confianza"].isin(CONFIANZA_OK) & live["temp_aire_c"].notna()]
         padre = df["h3_padre"] if "h3_padre" in df else df["h3_index"].map(lambda h: h3.cell_to_parent(h, 7))
         vivo = padre.map(ok.groupby("h3_padre")["temp_aire_c"].last())
-        if ok["h3_padre"].nunique() >= 2:  # con un solo barrio no hay contra qué normalizar
-            calor = (0.6 * calor + 0.4 * _norm(vivo)).where(vivo.notna(), calor)
+        if ok["h3_padre"].nunique() >= AIRE_MIN_BARRIOS:
+            aire = (0.5 + (vivo - vivo.median()) / AIRE_ESCALA_C).clip(0, 1)
+            calor = ((1 - AIRE_PESO) * calor + AIRE_PESO * aire).where(vivo.notna(), calor)
     if "copa_modelo_pct" in df:  # la copa urbana va de 0 a ~40%: se normaliza como los demás términos
         falta = 1 - _norm(df["copa_modelo_pct"])
     else:

@@ -353,3 +353,22 @@ if __name__ == "__main__":
         if nombre.startswith("test_"):
             f()
             print("OK", nombre)
+
+
+def test_sesiones_por_navegador():
+    """Cada navegador (`s`) tiene su área y sus pesos; no se pisan entre sí ni tocan la sesión compartida."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(GS, Path(tmp), usar_claude=False, comunas=["Cerro Navia", "Quinta Normal"]))
+        a, b = "navegadorAAAA", "navegadorBBBB"
+        assert c.post(f"/api/seleccion?s={a}", json={"comunas": ["Cerro Navia"], "w_calor": 0.9, "w_arbol": 0.05, "w_personas": 0.05}).status_code == 200
+        ea, eb, comun = (c.get(f"/api/estado{q}").json() for q in (f"?s={a}", f"?s={b}", ""))
+        assert ea["seleccion"] == ["Cerro Navia"] and ea["parametros"]["w_calor"] == 0.9
+        assert eb["seleccion"] == ["Cerro Navia", "Quinta Normal"] and eb["parametros"]["w_calor"] == 0.4
+        assert comun["seleccion"] == ["Cerro Navia", "Quinta Normal"] and comun["parametros"]["w_calor"] == 0.4
+        assert ea["sel_id"] != eb["sel_id"]
+        # Un navegador nuevo (recargar la página) parte con los valores por defecto.
+        assert c.get("/api/comunas?s=navegadorCCCC").json()["parametros"]["w_calor"] == 0.4
+        assert c.get("/api/version?s=mal").status_code == 422
