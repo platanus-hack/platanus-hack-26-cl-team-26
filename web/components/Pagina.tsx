@@ -535,6 +535,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
           <span><i className="barra" style={{ background: LEYENDA[capa][0] }} />{LEYENDA[capa][1]}</span>
           <span><i className="linea" style={{ borderTop: "2px solid #2F4520" }} />Comuna</span>
           <span><i className="linea" style={{ borderTop: "2px dashed #2F4520", opacity: 0.7 }} />Sector</span>
+          <span><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style={{ verticalAlign: "-2px", marginRight: 6 }}><path d="M12 2l8.66 5v10L12 22l-8.66-5V7z" fill="none" stroke="#2F4520" strokeWidth="2" /></svg>1 hexágono ≈ 0,1 km², unas 4 manzanas</span>
           <span><i className="cuadro" style={{ background: "#B9B5A3", opacity: 0.45 }} />Tenue: casi sin habitantes (cerros, campo, industria)</span>
           {!nada && <span><i className="cuadro" style={{ background: "#C5CDA6", opacity: 0.35 }} />Fuera de lo elegido</span>}
           <span className="detalle num" aria-live="polite">{det != null
