@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Un solo servidor: mapa en /mapa, captura del teléfono en /?k=<clave>. Render define PORT.
+# Un solo servidor: mapa en /mapa y la API. Render define PORT.
 ENV PORT=8000
 EXPOSE 8000
 

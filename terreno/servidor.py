@@ -1,11 +1,10 @@
-"""Servidor de VerdeH3: el mapa (tiempo real, corredor Dijkstra, histórico) y la captura en terreno desde el teléfono.
+"""Servidor de VerdeH3: el mapa (tiempo real, corredor Dijkstra, histórico) y la API del sitio web/.
 
     python -m terreno.servidor --puerto 8000          # 34 comunas; el corredor se calcula en las elegidas
     cloudflared tunnel --url http://localhost:8000      # HTTPS público: el GPS del teléfono lo exige
 
-Teléfono: https://<túnel>/?k=<clave> (o /captura?k=<clave>, también desde el sitio web/)   ·   Mapa: /mapa
-Aves por sonido: el teléfono graba 15 s (WAV) y BirdNET identifica especies (terreno/aves.py). Con las fotos
-(fauna y flores según Claude) arman la biodiversidad por hexágono, que entra al corredor con el peso w_bio.
+Mapa: /mapa. La página del teléfono se retiró; la API de subida (/api/captura, /api/video, /api/audio) sigue
+y lo ya capturado cuenta (biodiversidad por hexágono con el peso w_bio, fotos validadas por Claude).
 El mapa filtra por comuna, distrito (barrio H3 res 7) o una zona dibujada, mueve presupuesto y pesos del
 corredor, y muestra la serie histórica satelital (data/historico_h3.parquet). Si existe data/live_h3.parquet
 (máxima del día por barrio, Rol 2: lo escribe maximas.py cada noche) entra al calor de la urgencia; se relee
@@ -34,7 +33,7 @@ from pathlib import Path
 import h3
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 
 from optimizer import solve_corridor
@@ -326,9 +325,8 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
             raise HTTPException(403, "Clave incorrecta: abre la página con ?k=<clave>")
 
     @app.get("/")
-    @app.get("/captura")  # el sitio Next (web/) usa «/» para su portada y reenvía /captura aquí
-    def captura_html():
-        return FileResponse(ESTATICO / "captura.html")
+    def inicio():
+        return RedirectResponse("/mapa")
 
     @app.get("/mapa")
     def mapa_html():
