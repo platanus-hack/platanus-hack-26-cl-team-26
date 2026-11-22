@@ -300,3 +300,9 @@ section[id], footer[id] { scroll-margin-top: 76px; }
 
 /* Planificar: especies del corredor (se marca más de una) y el criterio que resulta. */
 .b-cab .criterio { flex-basis: 100%; max-width: 80ch; margin: 0; font-family: var(--f-cuerpo); font-style: normal; font-size: 15px; line-height: 1.45; color: var(--texto2); }
+
+/* Bajo el primer mapa, sin nada elegido: de cuándo es cada dato. */
+.fechas { margin: 0; display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: baseline; font-size: 15px; color: var(--texto2); }
+.fechas dt { flex-basis: 100%; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--texto3); }
+.fechas dd { margin: 0; display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
+.fechas dd b { font-size: 13px; font-weight: 700; color: var(--oliva-osc); }

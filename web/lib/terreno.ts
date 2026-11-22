@@ -43,6 +43,7 @@ export type Escucha = {
 export type Recorrido = { id: string; inicio?: string; duracion_s?: number; archivo?: string; linea: [number, number][] };
 export type Estado = {
   version: number; sel_id: number; seleccion: string[]; parametros: Parametros; hex: HexCols; lst_fecha: string | null;
+  fechas?: { calor: string | null; copa: string | null; vivo: string | null };   // última actualización de cada dato
   recorridos: Recorrido[]; en_vivo: boolean; antes: ResumenCorredor; ahora: ResumenCorredor;
   totales: { capturas: number; cuentan: number; escuchas: number };
   fauna_corredor?: { especies: string[]; polinizadores: number };

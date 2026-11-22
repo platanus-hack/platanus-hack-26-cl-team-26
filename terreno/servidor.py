@@ -194,6 +194,12 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
     lst_hoy = df["lst_c"]
     lst_fecha = df["lst_fecha"].mode().iat[0] if "lst_fecha" in df and df["lst_fecha"].notna().any() else None
     copa = df["copa_modelo_pct"] if "copa_modelo_pct" in df else df["arbol_pct"]
+    # Fecha de la imagen con que el modelo predice la copa (data/modelo_copa.json), para mostrarla en la página.
+    ruta_copa = Path(datos).with_name("modelo_copa.json")
+    try:
+        copa_fecha = json.loads(ruta_copa.read_text(encoding="utf-8"))["pasadas"]["actual"] if ruta_copa.exists() else None
+    except (ValueError, KeyError, TypeError):
+        copa_fecha = None
     lock = threading.Lock()
     refresco_s = float(os.getenv("REFRESCO_VIVO_MIN", "10")) * 60
     if Path(data_dir).resolve() != Path("data").resolve():
@@ -660,7 +666,13 @@ def crear_app(datos: Path = Path("data/santiago_h3_gs.parquet"), data_dir: Path 
         recorridos = [{"id": r["id"], "inicio": r.get("inicio"), "duracion_s": r.get("duracion_s"),
                        "archivo": r.get("archivo"), "linea": [[p["lat"], p["lon"]] for p in r.get("track", [])]}
                       for r in alm.recorridos()]
+        # Última lectura de aire que entra al mapa (confianza alta o media); None si no hay.
+        vivo_fecha = None
+        if live is not None and len(live) and "medido_en" in live:
+            ok_v = live[live["confianza"].isin(["alta", "media"]) & live["temp_aire_c"].notna()]["medido_en"].dropna()
+            vivo_fecha = str(ok_v.max()) if len(ok_v) else None
         return {"version": ver, "sel_id": sid, "seleccion": params["comunas"], "parametros": params, "lst_fecha": lst_fecha,
+                "fechas": {"calor": lst_fecha, "copa": copa_fecha, "vivo": vivo_fecha},
                 "hex": col, "recorridos": recorridos, "en_vivo": live is not None,
                 "totales": {"capturas": len(caps), "cuentan": sum(n_fotos.values()),
                             "escuchas": sum(n_escuchas.values())},

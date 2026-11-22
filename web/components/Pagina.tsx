@@ -59,6 +59,17 @@ const CRITERIO: Record<string, string> = {
   "aves+abejas": "Aves y abejas: corredor arbolado continuo que evita el cemento, con una mini isla florida cada tres cuadras.",
   "humanos+aves+abejas": "Las tres: urgencia de las personas, copa para las aves y flores para las abejas pesan un tercio cada una; corredor continuo con mini islas.",
 };
+// Día en que se bajó el extracto de OpenStreetMap (Geofabrik) con parques, servicios y vías.
+const OSM_EXTRACTO = "2026-11-21";
+// "2026-02-19" → "19 feb 2026"; con hora, en la hora de Santiago.
+const fechaDia = (f?: string | null) => { if (!f) return null; const [a, m, d] = f.slice(0, 10).split("-").map(Number); return `${d} ${MESES[m - 1]} ${a}`; };
+const fechaHora = (f?: string | null) => {
+  if (!f) return null;
+  const t = new Date(f);
+  if (Number.isNaN(t.getTime())) return null;
+  const p = Object.fromEntries(new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(t).map((x) => [x.type, x.value]));
+  return `${Number(p.day)} ${MESES[Number(p.month) - 1]} ${p.year}, ${p.hour}:${p.minute} h`;
+};
 const ISLA = "#4F6E31";   // el oliva del logo
 const MORADO = ["#F3ECE6", "#D3BBD6", "#9A6BA8", "#5C2F78"];   // densidad de personas
 const grad = (c: string[]) => `linear-gradient(90deg,${c.join(",")})`;
@@ -550,7 +561,14 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
         <div className="elegido escalon" style={est(3)}>
           {!elegido ? (
-            <p className="vacio">Todo Santiago: <b className="num">{formato(santiago.suelo, 1)} °C</b> de suelo, <b className="num">{formato(santiago.copa, 1)} %</b> de copa y <b className="num">{formato(santiago.personas)}</b> personas en {formato(santiago.cuadras)} cuadras. Haz doble clic en comunas del mapa o encierra cuadras con el lápiz para ver aquí sus cifras.</p>
+            <dl className="fechas">
+              <dt>Última actualización de cada dato</dt>
+              <dd><b>Calor del suelo</b>{fechaDia(estado.fechas?.calor) ?? "sin fecha"} · Landsat</dd>
+              <dd><b>Copa de árboles</b>{fechaDia(estado.fechas?.copa) ?? "sin fecha"} · Sentinel-2</dd>
+              <dd><b>Personas</b>Censo 2024 · INE</dd>
+              <dd><b>Parques y servicios</b>{fechaDia(OSM_EXTRACTO)} · OpenStreetMap</dd>
+              <dd><b>Aire en vivo</b>{fechaHora(estado.fechas?.vivo) ?? "sin lecturas confiables ahora"}</dd>
+            </dl>
           ) : (
             <>
               <div className="totales num">
