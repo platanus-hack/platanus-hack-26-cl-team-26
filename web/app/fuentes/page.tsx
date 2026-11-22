@@ -100,7 +100,7 @@ export default function Fuentes() {
   return (
     <main className="b fuentes">
       <header className="b-pad bajo"><div className="b-in">
-        <a className="marca" href="/"><img src="/viridis.svg" alt="" width={34} height={34} />VIRIDIS</a>
+        <a className="marca" href="/"><img src="/viridis-logo.webp" alt="" width={34} height={34} />VIRIDIS</a>
         <nav aria-label="Secciones"><a href="/#ahora">Datos clave</a><a href="/#planificar">Planificar</a><a href="/#historico">Histórico</a><a href="/fuentes" aria-current="page">Fuentes</a></nav>
       </div></header>
 

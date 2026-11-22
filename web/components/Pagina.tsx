@@ -175,7 +175,7 @@ export default function Pagina({ serie }: { serie: Serie }) {
   return (
     <main className="b">
       <header className={`b-pad${bajo ? " bajo" : ""}`}><div className="b-in">
-        <a className="marca" href="#inicio"><img src="/viridis.svg" alt="" width={34} height={34} />VIRIDIS</a>
+        <a className="marca" href="#inicio"><img src="/viridis-logo.webp" alt="" width={34} height={34} />VIRIDIS</a>
         <nav aria-label="Secciones"><a href="#ahora">Datos clave</a><a href="#planificar">Planificar</a><a href="#conectado">Santiago conectado</a><a href="/fuentes">Fuentes</a></nav>
       </div></header>
 
@@ -198,7 +198,7 @@ export default function Pagina({ serie }: { serie: Serie }) {
 
       {/* Las fuentes y sus notas de método viven en /fuentes; aquí solo queda el enlace. */}
       <footer className="b-pad pie"><div className="b-in">
-        <span className="marca"><img src="/viridis.svg" alt="" width={26} height={26} />VIRIDIS</span>
+        <span className="marca"><img src="/viridis-logo.webp" alt="" width={26} height={26} />VIRIDIS</span>
         <a href="/fuentes">Fuentes</a>
       </div></footer>
     </main>
