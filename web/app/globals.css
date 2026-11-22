@@ -318,16 +318,3 @@ section[id], footer[id] { scroll-margin-top: 76px; }
 .conectado-km input { width: 100%; }
 .conectado-remate { margin: 8px 0 0; max-width: 46ch; font-family: var(--f-display); font-size: clamp(24px, 2.6vw, 34px); line-height: 1.25; color: var(--oliva-osc); }
 .conectado-remate b { color: var(--oliva); }
-
-/* Lo que circula por un corredor: cuatro pasos de un ciclo, con flechas entre ellos. */
-.ciclo { margin-top: 28px; padding: 28px; border-radius: 24px; background: var(--crema2); border: 1px solid var(--salvia3); }
-.ciclo h3 { margin: 0 0 18px; font-family: var(--f-display); font-size: clamp(24px, 2.4vw, 32px); color: var(--oliva-osc); font-weight: 700; }
-.ciclo h3 em { color: var(--oliva); }
-.ciclo ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 18px; counter-reset: paso; }
-.ciclo li { position: relative; padding: 18px 20px; border-radius: 18px; background: var(--crema, #F6EFD2); border: 1px solid var(--salvia3); }
-.ciclo li b { display: flex; align-items: center; gap: 10px; font-size: 17px; color: var(--oliva-osc); }
-.ciclo li b .num { flex: 0 0 34px; height: 34px; border-radius: 50%; background: var(--oliva); color: var(--crema2); display: inline-flex; align-items: center; justify-content: center; font-size: 17px; }
-.ciclo li p { margin: 8px 0 0; font-size: 15px; line-height: 1.45; color: var(--texto2); }
-.ciclo li:not(:last-child)::after { content: ""; position: absolute; right: -14px; top: 50%; width: 10px; height: 10px; border-top: 3px solid var(--oliva); border-right: 3px solid var(--oliva); transform: translateY(-50%) rotate(45deg); }
-.ciclo-vuelta { margin: 18px 0 0; font-family: var(--f-display); font-style: italic; font-size: 19px; color: var(--oliva-osc); }
-@media (max-width: 720px) { .ciclo li:not(:last-child)::after { display: none; } }

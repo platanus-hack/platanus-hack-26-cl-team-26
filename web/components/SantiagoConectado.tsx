@@ -18,14 +18,6 @@ type Red = {
 };
 const pct = (x: number, de: number) => `${formato((100 * x) / de, 0)} %`;
 
-// Por qué conectar la fauna nos sirve a todos: un ciclo de cuatro pasos que vuelve a empezar.
-const CICLO: [string, string][] = [
-  ["Las islas se tocan", "Aves y abejas ya no quedan atrapadas en un cerro o un parque: pueden ir y volver entre ellos."],
-  ["La vida se queda", "Con más espacio y más comida en el camino, más especies encuentran dónde vivir y criar."],
-  ["Ellas plantan por nosotros", "Las abejas polinizan árboles, huertos y jardines; las aves llevan semillas de un parque a otro."],
-  ["Más verde para todos", "Ese verde da sombra y frescor a quienes viven cerca, y vuelve a abrir camino a la fauna."],
-];
-
 const PARA: [string, string, string][] = [
   ["humanos", "Personas", "Sombra donde más calor hace y más gente vive."],
   ["aves", "Aves", "Copa continua de árbol en árbol, lejos del cemento y del pasto abierto."],
@@ -145,13 +137,6 @@ export default function SantiagoConectado({ base, comunas, encuadre, hitos }: {
       {total && (
         <p className="conectado-remate escalon">Con {formato(total.largo_km, 0)} km de corredores, <b>{total.habitat_islas} islas verdes</b> dejan de estar solas y <b>{formato(total.verde_300m - (red?.verde_300m_hoy ?? 0))} personas más</b> tienen el verde a 300 m de su casa.</p>
       )}
-      <div className="ciclo escalon">
-        <h3>Lo que circula <em>por un corredor</em></h3>
-        <ol>
-          {CICLO.map(([t, d], i) => <li key={t}><b><span className="num">{i + 1}</span>{t}</b><p>{d}</p></li>)}
-        </ol>
-        <p className="ciclo-vuelta">Y el ciclo vuelve a empezar: conectar la fauna es plantar una ciudad que se cuida sola.</p>
-      </div>
     </>
   );
 }
