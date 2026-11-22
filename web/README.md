@@ -23,7 +23,7 @@ Producción: `npm run build && npm start`. Si el servidor está en otra máquina
 ## Qué muestra
 
 - **Datos clave**: las 34 comunas del Gran Santiago juntas, o las que se elijan con doble clic o el lápiz.
-  Capas de calor, árboles, personas, 🐦 aves y 🐝 abejas. El calor es el suelo, combinado con la máxima del
+  Capas de calor, árboles, personas, aves y abejas. El calor es el suelo, combinado con la máxima del
   aire (70 % suelo y 30 % aire) donde hay al menos 5 barrios con confianza alta o media. Aves y abejas salen
   de `public/data/fauna.json` (GBIF, `python fauna_gbif.py` desde la raíz).
 - **Planificar**: largo y pesos del corredor (los recalcula el servidor), para humanos, aves, abejas o mixto,

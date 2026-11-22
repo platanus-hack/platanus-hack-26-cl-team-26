@@ -86,7 +86,7 @@ corredor continuo entre parques que más urgencia cubre dentro del presupuesto.
 La página (Next, en `web/`) muestra los datos y traza el corredor; `python -m terreno.servidor --puerto 8000`
 (FastAPI) es su API: cruza los datos por comuna y calcula el corredor. Ver `web/README.md` para levantarla.
 
-- *Datos clave*: capas de calor (suelo y aire), árboles, personas, 🐦 aves y 🐝 abejas por cuadra, en las 34
+- *Datos clave*: capas de calor (suelo y aire), árboles, personas, aves y abejas por cuadra, en las 34
   comunas. Un clic en una cuadra muestra sus datos; doble clic elige su comuna; el lápiz encierra cuadras.
 - *Planificar*: corredor con presupuesto (km) y pesos de calor, árboles y personas, para humanos, aves, abejas
   o mixto (`ecologia.py`), con las cifras contra un trazado al azar y la fauna registrada en los barrios que

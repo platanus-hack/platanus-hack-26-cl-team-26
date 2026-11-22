@@ -87,7 +87,7 @@ const CAPAS_AHORA: Capa[] = [
   { id: "aves", color: escala("av", AZUL, 0, AVES_MAX) },
   { id: "abejas", color: escala("ab", AMBAR, 0, ABEJAS_MAX) },
 ];
-const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Árboles", personas: "Personas", aves: "🐦 Aves", abejas: "🐝 Abejas" };
+const NOMBRE_CAPA: Record<string, string> = { calor: "Calor", copa: "Árboles", personas: "Personas", aves: "Aves", abejas: "Abejas" };
 const LEYENDA: Record<string, [string, string]> = {
   calor: [grad(NARANJO), "Índice de calor: temperatura del suelo; donde hay sensores de aire confiables en al menos 5 barrios, 70 % suelo y 30 % aire"],
   copa: [grad(VERDE), "Copa de árboles, de 0 % a 25 % o más"],
@@ -334,8 +334,8 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       ${B.vivo[i] != null ? fila("Aire, máxima de ayer", `${formato(B.vivo[i] as number, 1)} °C`) : ""}
       ${fila("Copa de árboles", B.copa[i] == null ? "sin dato" : `${formato(B.copa[i] as number, 1)} %`)}
       ${fila("Personas", formato(B.pob[i]))}
-      ${faunaDe[i]?.an ? fila("🐦 Aves en el barrio", `${faunaDe[i]!.asp} especies`) : ""}
-      ${faunaDe[i]?.bn ? fila("🐝 Abejas nativas en el barrio", `${faunaDe[i]!.bn} ${faunaDe[i]!.bn === 1 ? "registro" : "registros"}`) : ""}
+      ${faunaDe[i]?.an ? fila("Aves en el barrio", `${faunaDe[i]!.asp} especies`) : ""}
+      ${faunaDe[i]?.bn ? fila("Abejas nativas en el barrio", `${faunaDe[i]!.bn} ${faunaDe[i]!.bn === 1 ? "registro" : "registros"}`) : ""}
       ${fila("Coordenadas", cellToLatLng(B.h[i]).map((x) => x.toFixed(5)).join(", "))}</table>
       <small>Doble clic para ${elegidas.includes(c) ? "quitar" : "elegir"} ${esc(c)}.</small></div>`;
   };
@@ -375,9 +375,9 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const faunaTexto = (i: number) => {
     if (!fauna) return "";
     const f = faunaDe[i];
-    if (capa === "aves") return f?.an ? ` 🐦 En el barrio: ${f.asp} especies de aves (${formato(f.an)} registros); las más vistas: ${f.atop}.` : " Sin aves registradas en el barrio (no significa que no haya).";
+    if (capa === "aves") return f?.an ? ` En el barrio: ${f.asp} especies de aves (${formato(f.an)} registros); las más vistas: ${f.atop}.` : " Sin aves registradas en el barrio (no significa que no haya).";
     if (capa === "abejas") return f?.bn || f?.bx
-      ? ` 🐝 En el barrio: ${f.bn} ${f.bn === 1 ? "registro" : "registros"} de abejas nativas${f.btop ? ` (${f.btop})` : ""}${f.bx ? `; además ${f.bx} de abejas exóticas` : ""}.`
+      ? ` En el barrio: ${f.bn} ${f.bn === 1 ? "registro" : "registros"} de abejas nativas${f.btop ? ` (${f.btop})` : ""}${f.bx ? `; además ${f.bx} de abejas exóticas` : ""}.`
       : " Sin abejas registradas en el barrio (no significa que no haya).";
     return "";
   };

@@ -33,7 +33,7 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
 ---
 
 ### 0:30 – 1:00 · Qué hace Viridis
-* **Pantalla:** el mapa con las capas Calor, Árboles y Personas, y luego 🐦 Aves y 🐝 Abejas.
+* **Pantalla:** el mapa con las capas Calor, Árboles y Personas, y luego Aves y Abejas.
 * **Orador:**
   > *"Viridis divide las 34 comunas del Gran Santiago en hexágonos del tamaño de una cuadra. En cada una cruza
   > la temperatura del suelo medida por Landsat, la copa de árboles de nuestro propio modelo sobre Sentinel-2
