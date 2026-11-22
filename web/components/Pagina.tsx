@@ -452,7 +452,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
   const especies: Especie[] = p.especies?.length ? p.especies : ["humanos"];
   const claveEspecies = ESPECIES.map(([id]) => id).filter((id) => especies.includes(id)).join("+");
   const soloHumanos = claveEspecies === "humanos";
-  const tono = especies.includes("abejas") ? "abeja" : "lima";
+  const tono = especies.includes("abejas") ? "abeja" : "salvia";
   // Marcar o desmarcar una especie; siempre queda al menos una.
   function alternarEspecie(id: Especie) {
     const nuevas = especies.includes(id) ? especies.filter((e) => e !== id) : [...especies, id];
