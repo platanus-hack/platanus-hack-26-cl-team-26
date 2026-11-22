@@ -636,3 +636,29 @@ def test_sesiones_por_navegador():
         # Un navegador nuevo (recargar la página) parte con los valores por defecto.
         assert c.get("/api/comunas?s=navegadorCCCC").json()["parametros"]["w_calor"] == 0.4
         assert c.get("/api/version?s=mal").status_code == 422
+
+
+def test_comunas_vecinas():
+    """Con «vecinas», el corredor de una comuna sin parques puede usar los de las comunas de al lado."""
+    from fastapi.testclient import TestClient
+    from terreno.servidor import crear_app
+
+    with tempfile.TemporaryDirectory() as tmp:
+        c = TestClient(crear_app(GS, Path(tmp), usar_claude=False, comunas=["Independencia"]))
+        e = c.get("/api/estado").json()
+        assert e["ahora"]["hexes"] == 0 and e["parametros"]["vecinas"] is False and e["fuera"] == []
+        u = e["hex"]["u"]
+        assert c.post("/api/seleccion", json={"vecinas": True}).status_code == 200
+        e = c.get("/api/estado").json()
+        assert e["parametros"]["vecinas"] is True and e["ahora"]["hexes"] > 0
+        dentro = sum(e["hex"]["ahora"])
+        assert dentro + len(e["fuera"]) == e["ahora"]["hexes"] and 2 * dentro >= e["ahora"]["hexes"]
+        assert all(f["comuna"] != "Independencia" for f in e["fuera"])
+        assert e["hex"]["u"] == u                      # la urgencia de lo elegido no cambia
+        assert len(e["hex"]["h"]) == len(u)            # ni el área que se muestra
+        # Sin corredor con el presupuesto dado: el servidor dice cuánto falta.
+        c.post("/api/seleccion", json={"comunas": ["Lo Prado"]})
+        e = c.get("/api/estado").json()
+        assert e["ahora"]["hexes"] == 0 and e["ahora"]["km_min"] > 3
+        c.post("/api/seleccion", json={"km": e["ahora"]["km_min"] + 0.4})
+        assert c.get("/api/estado").json()["ahora"]["hexes"] > 0

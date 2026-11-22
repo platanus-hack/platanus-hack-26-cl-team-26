@@ -267,4 +267,10 @@ section[id], footer[id] { scroll-margin-top: 76px; }
 .pasos ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 12px; font-size: 16px; color: var(--texto2); }
 .pasos li b { color: var(--tinta); }
 .b-controles.espera { opacity: 0.5; }
+.vecinas { grid-column: 1 / -1; display: flex; gap: 10px; align-items: flex-start; padding-top: 14px; border-top: 1px solid var(--salvia3); cursor: pointer; }
+.vecinas input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--oliva); flex: none; }
+.vecinas span { display: flex; flex-direction: column; gap: 2px; font-size: 15px; color: var(--oliva-osc); min-width: 0; }
+.vecinas small { font-size: 13px; color: var(--texto3); line-height: 1.4; }
+.vecinas.no { cursor: default; opacity: 0.6; }
+.sin-corredor { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .mapa .gris { position: absolute; inset: 0; z-index: 1; background: rgba(34, 40, 26, 0.26); pointer-events: none; }
