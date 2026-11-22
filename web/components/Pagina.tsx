@@ -6,7 +6,7 @@ import MapaHex, { type Capa, type Foco } from "./MapaHex";
 import Cifra from "./Cifra";
 import FiltroComunas from "./FiltroComunas";
 import { formato, useRevela, useVisible } from "./movimiento";
-import { historico, useTerreno, type Captura, type Estado, type HexCols, type InfoComunas } from "@/lib/terreno";
+import { detalleHex, historico, useTerreno, type Escucha, type Estado, type HexCols, type InfoComunas } from "@/lib/terreno";
 
 type Serie = { meses: string[]; escenas_landsat: number; escenas_sentinel2: number; media_mes: (number | null)[]; lst_fecha_ultima: string };
 
@@ -17,6 +17,9 @@ const sinNulos = (xs: (number | null)[]) => xs.filter((x): x is number => x != n
 const media = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0);
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 const est = (i: number) => ({ "--i": i } as React.CSSProperties);
+const ICONO: Record<string, string> = { ave: "🐦", abeja: "🐝", mariposa: "🦋", otro_polinizador: "🪲", otro: "🐾" };
+const RUIDO: Record<string, string> = { bajo: "bajo", medio: "medio", alto: "alto (tráfico)" };
+
 
 // Min-max con percentiles 2 y 98, como optimizer._norm.
 function norm(xs: (number | null)[]) {
@@ -123,7 +126,8 @@ export default function Pagina({ serie }: { serie: Serie }) {
         <p><b>Calor del suelo.</b> Landsat 8 y 9, Collection 2 Level 2 (USGS), vía Microsoft Planetary Computer. Serie mensual: {serie.escenas_landsat} escenas Landsat y {serie.escenas_sentinel2} Sentinel-2, de enero de 2023 a noviembre de 2026.</p>
         <p><b>Copa de árboles.</b> Modelo propio sobre Sentinel-2 de febrero de 2026, entrenado con la altura de copa de Meta y WRI (r = 0,92 por cuadra en comunas que el modelo no vio).</p>
         <p><b>Personas.</b> Censo 2024 del INE por manzana, más cercanía a colegios, salud, metro y paraderos de OpenStreetMap. No es ingreso.</p>
-        <p><b>Aire en vivo y terreno.</b> DMC, SINCA y Sensor.Community por barrio (H3 resolución 7). Fotos y videos con GPS desde el teléfono, validados por Claude; la foto complementa al satélite, no lo reemplaza. Mapa base: CARTO y OpenStreetMap.</p>
+        <p><b>Aire en vivo y terreno.</b> DMC, SINCA y Sensor.Community por barrio (H3 resolución 7). Fotos y videos con GPS desde el teléfono (<code>/captura</code>, con la clave del equipo), validados por Claude; la foto complementa al satélite, no lo reemplaza. Mapa base: CARTO y OpenStreetMap.</p>
+        <p><b>Aves y polinizadores.</b> Aves por su canto con BirdNET (K. Lisa Yang Center for Conservation Bioacoustics, Cornell; modelo CC BY-NC-SA 4.0), filtradas por lugar y semana del año, grabando quieto o caminando con el video; cada escucha mide el ruido del tráfico, y sin aves con ruido alto queda «no concluyente». Aves, abejas, mariposas y flores vistas en las fotos, según Claude. No detectar fauna no significa que no haya.</p>
         <p><b>Fondo del titular.</b> Sentinel-2 L2A del 6 de febrero de 2026 (Copernicus, vía Microsoft Planetary Computer), 16 m por píxel: la vegetación en verde según su NDVI y lo construido en gris.</p>
       </div></footer>
     </main>
@@ -263,29 +267,69 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
     return new Map(Object.entries(por).map(([c, v]) => [c, media(v)]));
   }, [B]);
 
-  const capturasGeo = useMemo<GeoJSON.FeatureCollection>(() => ({
+  // Fotos y escuchas no van como puntos (con miles no se vería nada): las cuadras con datos de terreno llevan
+  // un borde y al tocarlas se abre su ficha, que se pide al servidor en ese momento.
+  // El mapa usa los índices de la base (B, las 34 comunas); los conteos parten de B y se actualizan con lo que
+  // manda el servidor para el área elegida (H), así una foto nueva se ve aunque haya comunas elegidas.
+  const terrenoPor = useMemo(() => {
+    const m = new Map<string, { fotos: number; escuchas: number; especies: string; poli: number }>();
+    for (const X of [B, H]) X.h.forEach((h, i) => m.set(h, { fotos: X.fotos?.[i] ?? 0, escuchas: X.escuchas?.[i] ?? 0,
+      especies: X.especies?.[i] ?? "", poli: X.polinizadores?.[i] ?? 0 }));
+    return m;
+  }, [B, H]);
+  const conTerreno = (i: number) => { const t = terrenoPor.get(B.h[i]); return !!t && t.fotos + t.escuchas > 0; };
+  const terrenoDe = (i: number) => {
+    const t = terrenoPor.get(B.h[i]);
+    if (!t) return "";
+    return `${t.especies ? ` Aves: ${t.especies}.` : ""}${t.poli ? ` Al menos ${t.poli} polinizadores vistos.` : ""}${t.fotos + t.escuchas ? " Tócala para ver sus fotos y aves." : ""}`;
+  };
+  const terrenoGeo = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
-    features: estado.capturas.map((c) => ({
-      type: "Feature", properties: { ...c, obstaculos: (c.obstaculos ?? []).join(", "), color: c.validacion === "descartada" ? "#9A9A8E" : c.cuenta ? "#2D5E9E" : "#9A9A8E" },
-      geometry: { type: "Point", coordinates: [c.lon, c.lat] },
-    })),
-  }), [estado.capturas]);
+    features: B.h.flatMap((h, i) => (conTerreno(i)
+      ? [{ type: "Feature" as const, properties: { tipo: "verificado", h3: h }, geometry: { type: "Polygon" as const, coordinates: [anillos[i]] } }]
+      : [])),
+  }), [terrenoPor, anillos]); // eslint-disable-line react-hooks/exhaustive-deps
   const recorridosGeo = useMemo<GeoJSON.FeatureCollection>(() => ({
     type: "FeatureCollection",
     features: estado.recorridos.filter((r) => r.linea.length > 1).map((r) => ({
       type: "Feature", properties: { id: r.id }, geometry: { type: "LineString", coordinates: r.linea.map(([la, lo]) => [lo, la]) },
     })),
   }), [estado.recorridos]);
-  const popupCaptura = (p: Record<string, unknown>) => {
-    const c = p as unknown as Captura;
-    if (c.validacion === "descartada") return `<div class="pop"><b>Descartada</b><br>${esc(c.motivo_rechazo)}</div>`;
-    const cuando = new Date(String(c.tomado_en || c.medido_en)).toLocaleString("es-CL", { timeZone: "America/Santiago" });
-    return `<div class="pop"><img src="/fotos/${esc(c.id)}_min.jpg" alt="Foto de terreno">
-      Árboles ${Math.round(Number(c.arbol_pct ?? 0))} % (${c.fuente === "claude" ? "Claude" : "índice de verde"}) · plantable: ${esc(c.espacio_plantable ?? "sin estimar")}<br>
-      ${p.obstaculos ? `Obstáculos: ${esc(p.obstaculos)}<br>` : ""}<small>${esc(c.descripcion)}</small>
-      ${c.cuenta ? "" : "<br><b>Sin validar: no cuenta</b>"}<br><small>${esc(cuando)} · GPS ±${Math.round(Number(c.precision_m ?? 0))} m</small></div>`;
+  const hora = (t: unknown) => new Date(String(t)).toLocaleString("es-CL", { timeZone: "America/Santiago" });
+  const popupEscucha = (e: Escucha) => {
+    const lista = !e.analizada ? "<i>Sin analizar: BirdNET no estaba disponible</i>"
+      : e.detecciones.length ? e.detecciones.map((d) => `🐦 <i>${esc(d.cientifico)}</i> <small>${esc(d.comun)} · ${Math.round(d.confianza * 100)} %</small>`).join("<br>")
+      : e.concluyente === false ? "<b>No concluyente:</b> no se oyeron aves, pero había mucho ruido"
+      : "No se identificaron aves <small>(no significa que no haya)</small>";
+    const tramo = e.video_id ? `#t=${e.desde_s},${e.hasta_s}` : "";
+    return `<div class="pop"><b>${e.video_id ? "Tramo de recorrido" : "Escucha más reciente"}, ${Math.round(e.duracion_s)} s</b><br>${lista}
+      ${e.ruido ? `<br><small>Ruido de la calle: ${RUIDO[e.ruido.nivel]} · ${e.ruido.db} dB relativo</small>` : ""}
+      <br><audio controls preload="none" src="/audios/${esc(e.archivo || e.id + ".wav")}${tramo}" style="width:220px;margin-top:6px"></audio>
+      <br><small>${esc(hora(e.tomado_en || e.medido_en))} · GPS ±${Math.round(Number(e.precision_m ?? 0))} m</small></div>`;
   };
-  const mapaComun = { comunas: comunasGeo, distritos: distritosGeo, capturas: capturasGeo, recorridos: recorridosGeo, popupCaptura, alComuna: tocarComuna, alLazo: lazo, foco };
+  // Ficha de una cuadra con datos de terreno: miniaturas de las fotos más nuevas (cada una abre la foto
+  // completa), "y N más", fauna vista y aves oídas con el audio de la escucha más nueva.
+  const popupHex = (i: number): Promise<string> | null => {
+    if (!conTerreno(i)) return null;
+    return detalleHex(B.h[i], 6).then((d) => {
+      const fauna = new Map<string, number>();
+      for (const f of d.fotos) for (const a of f.fauna ?? []) {
+        const k = `${ICONO[a.grupo] ?? ""} ${a.nombre || a.grupo.replace("_", " ")}`;
+        fauna.set(k, Math.max(fauna.get(k) ?? 0, a.cantidad));  // máximo en una foto: varias fotos muestran los mismos
+      }
+      const fotos = d.fotos.map((f) => `<a href="/fotos/${esc(f.id)}.jpg" target="_blank" rel="noopener" title="${esc(f.descripcion)}">
+        <img src="/fotos/${esc(f.id)}_min.jpg" alt="Foto de terreno" loading="lazy"></a>`).join("");
+      const flores = d.flores == null ? "" : d.flores >= 1 ? "muchas" : d.flores > 0 ? "pocas" : "";
+      return `<div class="pop ficha"><b>${esc(B.distrito[i])}</b><br><small>${d.n_fotos} ${d.n_fotos === 1 ? "foto" : "fotos"} · ${d.n_escuchas} ${d.n_escuchas === 1 ? "escucha" : "escuchas"} de aves</small>
+        ${fotos ? `<div class="galeria">${fotos}</div>` : ""}
+        ${d.n_fotos > d.fotos.length ? `<small>y ${d.n_fotos - d.fotos.length} más</small><br>` : ""}
+        ${fauna.size ? `Fauna vista: ${[...fauna].map(([k, n]) => `${esc(k)} ×${n}`).join(", ")}<br>` : ""}
+        ${flores ? `🌸 Flores: ${flores}<br>` : ""}
+        ${d.especies?.length ? `🐦 Aves: ${d.especies.map((x) => `<i>${esc(x)}</i>`).join(", ")}<br>` : ""}
+        ${d.escuchas[0] ? popupEscucha(d.escuchas[0]).replace('<div class="pop">', '<div class="escucha">') : ""}</div>`;
+    });
+  };
+  const mapaComun = { comunas: comunasGeo, distritos: distritosGeo, recorridos: recorridosGeo, popupHex, alComuna: tocarComuna, alLazo: lazo, foco };
 
   const filtro = <FiltroComunas info={info} elegidas={elegidas} zona={zonaIdx.length} alternar={tocarComuna} sumar={sumar} reiniciar={reiniciar}
     sueloComuna={sueloComuna} ocupado={ocupado} error={error} />;
@@ -330,9 +374,11 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
 
   // ---- Planificar: presupuesto y pesos van al servidor, que recalcula con y sin terreno
   const p = estado.parametros;
+  // Calor, árboles y personas suman 100; la biodiversidad va en la misma escala (10 = un décimo de los otros tres).
   const [pesos, setPesos] = useState(() => {
     const tot = p.w_calor + p.w_arbol + p.w_personas || 1;
-    return { km: p.km, calor: Math.round((100 * p.w_calor) / tot), arbol: Math.round((100 * p.w_arbol) / tot), pers: Math.round((100 * p.w_personas) / tot) };
+    return { km: p.km, calor: Math.round((100 * p.w_calor) / tot), arbol: Math.round((100 * p.w_arbol) / tot),
+             pers: Math.round((100 * p.w_personas) / tot), bio: Math.round((100 * (p.w_bio ?? 0)) / tot) };
   });
   const temporizador = useRef<ReturnType<typeof setTimeout>>(undefined);
   function mover(k: keyof typeof pesos, v: number) {
@@ -340,11 +386,11 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
     setPesos(nuevo);
     clearTimeout(temporizador.current);
     temporizador.current = setTimeout(() => {
-      const w = nuevo.calor + nuevo.arbol + nuevo.pers > 0 ? nuevo : { ...nuevo, calor: 40, arbol: 40, pers: 20 };
-      cambiar({ km: w.km, w_calor: w.calor, w_arbol: w.arbol, w_personas: w.pers });
+      const w = nuevo.calor + nuevo.arbol + nuevo.pers + nuevo.bio > 0 ? nuevo : { ...nuevo, calor: 40, arbol: 40, pers: 20, bio: 10 };
+      cambiar({ km: w.km, w_calor: w.calor, w_arbol: w.arbol, w_personas: w.pers, w_bio: w.bio });
     }, 450);
   }
-  const total = pesos.calor + pesos.arbol + pesos.pers || 1;
+  const total = pesos.calor + pesos.arbol + pesos.pers + pesos.bio || 1;
   const a = estado.ahora, b = estado.antes;
   // La urgencia es relativa al área del servidor: fuera de lo elegido las cuadras quedan sin valor (gris tenue).
   const datosPlan = useMemo(() => {
@@ -429,16 +475,17 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
           </div>
         </div>
         <div className="escalon" style={est(1)}>
-          <MapaHex {...mapaComun} datos={datosAhora} capas={CAPAS_AHORA} activa={capa} encuadre={encuadreArea} alPasar={setPasada}
-            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Toca una comuna para sumarla o quitarla.`}>{filtro}</MapaHex>
+          <MapaHex {...mapaComun} datos={datosAhora} capas={CAPAS_AHORA} activa={capa} corredor={terrenoGeo} encuadre={encuadreArea} alPasar={setPasada}
+            etiqueta={`Mapa de ${NOMBRE_CAPA[capa].toLowerCase()} por cuadra. Toca una comuna para sumarla o quitarla, o una cuadra con borde para ver sus fotos y aves.`}>{filtro}</MapaHex>
         </div>
         <div className="leyenda">
           <span><i className="barra" style={{ background: LEYENDA[capa][0] }} />{LEYENDA[capa][1]}</span>
           <span><i className="linea" style={{ borderTop: "2px solid #2F4520" }} />Comuna</span>
           <span><i className="linea" style={{ borderTop: "2px dashed #2F4520", opacity: 0.7 }} />Sector</span>
+          {estado.totales.cuentan + estado.totales.escuchas > 0 && <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Con fotos o aves de terreno: tócala para verlas</span>}
           {!nada && <span><i className="cuadro" style={{ background: "#C5CDA6", opacity: 0.35 }} />Fuera de lo elegido</span>}
           <span className="detalle num" aria-live="polite">{det != null
-            ? `${B.distrito[det]}${B.parque[det] ? ", parque" : ""}: suelo ${formato(B.lst[det] ?? 0, 1)} °C${B.vivo[det] != null ? `, aire ${formato(B.vivo[det] as number, 1)} °C` : ""}, copa ${formato(B.copa[det] ?? 0, 1)} %, ${formato(B.pob[det])} personas.`
+            ? `${B.distrito[det]}${B.parque[det] ? ", parque" : ""}: suelo ${formato(B.lst[det] ?? 0, 1)} °C${B.vivo[det] != null ? `, aire ${formato(B.vivo[det] as number, 1)} °C` : ""}, copa ${formato(B.copa[det] ?? 0, 1)} %, ${formato(B.pob[det])} personas.${terrenoDe(det)}`
             : "Pasa el puntero por una cuadra para ver sus datos."}</span>
         </div>
         <div className="elegido escalon" style={est(3)}>
@@ -484,7 +531,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
       <Seccion id="planificar">
         <div className="b-cab escalon"><h2>Planificar <em>el corredor</em></h2><p>Elige dónde, mueve los pesos y el presupuesto; el corredor se traza de parque a parque por las cuadras más urgentes de lo elegido.</p></div>
         <div className={`b-controles escalon${planListo ? "" : " espera"}`} style={est(2)}>
-          {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"]] as const).map(([k, nombre]) => (
+          {([["calor", "Calor (suelo y aire)"], ["arbol", "Falta de árboles"], ["pers", "Personas cerca"], ["bio", "Biodiversidad (terreno)"]] as const).map(([k, nombre]) => (
             <div className="peso" key={k}>
               <label htmlFor={`p-${k}`}><span>{nombre}</span><b>{Math.round((100 * pesos[k]) / total)} %</b></label>
               <input id={`p-${k}`} type="range" min={0} max={100} step={5} value={pesos[k]} onChange={(e) => mover(k, Number(e.target.value))} />
@@ -520,6 +567,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
               <span><i className="cuadro" style={{ background: "#7FA35A" }} />Islas verdes: cerros y parques</span>
               <span><i className="linea" style={{ borderTop: "2px dashed #22281A" }} />Sin datos de terreno</span>
               <span><i className="linea" style={{ borderTop: "3px solid #B0398B" }} />Verificado en terreno</span>
+              <span>Toca una cuadra verificada para ver sus fotos y aves</span>
             </div>
           </div>
           {!planListo ? (
@@ -563,7 +611,15 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
             <div className="grupo escalon" style={est(6)}>
               <button type="button" className="pill llena" onClick={exportar} disabled={!a.hexes}>Exportar tramos</button>
             </div>
-            <p className="nota">{estado.capturas.length} {estado.capturas.length === 1 ? "captura" : "capturas"} en terreno; {estado.capturas.filter((c) => c.cuenta).length} cuentan. El mapa se actualiza solo cuando llega una foto nueva.</p>
+            {estado.fauna_corredor && (estado.fauna_corredor.especies.length > 0 || estado.fauna_corredor.polinizadores > 0) && (
+              <div className="cifra escalon" style={est(7)}>
+                <b><Cifra valor={estado.fauna_corredor.especies.length} /></b>
+                <span>{estado.fauna_corredor.especies.length === 1 ? "especie de ave registrada" : "especies de aves registradas"} en el corredor
+                  {estado.fauna_corredor.especies.length ? `: ${estado.fauna_corredor.especies.join(", ")}` : ""}
+                  {estado.fauna_corredor.polinizadores ? `; al menos ${estado.fauna_corredor.polinizadores} polinizadores vistos` : ""}. Con el peso de biodiversidad, el corredor prefiere pasar por donde hay fauna.</span>
+              </div>
+            )}
+            <p className="nota">{estado.totales.capturas} {estado.totales.capturas === 1 ? "captura" : "capturas"} en terreno; {estado.totales.cuentan} cuentan{estado.totales.escuchas ? `; ${estado.totales.escuchas} ${estado.totales.escuchas === 1 ? "escucha" : "escuchas"} de aves` : ""}. El mapa se actualiza solo cuando llega una foto o escucha nueva.</p>
           </div>
           )}
         </div>
@@ -589,7 +645,7 @@ function Contenido({ info, estado, cambiar, ocupado, error, serie, B, elegidas, 
         </div>
         <div className="b-hist">
           <div className="izq escalon" style={est(2)}>
-            <MapaHex {...mapaComun} datos={datosHist} capas={CAPAS_HIST} activa="hist" encuadre={encuadreArea} etiqueta="Promedio del calor del suelo por cuadra en el rango elegido">{filtro}</MapaHex>
+            <MapaHex {...mapaComun} datos={datosHist} capas={CAPAS_HIST} activa="hist" corredor={terrenoGeo} encuadre={encuadreArea} etiqueta="Promedio del calor del suelo por cuadra en el rango elegido">{filtro}</MapaHex>
             <div className="leyenda" style={{ marginTop: 10 }}><span><i className="barra" style={{ background: grad(OCRE) }} />{hist ? <span className="num">Suelo medio de {formato(escalaHist[0], 1)} °C a {formato(escalaHist[1], 1)} °C</span> : <span className="sk sk-linea" style={{ display: "inline-block", width: 190, height: 14 }} aria-label="Calculando el promedio" />}</span></div>
           </div>
           <div className="cifras">

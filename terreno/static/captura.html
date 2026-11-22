@@ -44,12 +44,17 @@
   .cambio.no { background:#f1f1ee; }
   .error { color:var(--alerta); font-weight:600; }
   .oculto { display:none; }
+  .nivel { height:8px; background:var(--fondo); border-radius:4px; overflow:hidden; margin-top:10px; }
+  .nivel i { display:block; height:100%; width:0; background:var(--verde); transition:width .1s; }
+  .especies { margin:8px 0 0; padding-left:18px; } .especies li { margin:2px 0; }
+  .especies small { color:var(--tenue); }
 </style>
 </head>
 <body>
 <main>
   <h1>VerdeH3 · captura en terreno</h1>
-  <p class="sub">Foto de la calle con GPS: verifica el hexágono y recalcula el corredor.</p>
+  <p class="sub">Foto de la calle con GPS: verifica el hexágono y recalcula el corredor. También sirven fotos de
+    cerca de aves, abejas, mariposas o flores, y escuchar aves.</p>
 
   <div class="card gps" id="gps"><span class="punto"></span><span id="gpsTxt" style="flex:1">Buscando GPS…</span></div>
 
@@ -65,8 +70,15 @@
   <div class="card">
     <button id="grabar">🎥 Abrir cámara de video</button>
     <p id="vEstado" class="sub" style="margin:8px 0 0">Graba caminando por el corredor: cada 3 s se guarda un cuadro
-      con su posición GPS y su hora. Máximo 3 minutos.</p>
+      con su posición GPS y su hora, y el micrófono escucha aves en todo el camino. Máximo 3 minutos.</p>
     <button id="subirVideo" class="sec" disabled>Subir video</button>
+  </div>
+
+  <div class="card">
+    <button id="escuchar">🎙️ Escuchar aves (15 s)</button>
+    <div class="nivel oculto" id="nivel"><i id="nivelBarra"></i></div>
+    <p id="aEstado" class="sub" style="margin:8px 0 0">Funciona en la calle, con autos y gente: el micrófono graba 15 s,
+      BirdNET identifica las aves y se mide el ruido del tráfico. Solo evita tapar el micrófono con la mano o la ropa.</p>
   </div>
 
   <div class="card res oculto" id="res"></div>
@@ -150,6 +162,11 @@ $("enviar").addEventListener("click", async () => {
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+const ICONO = { ave: "🐦", abeja: "🐝", mariposa: "🦋", otro_polinizador: "🪲", otro: "🐾" };
+const fauna = f => f?.length
+  ? f.map(a => `${ICONO[a.grupo] || ""} ${esc(a.nombre || a.grupo.replace("_", " "))} ×${a.cantidad}`).join(", ")
+  : "no se vio";
+
 function mostrar(d) {
   const c = d.captura, a = d.previo, n = d.ahora;
   const fuente = c.fuente === "claude" ? "Claude (visión)" : "índice de verde";
@@ -166,10 +183,12 @@ function mostrar(d) {
     <strong>${d.comuna ? esc(d.comuna) + " · " : ""}hexágono ${esc(c.h3_index.slice(0, 9))}…</strong>${d.fuera_de_area ? ' <span class="error">fuera del Gran Santiago</span>' : ""}
     ${d.fuera_de_seleccion && !d.fuera_de_area ? `<p class="sub" style="margin:6px 0 0">Guardada. Para ver su efecto, elige ${esc(d.comuna)} en el mapa.</p>` : ""}
     <dl>
-      <dt>Árboles</dt><dd>${Math.round(c.arbol_pct)} % <small>(${fuente})</small></dd>
+      <dt>Árboles</dt><dd>${c.arbol_pct == null ? "— <small>(foto de cerca)</small>" : `${Math.round(c.arbol_pct)} % <small>(${fuente})</small>`}</dd>
       <dt>Verde en la foto</dt><dd>${Math.round(c.verde_pct)} %</dd>
       <dt>Espacio para plantar</dt><dd>${esc(c.espacio_plantable ?? "sin estimar")}</dd>
       <dt>Obstáculos</dt><dd>${c.obstaculos?.length ? c.obstaculos.map(esc).join(", ") : "—"}</dd>
+      <dt>Fauna</dt><dd>${fauna(c.fauna)}</dd>
+      <dt>Flores</dt><dd>${esc(c.flores ?? "sin estimar")}</dd>
     </dl>
     ${c.descripcion ? `<p class="sub" style="margin:8px 0 0">${esc(c.descripcion)}</p>` : ""}
     ${aviso}
@@ -184,6 +203,8 @@ function mostrar(d) {
 // ---------- Video: grabación en la página, con trazado GPS y un cuadro cada 3 s ----------
 const CADA_MS = 3000, MAX_CUADROS = 40, MAX_S = 180, MAX_VIDEO = 80 * 1024 * 1024;
 let rec = null, stream = null, partes = [], cuadros = [], track = [], t0 = 0, inicio = null, reloj = null, videoBlob = null;
+let audioCtx = null, audioProc = null, audioTrozos = [], audioTasa = 0, oyendo = false, audioPaseo = null;
+const MIC = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };  // no borrar el canto
 const seg = () => (performance.now() - t0) / 1000;
 
 function tipoVideo() {
@@ -215,7 +236,7 @@ async function cuadro() {
 
 function estadoVideo() {
   const t = Math.round(seg());
-  $("camInfo").textContent = `● ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")} · ${cuadros.length} cuadros`;
+  $("camInfo").textContent = `● ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")} · ${cuadros.length} cuadros${oyendo ? " · 🎙️ escuchando aves" : ""}`;
   $("vEstado").textContent = `● Grabando ${Math.round(seg())} s · ${cuadros.length} cuadros · ${track.length} puntos GPS` +
     (pos && pos.accuracy > 30 ? " · GPS impreciso" : "");
 }
@@ -225,8 +246,11 @@ async function abrirCamara() {
     $("vEstado").innerHTML = '<span class="error">Este navegador no puede grabar video en la página.</span>'; return;
   }
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false });
+    const video = { facingMode: { ideal: "environment" }, width: { ideal: 1280 } };
+    try { stream = await navigator.mediaDevices.getUserMedia({ video, audio: MIC }); }
+    catch { stream = await navigator.mediaDevices.getUserMedia({ video, audio: false }); }  // sin micrófono: solo imagen
   } catch (e) { $("vEstado").innerHTML = `<span class="error">Sin cámara: ${esc(e.message)}</span>`; return; }
+  prepararOido();
   const v = $("vivo"); v.srcObject = stream;
   $("camara").classList.remove("oculto"); document.body.style.overflow = "hidden";
   await v.play();
@@ -234,9 +258,39 @@ async function abrirCamara() {
   actualizarCamGps();
 }
 
+function prepararOido() {  // el audio del micrófono se guarda en PCM para BirdNET (el del video no se puede leer sin ffmpeg)
+  audioCtx?.close(); audioCtx = null; audioProc = null;
+  if (!stream?.getAudioTracks().length) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  audioTasa = audioCtx.sampleRate;
+  const fuente = audioCtx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+  audioProc = audioCtx.createScriptProcessor(4096, 1, 1);
+  audioProc.onaudioprocess = ev => { if (oyendo) audioTrozos.push(new Float32Array(ev.inputBuffer.getChannelData(0))); };
+  fuente.connect(audioProc); audioProc.connect(audioCtx.destination);  // la salida va en silencio
+}
+
+async function remuestrear(x, de, a = 32000) {  // 32 kHz bastan para BirdNET (hasta 15 kHz) y el archivo pesa 1/3 menos
+  if (de <= a || !window.OfflineAudioContext) return [x, de];
+  const oc = new OfflineAudioContext(1, Math.ceil(x.length * a / de), a);
+  const b = oc.createBuffer(1, x.length, de); b.copyToChannel(x, 0);
+  const s = oc.createBufferSource(); s.buffer = b; s.connect(oc.destination); s.start();
+  return [(await oc.startRendering()).getChannelData(0), a];
+}
+
+async function cerrarAudioPaseo() {
+  oyendo = false;
+  if (!audioTrozos.length) { audioPaseo = null; return; }
+  const n = audioTrozos.reduce((s, t) => s + t.length, 0), todo = new Float32Array(n);
+  let o = 0; for (const t of audioTrozos) { todo.set(t, o); o += t.length; }
+  audioTrozos = [];
+  const [x, tasa] = await remuestrear(todo, audioTasa);
+  audioPaseo = wavPCM16(x, tasa);
+}
+
 function cerrarCamara() {
   if (rec) detenerGrabacion();
   stream?.getTracks().forEach(t => t.stop()); stream = null;
+  audioCtx?.close(); audioCtx = null;
   $("camara").classList.add("oculto"); document.body.style.overflow = "";
 }
 
@@ -250,12 +304,15 @@ function iniciarGrabacion() {
   if (!pos) { $("camInfo").textContent = "Espera a tener GPS antes de grabar"; return; }
   const tipo = tipoVideo();
   partes = []; cuadros = []; track = []; videoBlob = null; t0 = performance.now(); inicio = new Date().toISOString();
+  audioTrozos = []; audioPaseo = null; audioCtx?.resume(); oyendo = !!audioProc;
   rec = new MediaRecorder(stream, { ...(tipo ? { mimeType: tipo } : {}), videoBitsPerSecond: 1_500_000 });
   rec.ondataavailable = e => { if (e.data.size) partes.push(e.data); };
-  rec.onstop = () => {
+  rec.onstop = async () => {
     videoBlob = new Blob(partes, { type: (rec.mimeType || tipo || "video/webm").split(";")[0] });
+    await cerrarAudioPaseo();
     const mb = (videoBlob.size / 1048576).toFixed(1);
     $("vEstado").textContent = `Listo: ${Math.round(track.at(-1)?.t_s ?? 0)} s, ${cuadros.length} cuadros, ${track.length} puntos GPS, ${mb} MB.` +
+      (audioPaseo ? " Con audio para escuchar aves." : " Sin micrófono: no se escucharán aves.") +
       (videoBlob.size > MAX_VIDEO ? " El video pesa demasiado: se subirán solo los cuadros." : "");
     $("subirVideo").disabled = !cuadros.length;
     rec = null;
@@ -273,6 +330,7 @@ function iniciarGrabacion() {
 
 function detenerGrabacion() {
   clearInterval(reloj);
+  oyendo = false;
   puntoTrack();
   if (rec && rec.state !== "inactive") rec.stop();
   $("botonRec").classList.remove("grabando"); $("botonRec").setAttribute("aria-label", "Grabar");
@@ -293,12 +351,13 @@ $("subirVideo").addEventListener("click", async () => {
     const ext = videoBlob.type.includes("mp4") ? "mp4" : "webm";
     fd.append("video", videoBlob, "recorrido." + ext);
   }
+  if (audioPaseo) fd.append("audio", audioPaseo, "recorrido.wav");
   try {
     const r = await fetch("/api/video" + (k ? "?k=" + encodeURIComponent(k) : ""), { method: "POST", body: fd });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || r.status);
     mostrarVideo(d);
-    cuadros = []; track = []; videoBlob = null;
+    cuadros = []; track = []; videoBlob = null; audioPaseo = null;
     $("vEstado").textContent = "Recorrido subido. Puedes grabar otro.";
   } catch (e) {
     $("vEstado").innerHTML = `<span class="error">Error: ${esc(e.message)}</span>`;
@@ -321,11 +380,112 @@ function mostrarVideo(d) {
       ${d.fuera_de_seleccion > d.fuera_de_area ? `<dt>Fuera de las comunas elegidas</dt><dd>${d.fuera_de_seleccion - d.fuera_de_area}</dd>` : ""}
     </dl>
     ${d.motivos_descarte.length ? `<p class="sub" style="margin:8px 0 0">Descartes: ${d.motivos_descarte.map(esc).join(" · ")}</p>` : ""}
+    ${avesPaseo(d.aves)}
     <div class="cambio ${d.corredor_cambio ? "" : "no"}">
       ${d.corredor_cambio ? "<strong>El corredor cambió.</strong>" : "El corredor se mantiene."}<br>
       Urgencia cubierta ${a.urgencia_cubierta} → ${n.urgencia_cubierta} ·
       personas ${a.personas_cubiertas.toLocaleString("es-CL")} → ${n.personas_cubiertas.toLocaleString("es-CL")} ·
       verificados ${n.verificados}
+    </div>`;
+}
+
+// ---------- Escuchar aves: 15 s de micrófono → WAV en el teléfono → BirdNET en el servidor ----------
+const ESCUCHA_S = 15;
+let escuchando = false;
+
+function wavPCM16(muestras, tasa) {
+  const n = muestras.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const txt = (o, t) => [...t].forEach((ch, i) => v.setUint8(o + i, ch.charCodeAt(0)));
+  txt(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); txt(8, "WAVE"); txt(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, tasa, true);
+  v.setUint32(28, tasa * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); txt(36, "data");
+  v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, muestras[i])) * 0x7fff, true);
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+$("escuchar").addEventListener("click", async () => {
+  if (escuchando) return;
+  if (!pos) { $("aEstado").innerHTML = '<span class="error">Espera a tener GPS.</span>'; return; }
+  let mic;
+  try {  // sin cancelación de eco ni supresión de ruido: borran justamente el canto
+    mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch (e) {
+    $("aEstado").innerHTML = `<span class="error">Sin micrófono: ${esc(e.message)}. Permítelo para este sitio.</span>`;
+    return;
+  }
+  escuchando = true; $("escuchar").disabled = true;
+  const lugar = { lat: pos.latitude, lon: pos.longitude, precision: pos.accuracy }, tomado = new Date().toISOString();
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const fuente = ctx.createMediaStreamSource(mic), proc = ctx.createScriptProcessor(4096, 1, 1);
+  const trozos = [];
+  let total = 0;
+  const objetivo = ESCUCHA_S * ctx.sampleRate;
+  $("nivel").classList.remove("oculto");
+  await new Promise(fin => {
+    proc.onaudioprocess = ev => {
+      const x = ev.inputBuffer.getChannelData(0);
+      trozos.push(new Float32Array(x)); total += x.length;
+      let pico = 0; for (const s of x) pico = Math.max(pico, Math.abs(s));
+      $("nivelBarra").style.width = Math.min(100, pico * 200) + "%";
+      $("escuchar").textContent = `🎙️ Escuchando… ${Math.max(0, Math.ceil((objetivo - total) / ctx.sampleRate))} s`;
+      if (total >= objetivo) fin();
+    };
+    fuente.connect(proc); proc.connect(ctx.destination);
+  });
+  proc.disconnect(); fuente.disconnect(); mic.getTracks().forEach(t => t.stop());
+  const tasa = ctx.sampleRate; ctx.close();
+  const todo = new Float32Array(total); let o = 0;
+  for (const t of trozos) { todo.set(t, o); o += t.length; }
+  $("nivel").classList.add("oculto");
+  $("escuchar").textContent = "🎙️ Escuchar aves (15 s)";
+  $("aEstado").textContent = "Identificando aves…";
+  const fd = new FormData();
+  fd.append("audio", wavPCM16(todo.subarray(0, objetivo), tasa), "escucha.wav");
+  fd.append("lat", lugar.lat); fd.append("lon", lugar.lon); fd.append("precision_m", lugar.precision);
+  fd.append("tomado_en", tomado);
+  try {
+    const r = await fetch("/api/audio" + (k ? "?k=" + encodeURIComponent(k) : ""), { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.status);
+    mostrarEscucha(d);
+    $("aEstado").textContent = "Listo. Puedes escuchar de nuevo en otro punto.";
+  } catch (e) {
+    $("aEstado").innerHTML = `<span class="error">Error: ${esc(e.message)}</span>`;
+  }
+  escuchando = false; $("escuchar").disabled = false;
+});
+
+const RUIDO = { bajo: "bajo (tranquilo)", medio: "medio", alto: "alto (tráfico fuerte)" };
+const textoRuido = r => r ? `Ruido de la calle: <strong>${RUIDO[r.nivel]}</strong> <small>(${r.db} dB relativo)</small>` : "";
+
+function avesPaseo(a) {
+  if (!a) return "";
+  if (a.error) return `<p class="error" style="margin:8px 0 0">El audio no se pudo leer: ${esc(a.error)}</p>`;
+  if (!a.analizada) return '<p class="error" style="margin:8px 0 0">Audio guardado sin analizar: BirdNET no está disponible.</p>';
+  const lista = a.especies.length
+    ? `<ul class="especies">${a.especies.map(x => `<li>🐦 <em>${esc(x.cientifico)}</em> <small>${esc(x.comun)} · ${Math.round(x.confianza * 100)} %</small></li>`).join("")}</ul>`
+    : '<p style="margin:6px 0 0">No se identificaron aves en el camino (no significa que no haya).</p>';
+  return `<p style="margin:10px 0 0"><strong>Aves en el camino</strong> <small>(${a.tramos} tramos, uno por hexágono)</small></p>${lista}
+    <p class="sub" style="margin:6px 0 0">${textoRuido(a.ruido)}${a.no_concluyentes ? ` · ${a.no_concluyentes} tramo${a.no_concluyentes > 1 ? "s" : ""} no concluyente${a.no_concluyentes > 1 ? "s" : ""} por el ruido` : ""}</p>`;
+}
+
+function mostrarEscucha(d) {
+  const e = d.escucha, a = d.previo, n = d.ahora;
+  $("res").classList.remove("oculto");
+  const lista = e.detecciones.length
+    ? `<ul class="especies">${e.detecciones.map(x => `<li>🐦 <em>${esc(x.cientifico)}</em> <small>${esc(x.comun)} · ${Math.round(x.confianza * 100)} %</small></li>`).join("")}</ul>`
+    : e.concluyente ? `<p style="margin:6px 0 0">No se identificaron aves (no significa que no haya).</p>`
+    : `<p style="margin:6px 0 0"><strong>No concluyente:</strong> no se oyeron aves, pero había mucho ruido; pueden estar tapadas. Prueba lejos del tráfico.</p>`;
+  $("res").innerHTML = `
+    <strong>${d.comuna ? esc(d.comuna) + " · " : ""}escucha de ${Math.round(e.duracion_s)} s</strong>${d.fuera_de_area ? ' <span class="error">fuera del Gran Santiago</span>' : ""}
+    ${d.analizada ? lista : '<p class="error" style="margin:6px 0 0">Guardada sin analizar: BirdNET no está disponible en el servidor.</p>'}
+    <p class="sub" style="margin:6px 0 0">${textoRuido(e.ruido)}</p>
+    ${d.fuera_de_seleccion && !d.fuera_de_area ? `<p class="sub" style="margin:6px 0 0">Para ver su efecto, elige ${esc(d.comuna)} en el mapa.</p>` : ""}
+    <div class="cambio ${d.corredor_cambio ? "" : "no"}">
+      ${d.corredor_cambio ? "<strong>El corredor cambió.</strong>" : "El corredor se mantiene."}
+      ${d.en_corredor ? " Este punto está en el corredor." : ""}<br>
+      Urgencia cubierta ${a.urgencia_cubierta} → ${n.urgencia_cubierta}
     </div>`;
 }
 </script>

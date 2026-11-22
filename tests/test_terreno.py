@@ -52,11 +52,12 @@ def test_analizar_sin_claude():
     assert o["valida"] is None  # sin Claude no se sabe si es una calle
 
 
-def obs(valida, plantable="medio", motivo=""):
-    return vision.Observacion(valida=valida, motivo_rechazo=motivo, arbol_pct=0 if not valida else 20,
+def obs(valida, plantable="medio", motivo="", tipo="calle", fauna=(), flores="ninguna"):
+    return vision.Observacion(valida=valida, motivo_rechazo=motivo, tipo_foto=tipo, arbol_pct=0 if not valida else 20,
                               arbusto_pct=0, pasto_pct=0, suelo_desnudo_pct=0, construido_pct=0,
                               pavimento_pct=0 if not valida else 60, espacio_plantable=plantable,
-                              obstaculos=[] if not valida else ["cables"], descripcion="")
+                              obstaculos=[] if not valida else ["cables"],
+                              fauna=[vision.Avistamiento(**a) for a in fauna], flores=flores, descripcion="")
 
 
 def con_claude(resultado):
@@ -145,7 +146,7 @@ def test_servidor_validacion():
             deshacer()
         assert d["validacion"] == "valida" and d["cuenta"] and d["corredor_cambio"]
         e = c.get("/api/estado").json()
-        assert [x["validacion"] for x in e["capturas"]] == ["descartada", "sin_validar", "valida"]
+        assert [x["validacion"] for x in c.get("/api/capturas").json()["capturas"]] == ["descartada", "sin_validar", "valida"]
         assert any(h["verificado"] for h in filas(e))
 
 
@@ -167,7 +168,7 @@ def test_servidor():
         d = r.json()
         assert d["captura"]["h3_index"] == hx and not d["fuera_de_area"] and d["captura"]["fuente"] == "indice_verde"
         e = c.get("/api/estado").json()
-        assert len(e["capturas"]) == 1 and any(h["verificado"] for h in filas(e))
+        assert len(c.get("/api/capturas").json()["capturas"]) == 1 and any(h["verificado"] for h in filas(e))
         assert c.get(f"/fotos/{d['captura']['id']}_min.jpg").status_code == 200
         assert c.get("/fotos/..%2F..%2Fsecreto.jpg").status_code == 404
         assert (Path(tmp) / "terreno_h3.parquet").exists()
@@ -215,7 +216,7 @@ def test_video():
         assert d["recorrido"]["inicio"] == "2026-11-21T18:00:00+00:00" and d["recorrido"]["duracion_s"] == 6
         e = c.get("/api/estado").json()
         assert len(e["recorridos"]) == 1 and len(e["recorridos"][0]["linea"]) == 3  # el punto malo se descarta
-        caps = e["capturas"]
+        caps = c.get("/api/capturas").json()["capturas"]
         assert {x["video_id"] for x in caps} == {d["recorrido"]["id"]}
         assert caps[0]["tomado_en"] == "2026-11-21T18:00:00+00:00" and caps[0]["precision_m"] == 6
         assert c.get(f"/videos/{d['recorrido']['archivo']}").status_code == 200
@@ -304,13 +305,13 @@ def test_mapa_area_y_pesos():
         c.post("/api/seleccion", json={"zona": None})
         # presupuesto y pesos: antes y ahora los usan los dos
         base = c.get("/api/estado").json()
-        r = c.post("/api/seleccion", json={"km": 8, "w_calor": 1, "w_arbol": 0, "w_personas": 0}).json()
+        r = c.post("/api/seleccion", json={"km": 8, "w_calor": 1, "w_arbol": 0, "w_personas": 0, "w_bio": 0}).json()
         assert r["parametros"]["km"] == 8 and r["antes"] == r["ahora"]  # sin capturas: iguales
         assert r["ahora"]["km"] > base["ahora"]["km"]
         sub = df[df["comuna"].isin(["Cerro Navia", "Quinta Normal"])]
         esperado = solve_corridor(sub, 8, 1, 0, 0)
         assert r["ahora"]["hexes"] == len(esperado["hexes"])
-        assert c.post("/api/seleccion", json={"w_calor": 0, "w_arbol": 0, "w_personas": 0}).status_code == 422
+        assert c.post("/api/seleccion", json={"w_calor": 0, "w_arbol": 0, "w_personas": 0, "w_bio": 0}).status_code == 422
         assert c.post("/api/seleccion", json={"km": 100}).status_code == 422
         assert c.get("/api/version").json()["version"] > v0["version"]
         assert c.get("/api/salud").json() == {"ok": True}
@@ -336,7 +337,7 @@ def test_vivo_e_historico():
         assert c.get("/api/version").json()["version"] > v0  # el sondeo nota el archivo nuevo
         e = c.get("/api/estado").json()
         assert e["en_vivo"] and all(x is not None for x in e["hex"]["vivo"])
-        esperado = solve_corridor(sub, 3.0, live=live)["urgencia"].round(3).tolist()
+        esperado = solve_corridor(sub, 3.0, live=live, w_bio=0.1)["urgencia"].round(3).tolist()  # peso inicial del servidor
         assert e["hex"]["u"] == esperado and e["hex"]["u"] != sin_vivo["hex"]["u"]
         # histórico sintético: dos meses para el primer hexágono, uno fuera del rango
         h0 = sub["h3_index"].iloc[0]
@@ -346,6 +347,269 @@ def test_vivo_e_historico():
         r = c.get("/api/historico?desde=2024-01-01&hasta=2024-02-10").json()
         assert r["meses"] == 2 and r["h"] == [h0] and r["lst"] == [32.0] and r["ndvi"] == [0.3]
         assert c.get("/api/historico?desde=2025-01-01&hasta=2024-01-01").status_code == 422
+
+
+def wav(segundos=2.0, tasa=44100, amplitud=0.05) -> bytes:
+    """WAV PCM 16 bit mono de ruido, como el que arma la página del teléfono (amplitud alta = calle ruidosa)."""
+    import wave
+    x = (np.clip(amplitud * np.random.default_rng(0).standard_normal(int(segundos * tasa)), -1, 1) * 32767).astype("<i2")
+    b = io.BytesIO()
+    with wave.open(b, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(tasa); w.writeframes(x.tobytes())
+    return b.getvalue()
+
+
+def test_fauna_flora():
+    """Un primer plano de una abeja en flores es válido, suma biodiversidad y no toca copa ni espacio plantable."""
+    abeja = [{"grupo": "abeja", "nombre": "", "cantidad": 3}]
+    deshacer = con_claude(obs(True, plantable="ninguno", tipo="fauna_flora", fauna=abeja, flores="muchas"))
+    try:
+        o = vision.analizar(jpeg((200, 180, 40)))
+    finally:
+        deshacer()
+    assert o["valida"] and o["tipo_foto"] == "fauna_flora"
+    assert o["espacio_plantable"] is None and o["arbol_pct"] is None and o["obstaculos"] == []
+    hx = "89b2c1a4a1bffff"
+    f = terreno_h3([{**o, "h3_index": hx, "medido_en": "2026-11-21T18:00:00+00:00"}]).iloc[0]
+    assert np.isnan(f.viabilidad_terreno) and np.isnan(f.arbol_pct_terreno)  # no excluye ni cambia la copa
+    assert f.n_polinizadores == 3 and f.flores == 1.0
+    assert abs(f.biodiversidad_terreno - (0.3 + 0.2)) < 1e-9
+    # una foto inválida no trae fauna aunque Claude la haya listado
+    deshacer = con_claude(obs(False, motivo="interior", fauna=abeja))
+    try:
+        assert vision.analizar(jpeg((90, 90, 90)))["fauna"] == []
+    finally:
+        deshacer()
+
+
+def test_biodiversidad():
+    """Aves oídas (BirdNET) y vistas (Claude) se juntan por especie; el puntaje queda entre 0 y 1."""
+    a, b = "89b2c1a4a1bffff", "89b2c1a4a17ffff"
+    caps = [{**cap(a, "medio"), "fauna": [{"grupo": "ave", "nombre": "Zorzal", "cantidad": 1},
+                                          {"grupo": "mariposa", "nombre": "", "cantidad": 2}], "flores": "pocas"},
+            {**cap(b, "medio"), "fauna": [{"grupo": "ave", "nombre": "", "cantidad": 4}], "flores": "ninguna"}]
+    det = lambda *n: [{"cientifico": x, "comun": x, "confianza": 0.8, "inicio_s": 0, "fin_s": 3} for x in n]
+    escuchas = [{"h3_index": a, "medido_en": "2026-11-21T19:00:00+00:00", "detecciones": det("Turdus falcklandii", "Zenaida auriculata")},
+                {"h3_index": "89b2c1a4a07ffff", "medido_en": "2026-11-21T19:00:00+00:00", "detecciones": det("Turdus falcklandii")}]
+    df = terreno_h3(caps, escuchas).set_index("h3_index")
+    fa = df.loc[a]
+    assert fa.n_especies_aves == 3 and fa.n_escuchas == 1 and fa.n_polinizadores == 2  # zorzal visto + 2 oídas
+    assert abs(fa.biodiversidad_terreno - (0.5 * 3 / 5 + 0.3 + 0.2 * 0.5)) < 1e-9
+    assert df.loc[b].especies_aves == "ave sin identificar" and df.loc[b].n_especies_aves == 1
+    solo = df.loc["89b2c1a4a07ffff"]  # solo escucha: no es una foto, no verifica ni toca la copa
+    assert solo.n_capturas == 0 and np.isnan(solo.arbol_pct_terreno) and solo.fuente == "birdnet"
+    assert df["biodiversidad_terreno"].between(0, 1).all()
+    tres = [{"grupo": "abeja", "nombre": "", "cantidad": 3}]
+    mismas = terreno_h3([{**cap(a, "medio"), "fauna": tres}, {**cap(a, "medio"), "fauna": tres}]).iloc[0]
+    assert mismas.n_polinizadores == 3  # dos fotos de las mismas abejas no son 6
+    # optimizador: w_bio=0 no cambia nada; con w_bio el hexágono con fauna sube de urgencia
+    from optimizer import urgencia
+    base = pd.read_parquet(DEMO)
+    hx = base["h3_index"].iloc[10]
+    t = pd.DataFrame({"h3_index": [hx], "n_capturas": [0], "arbol_pct_terreno": [np.nan],
+                      "viabilidad_terreno": [np.nan], "biodiversidad_terreno": [1.0]})
+    u0, u_t = urgencia(base), urgencia(base, terreno=t)
+    assert u0.equals(u_t) and solve_corridor(base)["hexes"] == solve_corridor(base, terreno=t)["hexes"]
+    u_b = urgencia(base, terreno=t, w_bio=0.5)
+    otros = base["h3_index"] != hx
+    assert np.allclose(u_b[otros], u0[otros] / 1.5)  # los demás solo se reescalan
+    assert u_b[~otros].iloc[0] > u0[~otros].iloc[0] / 1.5
+    assert solve_corridor(base, terreno=t, w_bio=0.5)["verificados"] == 0  # una escucha no es verificación
+
+
+def test_audio():
+    """Escucha de aves: guarda el WAV y la posición, BirdNET (simulado) identifica y el corredor se recalcula."""
+    from fastapi.testclient import TestClient
+    import terreno.aves as aves
+    from terreno.servidor import crear_app
+
+    df = pd.read_parquet(DEMO)
+    hx = solve_corridor(df)["hexes"][1]
+    la, lo = h3.cell_to_latlng(hx)
+    original = aves.detectar
+    llamadas = []
+
+    def falso(datos, lat, lon, fecha=None):
+        llamadas.append((lat, lon, fecha))
+        return [{"cientifico": "Turdus falcklandii", "comun": "Austral Thrush", "confianza": 0.91,
+                 "inicio_s": 3.0, "fin_s": 6.0}]
+    aves.detectar = falso
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO, clave="secreta", usar_claude=False))
+            v0 = c.get("/api/version").json()["version"]
+            pag = c.get("/captura?k=secreta")  # la misma página del teléfono, para el sitio web/
+            assert pag.status_code == 200 and "Escuchar aves" in pag.text and pag.text == c.get("/").text
+            datos = {"lat": la, "lon": lo, "precision_m": 8, "tomado_en": "2026-11-21T15:00:00-03:00"}
+            assert c.post("/api/audio", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")}).status_code == 403
+            r = c.post("/api/audio?k=secreta", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")})
+            assert r.status_code == 200, r.text
+            d = r.json()
+            assert d["analizada"] and d["escucha"]["h3_index"] == hx and d["en_corredor"]
+            assert d["escucha"]["tomado_en"] == "2026-11-21T18:00:00+00:00" and abs(d["escucha"]["duracion_s"] - 2) < 0.1
+            assert llamadas[0][2] is not None and llamadas[0][2].hour == 18  # BirdNET recibe la fecha para filtrar especies
+            e = c.get("/api/estado").json()
+            assert e["version"] > v0 and len(c.get("/api/capturas").json()["escuchas"]) == 1
+            fila = next(f for f in filas(e) if f["h"] == hx)
+            assert fila["bio"] == 0.1 and fila["especies"] == "Turdus falcklandii" and not fila["verificado"]
+            assert e["fauna_corredor"]["especies"] == ["Turdus falcklandii"]
+            nombre = d["escucha"]["id"] + ".wav"
+            assert c.get(f"/audios/{nombre}").content[:4] == b"RIFF"
+            assert c.get("/audios/..%2Fescuchas.jsonl").status_code == 404
+            malo = c.post("/api/audio?k=secreta", data=datos, files={"audio": ("a.wav", b"no es audio", "audio/wav")})
+            assert malo.status_code == 422
+            # sin BirdNET el audio se guarda «sin analizar» y no suma biodiversidad
+            aves.detectar = lambda *a, **k: None
+            d2 = c.post("/api/audio?k=secreta", data=datos, files={"audio": ("a.wav", wav(), "audio/wav")}).json()
+            assert not d2["analizada"] and len(c.get("/api/capturas").json()["escuchas"]) == 2
+            assert d["escucha"]["ruido"]["nivel"] in ("bajo", "medio", "alto") and d["escucha"]["concluyente"]
+            # sin aves y con tráfico fuerte: «no concluyente»
+            aves.detectar = lambda *a, **k: []
+            d3 = c.post("/api/audio?k=secreta", data=datos,
+                        files={"audio": ("a.wav", wav(amplitud=0.4), "audio/wav")}).json()
+            assert d3["escucha"]["ruido"]["nivel"] == "alto" and d3["escucha"]["concluyente"] is False
+            assert next(f for f in filas(c.get("/api/estado").json()) if f["h"] == hx)["bio"] == 0.1
+    finally:
+        aves.detectar = original
+
+
+def test_ruido_y_tramos():
+    """El ruido mide la banda del tráfico; un canto agudo no es ruido. El audio de un paseo se parte por hexágono."""
+    import terreno.aves as aves
+    sr = 32000
+    t = np.arange(sr * 4) / sr
+    rng = np.random.default_rng(0)
+    trafico = (0.08 * rng.standard_normal(len(t)) + 0.1 * np.sin(2 * np.pi * 120 * t)).astype(np.float32)
+    canto = (0.002 * rng.standard_normal(len(t)) + 0.3 * np.sin(2 * np.pi * 4000 * t)).astype(np.float32)
+    r_t, r_c = (aves.resumir_ruido(aves.ruido_por_segundo(x, sr)) for x in (trafico, canto))
+    assert r_t["nivel"] == "alto" and r_c["nivel"] == "bajo" and len(aves.ruido_por_segundo(trafico, sr)) == 4
+    assert aves.resumir_ruido([-60, -20, -61])["db"] == -60  # la mediana ignora una bocina
+    assert not aves.concluyente([], r_t) and aves.concluyente([], r_c) and aves.concluyente([{"x": 1}], r_t)
+    assert aves.concluyente(None, None)
+    a_, b_ = "89b2c1a4a1bffff", "89b2c1a4a17ffff"
+    (la, lo), (lb, lob) = h3.cell_to_latlng(a_), h3.cell_to_latlng(b_)
+    track = [{"lat": la, "lon": lo, "t_s": 0}, {"lat": la, "lon": lo, "t_s": 4},
+             {"lat": lb, "lon": lob, "t_s": 8}, {"lat": la, "lon": lo, "t_s": 8.6}]  # vuelta corta: se descarta
+    tr = aves.tramos_por_hexagono(track, 9.0)
+    assert [x["h3_index"] for x in tr] == [a_, b_]
+    assert tr[0]["desde_s"] == 0 and tr[0]["hasta_s"] == 6.0 and tr[1]["desde_s"] == 6.0 and tr[1]["hasta_s"] == 8.3
+    assert aves.tramos_por_hexagono([], 10) == []
+
+
+def test_paseo_con_audio():
+    """Video caminando con micrófono: cada ave queda en el hexágono donde iba el teléfono cuando cantó."""
+    import json
+    from fastapi.testclient import TestClient
+    import terreno.aves as aves
+    from terreno.servidor import crear_app
+
+    df = pd.read_parquet(DEMO)
+    hexes = [h for h in solve_corridor(df)["hexes"] if not df.set_index("h3_index").loc[h, "es_parque"]][:2]
+    (la, lo), (lb, lob) = (h3.cell_to_latlng(h) for h in hexes)
+    track = [{"lat": la, "lon": lo, "precision_m": 5, "t_s": t} for t in (0, 3, 6)] + \
+            [{"lat": lb, "lon": lob, "precision_m": 5, "t_s": t} for t in (9, 12, 15)]
+    cuadros = [track[0], track[3]]
+    meta = json.dumps({"inicio": "2026-11-21T15:00:00-03:00", "cuadros": cuadros, "track": track})
+    fotos = [("cuadros", (f"c{i}.jpg", jpeg((128, 128, 128)), "image/jpeg")) for i in range(2)]
+    original = aves.detectar_crudo
+    vistos = []
+
+    def falso(x, tasa, lat, lon, fecha=None):
+        vistos.append((len(x) / tasa, lat, fecha))
+        d = lambda n, t0, c: {"cientifico": n, "comun": n, "confianza": c, "inicio_s": t0, "fin_s": t0 + 3}
+        return [d("Turdus falcklandii", 0, 0.6), d("Turdus falcklandii", 3, 0.9), d("Zenaida auriculata", 12, 0.7)]
+    aves.detectar_crudo = falso
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO))
+            deshacer = con_claude(obs(True, "medio"))
+            try:
+                r = c.post("/api/video", data={"meta": meta},
+                           files=fotos + [("audio", ("r.wav", wav(16, 32000, amplitud=0.3), "audio/wav"))])
+                sin_audio = c.post("/api/video", data={"meta": meta}, files=fotos).json()
+                malo = c.post("/api/video", data={"meta": meta},
+                              files=fotos + [("audio", ("r.wav", b"no", "audio/wav"))]).json()
+            finally:
+                deshacer()
+            assert r.status_code == 200, r.text
+            d = r.json()
+            assert abs(vistos[0][0] - 16) < 0.01 and vistos[0][1] == la and vistos[0][2].hour == 18
+            a = d["aves"]
+            assert a["analizada"] and a["tramos"] == 2 and a["ruido"]["nivel"] == "alto"
+            assert [x["cientifico"] for x in a["especies"]] == ["Turdus falcklandii", "Zenaida auriculata"]
+            esc = {e["h3_index"]: e for e in c.get("/api/capturas").json()["escuchas"]}
+            ea, eb = esc[hexes[0]], esc[hexes[1]]
+            assert [x["cientifico"] for x in ea["detecciones"]] == ["Turdus falcklandii"]
+            assert ea["detecciones"][0]["confianza"] == 0.9  # la mejor de sus dos detecciones
+            assert [x["cientifico"] for x in eb["detecciones"]] == ["Zenaida auriculata"]
+            assert ea["video_id"] == eb["video_id"] == d["recorrido"]["id"] and ea["archivo"] == eb["archivo"]
+            assert ea["desde_s"] == 0 and ea["hasta_s"] == eb["desde_s"] == 7.5 and eb["hasta_s"] == 16
+            assert ea["tomado_en"] == "2026-11-21T18:00:00+00:00" and ea["ruido"]["nivel"] == "alto"
+            assert ea["concluyente"]  # hubo aves aunque había ruido
+            assert c.get(f"/audios/{ea['archivo']}").content[:4] == b"RIFF"
+            assert sin_audio["aves"] is None
+            assert malo["aves"]["error"] and malo["cuadros_analizados"] == 2  # el video se guarda igual
+    finally:
+        aves.detectar_crudo = original
+
+
+def test_hexagono():
+    """El mapa recibe solo conteos por hexágono; al tocar uno se piden sus fotos (solo las que cuentan) y aves."""
+    from fastapi.testclient import TestClient
+    import terreno.aves as aves
+    from terreno.servidor import crear_app
+
+    df = pd.read_parquet(DEMO)
+    hx = solve_corridor(df)["hexes"][1]
+    la, lo = h3.cell_to_latlng(hx)
+    original = aves.detectar
+    aves.detectar = lambda *a, **k: [{"cientifico": "Turdus falcklandii", "comun": "Austral Thrush",
+                                      "confianza": 0.9, "inicio_s": 0, "fin_s": 3}]
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            c = TestClient(crear_app(DEMO, Path(tmp), comunas=COMUNAS_DEMO))  # Claude simulado con con_claude
+            foto = lambda: {"foto": ("f.jpg", jpeg((90, 90, 90)), "image/jpeg")}
+            for o in (obs(True, "medio", fauna=[{"grupo": "abeja", "nombre": "", "cantidad": 2}]),
+                      obs(True, "mucho"), obs(False, motivo="interior")):
+                deshacer = con_claude(o)
+                try:
+                    c.post("/api/captura", data={"lat": la, "lon": lo}, files=foto())
+                finally:
+                    deshacer()
+            c.post("/api/audio", data={"lat": la, "lon": lo}, files={"audio": ("a.wav", wav(), "audio/wav")})
+            e = c.get("/api/estado").json()
+            assert "capturas" not in e and "escuchas" not in e  # nada de listas completas en cada sondeo
+            assert e["totales"] == {"capturas": 3, "cuentan": 2, "escuchas": 1}
+            fila = next(f for f in filas(e) if f["h"] == hx)
+            assert fila["fotos"] == 2 and fila["escuchas"] == 1
+            assert sum(e["hex"]["fotos"]) == 2
+            d = c.get(f"/api/hexagono/{hx}").json()
+            assert d["n_fotos"] == 2 and len(d["fotos"]) == 2 and d["n_escuchas"] == 1
+            assert d["fotos"][0]["medido_en"] >= d["fotos"][1]["medido_en"]  # lo más nuevo primero
+            assert all("motivo_rechazo" not in f for f in d["fotos"])  # la descartada no se muestra
+            assert d["especies"] == ["Turdus falcklandii"] and d["polinizadores"] == 2
+            assert d["escuchas"][0]["detecciones"][0]["cientifico"] == "Turdus falcklandii"
+            assert len(c.get(f"/api/hexagono/{hx}?n=1").json()["fotos"]) == 1
+            vacio = c.get(f"/api/hexagono/{solve_corridor(df)['hexes'][3]}").json()
+            assert vacio["n_fotos"] == 0 and vacio["fotos"] == [] and "especies" not in vacio
+            assert c.get("/api/hexagono/no-es-un-hexagono").status_code == 404
+            todo = c.get("/api/capturas").json()
+            assert len(todo["capturas"]) == 3 and len(todo["escuchas"]) == 1
+    finally:
+        aves.detectar = original
+
+
+def test_aves_wav():
+    """leer_wav acepta lo que arma la página y rechaza lo demás (sin cargar BirdNET)."""
+    import terreno.aves as aves
+    x, tasa = aves.leer_wav(wav(1.5, 48000))
+    assert tasa == 48000 and len(x) == 72000 and x.dtype == np.float32 and np.abs(x).max() <= 1
+    for malo in (b"", b"RIFF1234WAVE", jpeg((1, 2, 3))):
+        try:
+            aves.leer_wav(malo)
+        except ValueError:
+            continue
+        raise AssertionError("debió rechazar")
 
 
 if __name__ == "__main__":

@@ -10,8 +10,13 @@ Urgencia por hexágono (cada término 0 a 1):
   falta    = 1 − copa_norm   (copa_modelo_pct: % de copa de árboles que predice nuestro modelo con
              Sentinel-2 de 2026, ver verdeh3.modelo_copa; sin esa columna, 1 − arbol_pct/100 de WorldCover)
   personas = 0,7·poblacion_norm + 0,3·social
-  U        = (w_calor·calor + w_arbol·falta + w_personas·personas) / (w_calor + w_arbol + w_personas)
+  bio      = biodiversidad_terreno del hexágono (aves oídas o vistas, polinizadores, flores; solo con
+             `terreno`, 0 donde no hay datos de terreno)
+  U        = (w_calor·calor + w_arbol·falta + w_personas·personas + w_bio·bio) / (suma de los pesos)
   Los pesos se pueden mover libremente: se reescalan para sumar 1 (0,4/0,4/0,2 queda igual).
+  w_bio = 0 por omisión (resultado idéntico al de antes). Con w_bio > 0 el corredor prefiere pasar por donde
+  el equipo registró fauna: conecta hábitat que ya existe. No detectar fauna no significa que no haya, y un
+  hexágono sin visitar vale 0; por eso conviene un peso bajo (el mapa usa 0,1).
 
 Corredor: grafo de vecindad H3 (grid_disk(h, 1)). Entrar a un hexágono cuesta 1/(0,05 + U); los
 parques cuestan 0. Un Dijkstra con todos los parques como origen da el camino más barato entre cada
@@ -62,8 +67,16 @@ def _terreno(df, terreno):
     return df["h3_index"].map(t["arbol_pct_terreno"]), df["h3_index"].map(t["viabilidad_terreno"])
 
 
-def urgencia(df, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None, terreno=None) -> pd.Series:
-    w = (w_calor, w_arbol, w_personas)
+def biodiversidad(df, terreno) -> pd.Series:
+    """biodiversidad_terreno (0..1) alineada con df; 0 donde no hay datos de terreno."""
+    if terreno is None or not len(terreno) or "biodiversidad_terreno" not in terreno:
+        return pd.Series(0.0, index=df.index)
+    t = terreno.drop_duplicates("h3_index").set_index("h3_index")["biodiversidad_terreno"]
+    return df["h3_index"].map(t).fillna(0.0).clip(0, 1)
+
+
+def urgencia(df, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None, terreno=None, w_bio=0.0) -> pd.Series:
+    w = (w_calor, w_arbol, w_personas, w_bio)
     if min(w) < 0 or sum(w) <= 0:
         raise ValueError(f"Pesos deben ser >= 0 y no todos 0: {w}")
     calor = _norm(df["lst_c"])
@@ -83,7 +96,10 @@ def urgencia(df, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None, terreno=No
         campo, _ = _terreno(df, terreno)
         falta = ((falta + (1 - campo.clip(0, 100) / 100)) / 2).where(campo.notna(), falta)
     personas = 0.7 * _norm(df["poblacion"]) + 0.3 * df["social"].clip(0, 1)
-    return ((w_calor * calor + w_arbol * falta + w_personas * personas) / sum(w)).rename("urgencia")
+    u = w_calor * calor + w_arbol * falta + w_personas * personas
+    if w_bio:
+        u = u + w_bio * biodiversidad(df, terreno)
+    return (u / sum(w)).rename("urgencia")
 
 
 def _dijkstra(vec, costo, parque):
@@ -161,13 +177,14 @@ def _red_continua(tramos, paso, budget_km):
 
 
 def solve_corridor(df, budget_km=3.0, w_calor=0.4, w_arbol=0.4, w_personas=0.2, live=None,
-                   terreno=None) -> dict:
-    U_todo = urgencia(df, w_calor, w_arbol, w_personas, live, terreno)
+                   terreno=None, w_bio=0.0) -> dict:
+    U_todo = urgencia(df, w_calor, w_arbol, w_personas, live, terreno, w_bio)
     ok = df["es_parque"] | (df["poblacion"] >= MIN_PERSONAS_HEX)
     verificado = pd.Series(False, index=df.index)
     if terreno is not None and len(terreno):
         _, viab = _terreno(df, terreno)
-        verificado = df["h3_index"].isin(terreno["h3_index"])
+        con_fotos = terreno["n_capturas"] > 0 if "n_capturas" in terreno else slice(None)
+        verificado = df["h3_index"].isin(terreno.loc[con_fotos, "h3_index"])  # solo escuchas no verifica
         ok &= df["es_parque"] | ~(viab < VIABILIDAD_MIN)  # NaN (sin dato de espacio) no excluye
     ok = ok.to_numpy()
     hexs = df["h3_index"][ok].tolist()

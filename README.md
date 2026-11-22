@@ -101,6 +101,27 @@ corredor continuo entre parques que más urgencia cubre dentro del presupuesto.
 
 ## Captura en terreno (teléfono → corredor en vivo)
 
+**Fauna para los corredores.** Un corredor verde sirve para conectar hábitat, así que el equipo también
+registra fauna en terreno:
+- Fotos y videos: Claude anota aves, abejas, mariposas y flores que se vean con claridad. Un primer plano
+  exterior de un ave, un insecto o una flor es válido («fauna_flora»): suma biodiversidad y no cambia la copa
+  ni el espacio para plantar del hexágono.
+- «🎙️ Escuchar aves (15 s)»: el teléfono graba 15 s (WAV, sin cancelación de ruido) y BirdNET identifica las
+  aves por su canto, solo entre las esperables en Santiago esa semana del año (`terreno/aves.py`, sin red).
+  Nombres científicos y comunes en inglés (el modelo no trae español). Funciona caminando por la calle.
+- El video del recorrido también escucha: el micrófono graba mientras se camina, BirdNET oye el audio entero y
+  cada ave queda en el hexágono donde iba el teléfono cuando cantó (una escucha por hexágono recorrido, con su
+  trozo de audio en el mapa).
+- Ruido de la calle: cada escucha mide el tráfico (banda 100–1500 Hz, dB relativos del micrófono, no
+  calibrados): bajo, medio o alto. BirdNET tolera el ruido de fondo, pero el tráfico fuerte tapa aves lejanas y
+  arrullos graves; sin aves y con ruido alto la escucha queda «no concluyente».
+- Cada hexágono suma una biodiversidad de 0 a 1 (ver `CONTRATO.md`) que entra al corredor con el peso
+  «Biodiversidad (terreno)» del mapa (10 de 100 al inicio). En el mapa: capa de biodiversidad, marcadores 🎧
+  con el audio y especies, y «Especies de aves en el corredor».
+- Honestidad: no detectar fauna no significa que no haya, y un hexágono sin visitar vale 0; por eso el peso es
+  bajo y el resultado se lee como «dónde encontramos evidencia». BirdNET: K. Lisa Yang Center for Conservation
+  Bioacoustics (Cornell), modelo CC BY-NC-SA 4.0 (uso no comercial).
+
 El equipo recorre el corredor con un teléfono: cada foto lleva GPS, se analiza (índice de verde siempre;
 Claude estima árboles, espacio para plantar y obstáculos si hay credenciales de Anthropic), actualiza su
 hexágono en `data/terreno_h3.parquet` (ver `CONTRATO.md`) y `optimizer.solve_corridor` recalcula el corredor.

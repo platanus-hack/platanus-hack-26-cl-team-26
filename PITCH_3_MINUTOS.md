@@ -46,18 +46,21 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
 ---
 
 ### 1:00 – 2:00 · Demo en vivo
-1. **Elegir dónde.** Tocar Cerro Navia en el mapa (o encerrar unas cuadras con el lápiz: arrastrar pinta
-   cuadras y volver al inicio del trazo rellena la zona). El resto de Santiago queda atenuado y la tabla
+1. **Elegir dónde.** Dejar elegidas Providencia y Cerro Navia (o encerrar unas cuadras con el lápiz: arrastrar
+   pinta cuadras y volver al inicio del trazo rellena la zona). El resto de Santiago queda atenuado y la tabla
    muestra solo lo elegido, comparado con el promedio de Santiago.
 2. **Trazar el corredor.** Ir a «Planificar»: con **3 km** de presupuesto, el corredor une parques existentes
    pasando por las cuadras más urgentes.
-   > *"Este corredor cubre **13.295 personas**. Un trazado al azar del mismo largo, **8.334**."*
+   > *"Entre las dos comunas, el corredor se va entero a Cerro Navia y cubre **13.295 personas**. Un trazado al
+   > azar del mismo largo, **8.334**."*
 3. **El mundo físico entra al mapa.** Con el teléfono, sacar una foto de una calle (o mostrar una ya subida).
    Claude revisa que la foto sirva y estima cuánta copa se ve; esa cuadra queda marcada como verificada en
    terreno y el índice usa la foto junto al satélite. Si hay sensores de aire en vivo (SINCA, Sensor.Community)
    en suficientes barrios, también entran al índice de calor.
-* **Ensayo:** probar con Cerro Navia o Pudahuel, que dan buen resultado. No dejar que el jurado elija una
-  comuna a ciegas: en algunas comunas chicas el corredor de 3 km no sale.
+* **Ensayo:** decir siempre la cifra que muestre la pantalla. Las de este guion son con Providencia y Cerro
+  Navia elegidas, 3 km y los pesos por defecto; con solo Cerro Navia el azar sube a 10.107, y con sensores de
+  aire activos el corredor de todo Santiago puede cambiar. No dejar que el jurado elija una comuna a ciegas:
+  con 3 km, en 11 comunas chicas o sin parques cercanos el corredor no sale.
 
 ---
 
@@ -65,11 +68,12 @@ con más detalle y lo que no hay que decir, están en `NOTAS PITCH.md`.
 * **Pantalla:** el bloque de cifras de «Planificar».
 * **Orador:**
   > *"Con el mismo presupuesto de 3 km:*
-  > *- en Cerro Navia el corredor de Viridis cubre **13.295 personas**, contra **8.334** al azar: **60 % más**;*
-  > *- elegido sobre todo el Gran Santiago, cae en Pudahuel y cubre **10.023**, contra **7.002**: **43 % más**;*
-  > *- y la urgencia media de las cuadras que cubre es **0,75**, contra **0,64** al azar."*
-* Fuente: `data/cifras_pitch.json` (`corredor` y `corredor_gran_santiago`). No decir grados de enfriamiento:
-  no tenemos un coeficiente publicado que citar.
+  > *- entre Providencia y Cerro Navia, el corredor de Viridis cubre **13.295 personas**, contra **8.334** al
+  > azar: **60 % más**;*
+  > *- elegido sobre todo el Gran Santiago, cae en Pudahuel y cubre **10.023**, contra **7.002**: **43 % más**."*
+* Fuente: `data/cifras_pitch.json` (`corredor` y `corredor_gran_santiago`), calculadas sin aire en vivo ni
+  fotos de terreno. No citar la urgencia media: cambió de escala al sumar el peso de biodiversidad. No decir
+  grados de enfriamiento: no tenemos un coeficiente publicado que citar.
 
 ---
 

@@ -7,7 +7,8 @@ import { menosMovimiento, useVisible } from "./movimiento";
 // hexágonos (una capa de relleno por vista; al cambiar de vista se cruzan las opacidades),
 // contornos de comuna (del servidor de terreno; se tocan para elegir el área), corredor
 // (relleno del actual, línea punteada del de sin terreno, magenta donde se verificó en terreno),
-// y capturas en terreno con sus recorridos.
+// y los recorridos en terreno. Las fotos y escuchas no van como puntos (no escalan): al tocar una cuadra con
+// datos de terreno se abre su ficha (popupHex), que el servidor arma con lo más nuevo de esa cuadra.
 const ESTILO = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 const OPACIDAD = 0.82;
 const VACIO: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
@@ -37,7 +38,7 @@ function tenir(mapa: MapaML) {
 }
 
 export default function MapaHex({ datos, capas, activa, corredor, comunas, distritos, capturas, recorridos, popupCaptura,
-  encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, children }: {
+  popupHex, encuadre, foco = null, hitos, alPasar, alComuna, alLazo, etiqueta, children }: {
   datos: GeoJSON.FeatureCollection;
   capas: Capa[];
   activa: string;
@@ -47,6 +48,7 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   capturas?: GeoJSON.FeatureCollection;      // puntos con propiedad color
   recorridos?: GeoJSON.FeatureCollection;
   popupCaptura?: (props: Record<string, unknown>) => string;
+  popupHex?: (i: number) => Promise<string> | null;  // ficha de la cuadra; null si no tiene datos de terreno
   encuadre: LngLatBoundsLike;
   foco?: Foco;
   hitos?: GeoJSON.FeatureCollection;         // puntos con propiedad n: nombres de cerros isla y parques
@@ -71,8 +73,8 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
   const accion = useRef({ deshacer: () => {}, listo: () => {} });  // los botones llaman al dibujo en curso
   const pasado = useRef<number | null>(null);
   const sinClicHasta = useRef(0);   // al cerrar la zona el mapa dispara un clic que no debe elegir comuna
-  const cb = useRef({ alPasar, alComuna, alLazo, popupCaptura, activa, datos, lapiz });
-  cb.current = { alPasar, alComuna, alLazo, popupCaptura, activa, datos, lapiz };
+  const cb = useRef({ alPasar, alComuna, alLazo, popupCaptura, popupHex, activa, datos, lapiz });
+  cb.current = { alPasar, alComuna, alLazo, popupCaptura, popupHex, activa, datos, lapiz };
   const inicial = useRef({ datos, capas, activa, encuadre, hitos });
   const hayComunas = useRef(false), hayCuadras = useRef(false), claveCorredor = useRef("");
 
@@ -211,7 +213,19 @@ export default function MapaHex({ datos, capas, activa, corredor, comunas, distr
             return;
           }
           const hex = nuevo.getLayer(cb.current.activa) ? nuevo.queryRenderedFeatures(e.point, { layers: [cb.current.activa] })[0] : undefined;
-          if (hex && hex.properties.cn) { cb.current.alComuna?.(String(hex.properties.cn)); return; }
+          if (hex) {
+            // Cuadra con fotos o aves de terreno: su ficha. Cualquier otra: sumar o quitar su comuna.
+            const ficha = cb.current.popupHex?.(Number(hex.id));
+            if (ficha) {
+              popup?.remove();
+              const mio = new ml.Popup({ maxWidth: "300px" }).setLngLat(e.lngLat)
+                .setHTML('<div class="pop">Cargando fotos y aves de esta cuadra…</div>').addTo(nuevo);
+              popup = mio;
+              ficha.then((html) => mio.setHTML(html)).catch(() => mio.setHTML('<div class="pop">No se pudo cargar la cuadra.</div>'));
+              return;
+            }
+            if (hex.properties.cn) { cb.current.alComuna?.(String(hex.properties.cn)); return; }
+          }
           const com = nuevo.queryRenderedFeatures(e.point, { layers: ["comunas-relleno"] })[0];
           if (com) cb.current.alComuna?.(String(com.properties.c));
         });
