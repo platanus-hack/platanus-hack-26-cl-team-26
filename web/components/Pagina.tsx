@@ -52,8 +52,8 @@ const CRITERIO: Record<string, string> = {
   aves: "Eje continuo para las aves: une parques por donde ya hay más copa y menos cemento y pasto abierto.",
   abejas: "Mini islas para las abejas: puntos floridos, una cuadra por medio, que con el mismo presupuesto unen más parques.",
   "humanos+aves": "Personas y aves: un corredor continuo que pesa por igual la urgencia de las personas y lo difícil que es el cruce para un ave.",
-  "humanos+abejas": "Personas y abejas: corredor de sombra que pesa por igual urgencia y cemento, con una mini isla florida cada tres cuadras.",
-  "aves+abejas": "Aves y abejas: corredor arbolado continuo que evita el cemento, con una mini isla florida cada tres cuadras.",
+  "humanos+abejas": "Personas y abejas: corredor de sombra que pesa por igual urgencia y cemento, con una mini isla florida cada dos cuadras.",
+  "aves+abejas": "Aves y abejas: corredor arbolado continuo que evita el cemento, con una mini isla florida cada dos cuadras.",
   "humanos+aves+abejas": "Las tres: urgencia de las personas, copa para las aves y flores para las abejas pesan un tercio cada una; corredor continuo con mini islas.",
 };
 // Día en que se bajó el extracto de OpenStreetMap (Geofabrik) con parques, servicios y vías.

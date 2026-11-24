@@ -173,8 +173,8 @@ def resolver_corredor_por_perfil(
     # En modo mixto, sugerimos además checkpoints en los puntos de mayor resistencia del corredor
     checkpoints_mixto = []
     if perfil == "mixto" and sel:
-        # Marcar los puntos más críticos (cada 3er hexágono o los de mayor resistencia) como mini islas floridas
-        checkpoints_mixto = [hexs[sel[i]] for i in range(0, len(sel), 3)]
+        # Una mini isla florida cada CADA_MINI_ISLA cuadras del corredor
+        checkpoints_mixto = [hexs[sel[i]] for i in range(0, len(sel), CADA_MINI_ISLA)]
 
     return {
         "perfil": perfil,
@@ -200,8 +200,12 @@ def resolver_corredor_por_perfil(
 #   abejas:  prioridad = resistencia para abejas normalizada (pasto con flores fácil, cemento difícil); costo = resistencia / 100
 # La forma del resultado también sale de las especies: con humanos o aves hay un corredor continuo (sombra para
 # caminar, copa para volar de árbol en árbol); con abejas hay mini islas floridas. Con abejas y otra especie van
-# las dos cosas: el corredor y, cada tres cuadras, una mini isla en la más difícil de cruzar para una abeja.
+# las dos cosas: el corredor y, cada CADA_MINI_ISLA cuadras, una mini isla en la más difícil de cruzar para una abeja.
 ESPECIES = ("humanos", "aves", "abejas")
+# Una mini isla florida cada CADA_MINI_ISLA cuadras (H3 res 9, ~350 m entre centros): entre dos mini islas quedan
+# unos 350 m sin flores. La mayoría de las abejas solitarias forrajea a 150-600 m de su nido (Gathmann y
+# Tscharntke 2002) y volar más lejos les cuesta crías (Zurbuchen et al. 2010); cada 3 cuadras dejaba ~700 m.
+CADA_MINI_ISLA = 2
 PERFIL_DE = {frozenset({"humanos"}): "humanos", frozenset({"aves"}): "fauna_aves", frozenset({"abejas"}): "fauna_abejas"}
 ESPECIES_DE = {"humanos": ("humanos",), "fauna_aves": ("aves",), "fauna_abejas": ("abejas",), "mixto": ESPECIES}
 
@@ -287,10 +291,10 @@ def resolver_corredor_por_especies(df: pd.DataFrame, especies, budget_km: float 
             sel += nuevos
             tramos_sel.append([hexs[i] for i in cam])
             parques_cubiertos.update((a, b))
-        # Con abejas: una mini isla cada tres cuadras del corredor, en la de mayor resistencia para ellas.
+        # Con abejas: una mini isla cada CADA_MINI_ISLA cuadras del corredor, en la de mayor resistencia para ellas.
         if "abejas" in elegidas:
             r = res_abejas.to_numpy()
-            islas = [max(sel[k:k + 3], key=lambda i: r[i]) for k in range(0, len(sel), 3)]
+            islas = [max(sel[k:k + CADA_MINI_ISLA], key=lambda i: r[i]) for k in range(0, len(sel), CADA_MINI_ISLA)]
         largo, medidos = len(sel) * paso, sel
     return {
         "perfil": "+".join(e for e in ESPECIES if e in elegidas),
