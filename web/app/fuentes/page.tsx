@@ -80,6 +80,27 @@ const TEMAS: { id: string; titulo: string; acento: string; nota?: string; mas?: 
     ],
   },
   {
+    id: "corredores", titulo: "Corredores", acento: "para la fauna",
+    nota: "Así trazamos para cada especie. Abejas: una mini isla florida cada 2 cuadras (unos 350 m sin flores entre una y otra), porque la mayoría de las abejas solitarias busca alimento a 150-600 m de su nido y volar más lejos les cuesta crías; las abejas chicas vuelan menos que las grandes. Aves: un corredor continuo de árbol en árbol, porque las aves de bosque evitan cruzar más de unos 45-50 m sin árboles y prefieren rutas arboladas aunque sean más largas. Los pesos de dificultad de cada cobertura (árbol, pasto, cemento) son criterio del equipo, no una medición en Santiago.",
+    fuentes: [
+      { nombre: "Foraging ranges of solitary bees", quien: "Gathmann y Tscharntke, Journal of Animal Ecology, 2002",
+        uso: "Alcance máximo de 150 a 600 m para abejas solitarias medianas y grandes.",
+        url: "https://conservationevidencejournal.com/individual-study/1647", enlace: "conservationevidencejournal.com" },
+      { nombre: "Maximum foraging ranges in solitary bees", quien: "Zurbuchen y otros, Biological Conservation, 2010",
+        uso: "Solo unos pocos individuos alcanzan distancias largas; volar 150 a 300 m más reduce las crías.",
+        url: "https://agris.fao.org/search/en/records/65df103c0f3e94b9e5d4a224", enlace: "agris.fao.org" },
+      { nombre: "Bee foraging ranges and their relationship to body size", quien: "Greenleaf y otros, Oecologia, 2007",
+        uso: "El tamaño del cuerpo predice cuánto vuela una abeja.",
+        url: "https://doi.org/10.1007/s00442-007-0752-9", enlace: "doi.org/10.1007/s00442-007-0752-9" },
+      { nombre: "Gap crossing decisions by forest songbirds", quien: "Desrochers y Hannon, The Condor, 1997",
+        uso: "Las aves prefieren rutas con árboles hasta tres veces más largas antes que cruzar 50 m de terreno abierto.",
+        url: "https://sora.unm.edu/sites/default/files/journals/condor/v099n04/p0976-p0980.pdf", enlace: "sora.unm.edu" },
+      { nombre: "Permeability of a heterogeneous urban landscape to forest songbirds", quien: "Tremblay y St. Clair, Journal of Applied Ecology, 2011",
+        uso: "En la ciudad, el tamaño de la brecha sin vegetación es lo que más decide si un ave cruza.",
+        url: "https://doi.org/10.1111/j.1365-2664.2011.01978.x", enlace: "doi.org/10.1111/j.1365-2664.2011.01978.x" },
+    ],
+  },
+  {
     id: "mapas", titulo: "Mapas", acento: "y grilla",
     fuentes: [
       { nombre: "Mapa base Positron", quien: "CARTO, con datos de OpenStreetMap",
